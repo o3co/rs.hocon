@@ -9,6 +9,7 @@ pub struct Pos {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum AstNode {
     Object { fields: Vec<AstField>, pos: Pos },
     Array { items: Vec<AstNode>, pos: Pos },
@@ -61,7 +62,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_preceding_space(&self) -> bool {
-        self.tokens.get(self.pos).map_or(false, |t| t.preceding_space)
+        self.tokens.get(self.pos).is_some_and(|t| t.preceding_space)
     }
 
     fn current_pos(&self) -> Pos {
@@ -289,44 +290,43 @@ impl<'a> Parser<'a> {
             let t_line = self.peek_line();
             let t_col = self.peek_col();
 
-            let node;
-            match kind {
+            let node = match kind {
                 TokenKind::LBrace => {
                     self.advance();
-                    node = self.parse_object(true)?;
+                    self.parse_object(true)?
                 }
                 TokenKind::LBracket => {
                     self.advance();
-                    node = self.parse_array()?;
+                    self.parse_array()?
                 }
                 TokenKind::Substitution | TokenKind::OptionalSubstitution => {
                     let optional = kind == TokenKind::OptionalSubstitution;
                     let (_, path, line, col) = self.advance_get();
-                    node = AstNode::Substitution { path, optional, pos: Pos { line, col } };
+                    AstNode::Substitution { path, optional, pos: Pos { line, col } }
                 }
                 TokenKind::QuotedString | TokenKind::TripleQuotedString => {
                     let (_, val, line, col) = self.advance_get();
-                    node = AstNode::Scalar {
+                    AstNode::Scalar {
                         value: ScalarValue::String(val),
                         pos: Pos { line, col },
-                    };
+                    }
                 }
                 TokenKind::Unquoted => {
                     let (_, val, line, col) = self.advance_get();
-                    node = AstNode::Scalar {
+                    AstNode::Scalar {
                         value: parse_scalar_value(&val),
                         pos: Pos { line, col },
-                    };
+                    }
                 }
                 TokenKind::Colon | TokenKind::Equals if !parts.is_empty() => {
                     let (_, val, line, col) = self.advance_get();
-                    node = AstNode::Scalar {
+                    AstNode::Scalar {
                         value: ScalarValue::String(val),
                         pos: Pos { line, col },
-                    };
+                    }
                 }
                 _ => break,
-            }
+            };
 
             if had_space {
                 parts.push(AstNode::Scalar {

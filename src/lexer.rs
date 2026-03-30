@@ -16,6 +16,7 @@ pub struct Token {
     pub value: String,
     pub line: usize,
     pub col: usize,
+    #[allow(dead_code)]
     pub is_quoted: bool,
     pub preceding_space: bool,
 }
@@ -55,7 +56,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             pos += 1;
             line += 1;
             col = 1;
-            if tokens.last().map_or(true, |t: &Token| t.kind != TokenKind::Newline) {
+            if tokens.last().is_none_or(|t: &Token| t.kind != TokenKind::Newline) {
                 tokens.push(Token {
                     kind: TokenKind::Newline, value: "\n".into(),
                     line: sl, col: sc, is_quoted: false, preceding_space: had_space,

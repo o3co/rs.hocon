@@ -389,7 +389,7 @@ fn resolve_concat(
     }
 
     // String concatenation
-    let s: String = resolved.iter().map(|v| stringify_value(v)).collect();
+    let s: String = resolved.iter().map(stringify_value).collect();
     Ok(HoconValue::Scalar(ScalarValue::String(s)))
 }
 

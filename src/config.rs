@@ -186,7 +186,7 @@ fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Optio
 
 fn missing(path: &str) -> ConfigError {
     ConfigError {
-        message: format!("key not found"),
+        message: "key not found".to_string(),
         path: path.to_string(),
     }
 }
