@@ -154,6 +154,28 @@ impl Config {
         self.get_duration(path).ok()
     }
 
+    pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
+        let v = self.lookup_node(path).ok_or_else(|| ConfigError {
+            message: format!("path not found: {}", path),
+            path: path.to_string(),
+        })?;
+        match v {
+            HoconValue::Scalar(ScalarValue::String(s)) => parse_bytes(s).ok_or_else(|| ConfigError {
+                message: format!("invalid byte size at {}: {}", path, s),
+                path: path.to_string(),
+            }),
+            HoconValue::Scalar(ScalarValue::Int(n)) => Ok(*n),
+            _ => Err(ConfigError {
+                message: format!("expected byte size at {}", path),
+                path: path.to_string(),
+            }),
+        }
+    }
+
+    pub fn get_bytes_option(&self, path: &str) -> Option<i64> {
+        self.get_bytes(path).ok()
+    }
+
     // Inspection
 
     pub fn has(&self, path: &str) -> bool {
@@ -234,6 +256,31 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
     };
 
     Some(std::time::Duration::from_nanos((num * nanos_per_unit) as u64))
+}
+
+fn parse_bytes(s: &str) -> Option<i64> {
+    let s = s.trim();
+    let num_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let num_str = s[..num_end].trim();
+    let unit_str = s[num_end..].trim();
+
+    let num: i64 = num_str.parse().ok()?;
+
+    // Case-sensitive matching: KB vs KiB matters
+    let multiplier: i64 = match unit_str {
+        "B" | "byte" | "bytes" => 1,
+        "KB" | "kilobyte" | "kilobytes" => 1_000,
+        "KiB" | "kibibyte" | "kibibytes" => 1_024,
+        "MB" | "megabyte" | "megabytes" => 1_000_000,
+        "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
+        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
+        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
+        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
+        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
+        _ => return None,
+    };
+
+    Some(num * multiplier)
 }
 
 fn missing(path: &str) -> ConfigError {
@@ -492,5 +539,83 @@ mod tests {
     fn get_duration_option_missing() {
         let c = make_config(vec![]);
         assert!(c.get_duration_option("t").is_none());
+    }
+
+    #[test]
+    fn get_bytes_plain() {
+        let c = make_config(vec![("s", sv("100 B"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 100);
+    }
+
+    #[test]
+    fn get_bytes_kilobytes() {
+        let c = make_config(vec![("s", sv("10 KB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 10_000);
+    }
+
+    #[test]
+    fn get_bytes_kibibytes() {
+        let c = make_config(vec![("s", sv("1 KiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1_024);
+    }
+
+    #[test]
+    fn get_bytes_megabytes() {
+        let c = make_config(vec![("s", sv("5 MB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 5_000_000);
+    }
+
+    #[test]
+    fn get_bytes_mebibytes() {
+        let c = make_config(vec![("s", sv("1 MiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1_048_576);
+    }
+
+    #[test]
+    fn get_bytes_gigabytes() {
+        let c = make_config(vec![("s", sv("2 GB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 2_000_000_000);
+    }
+
+    #[test]
+    fn get_bytes_gibibytes() {
+        let c = make_config(vec![("s", sv("1 GiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1_073_741_824);
+    }
+
+    #[test]
+    fn get_bytes_terabytes() {
+        let c = make_config(vec![("s", sv("1 TB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1_000_000_000_000);
+    }
+
+    #[test]
+    fn get_bytes_tebibytes() {
+        let c = make_config(vec![("s", sv("1 TiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1_099_511_627_776);
+    }
+
+    #[test]
+    fn get_bytes_no_space() {
+        let c = make_config(vec![("s", sv("512MB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 512_000_000);
+    }
+
+    #[test]
+    fn get_bytes_long_unit() {
+        let c = make_config(vec![("s", sv("2 megabytes"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 2_000_000);
+    }
+
+    #[test]
+    fn get_bytes_error_invalid_unit() {
+        let c = make_config(vec![("s", sv("100 XB"))]);
+        assert!(c.get_bytes("s").is_err());
+    }
+
+    #[test]
+    fn get_bytes_option_missing() {
+        let c = make_config(vec![]);
+        assert!(c.get_bytes_option("s").is_none());
     }
 }
