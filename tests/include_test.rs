@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 fn testdata(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/testdata")
+        .join(name)
 }
 
 #[test]
@@ -48,7 +50,10 @@ fn include_extension_probing() {
 
 #[test]
 fn include_missing_silently_ignored() {
-    let config = hocon::parse(r#"include "nonexistent.conf"
-fallback = true"#).unwrap();
+    let config = hocon::parse(
+        r#"include "nonexistent.conf"
+fallback = true"#,
+    )
+    .unwrap();
     assert!(config.get_bool("fallback").unwrap());
 }

@@ -72,7 +72,8 @@ fn parse_and_compare(conf_path: &std::path::Path, json_path: &std::path::Path) {
     let expected = normalize(&expected);
 
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "mismatch for {}\ngot:\n{}\nwant:\n{}",
         conf_path.display(),
         serde_json::to_string_pretty(&got).unwrap(),

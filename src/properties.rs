@@ -1,5 +1,5 @@
-use indexmap::IndexMap;
 use crate::value::{HoconValue, ScalarValue};
+use indexmap::IndexMap;
 
 /// Parse a .properties file into a flat key-value map.
 /// All values are strings per the .properties/.hocon spec.
@@ -30,7 +30,11 @@ pub fn properties_to_hocon(input: &str) -> HoconValue {
 
     for (key, value) in props {
         let segments: Vec<&str> = key.split('.').collect();
-        set_nested(&mut root, &segments, HoconValue::Scalar(ScalarValue::String(value)));
+        set_nested(
+            &mut root,
+            &segments,
+            HoconValue::Scalar(ScalarValue::String(value)),
+        );
     }
 
     HoconValue::Object(root)
@@ -46,7 +50,9 @@ fn set_nested(map: &mut IndexMap<String, HoconValue>, segments: &[&str], value: 
     }
     let head = segments[0].to_string();
     let tail = &segments[1..];
-    let entry = map.entry(head).or_insert_with(|| HoconValue::Object(IndexMap::new()));
+    let entry = map
+        .entry(head)
+        .or_insert_with(|| HoconValue::Object(IndexMap::new()));
     if let HoconValue::Object(inner) = entry {
         set_nested(inner, tail, value);
     }
@@ -112,11 +118,17 @@ mod tests {
         let hv = properties_to_hocon("a.b=1\nc=hello");
         if let HoconValue::Object(map) = &hv {
             if let Some(HoconValue::Object(a)) = map.get("a") {
-                assert_eq!(a.get("b"), Some(&HoconValue::Scalar(ScalarValue::String("1".into()))));
+                assert_eq!(
+                    a.get("b"),
+                    Some(&HoconValue::Scalar(ScalarValue::String("1".into())))
+                );
             } else {
                 panic!("expected nested object for 'a'");
             }
-            assert_eq!(map.get("c"), Some(&HoconValue::Scalar(ScalarValue::String("hello".into()))));
+            assert_eq!(
+                map.get("c"),
+                Some(&HoconValue::Scalar(ScalarValue::String("hello".into())))
+            );
         } else {
             panic!("expected object");
         }

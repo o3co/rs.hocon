@@ -37,25 +37,19 @@ fn parse_with_substitutions() {
 
 #[test]
 fn parse_with_env_fallback() {
-    let config = hocon::parse_with_env(
-        "port = 50051\nport = ${?GRPC_PORT}",
-        &{
-            let mut m = HashMap::new();
-            m.insert("GRPC_PORT".into(), "9090".into());
-            m
-        },
-    )
+    let config = hocon::parse_with_env("port = 50051\nport = ${?GRPC_PORT}", &{
+        let mut m = HashMap::new();
+        m.insert("GRPC_PORT".into(), "9090".into());
+        m
+    })
     .unwrap();
     assert_eq!(config.get_string("port").unwrap(), "9090");
 }
 
 #[test]
 fn parse_with_optional_substitution_fallback() {
-    let config = hocon::parse_with_env(
-        "port = 50051\nport = ${?GRPC_PORT}",
-        &HashMap::new(),
-    )
-    .unwrap();
+    let config =
+        hocon::parse_with_env("port = 50051\nport = ${?GRPC_PORT}", &HashMap::new()).unwrap();
     assert_eq!(config.get_i64("port").unwrap(), 50051);
 }
 

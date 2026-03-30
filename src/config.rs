@@ -1,6 +1,6 @@
-use indexmap::IndexMap;
-use crate::value::{HoconValue, ScalarValue};
 use crate::error::ConfigError;
+use crate::value::{HoconValue, ScalarValue};
+use indexmap::IndexMap;
 
 pub struct Config {
     root: IndexMap<String, HoconValue>,
@@ -79,13 +79,11 @@ impl Config {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Scalar(ScalarValue::Bool(b))) => Ok(*b),
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => {
-                match s.to_lowercase().as_str() {
-                    "true" | "yes" | "on" => Ok(true),
-                    "false" | "no" | "off" => Ok(false),
-                    _ => Err(type_mismatch(path, "bool")),
-                }
-            }
+            Some(HoconValue::Scalar(ScalarValue::String(s))) => match s.to_lowercase().as_str() {
+                "true" | "yes" | "on" => Ok(true),
+                "false" | "no" | "off" => Ok(false),
+                _ => Err(type_mismatch(path, "bool")),
+            },
             _ => Err(type_mismatch(path, "bool")),
         }
     }
@@ -141,8 +139,12 @@ impl Config {
                     path: path.to_string(),
                 })
             }
-            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(std::time::Duration::from_millis(*n as u64)),
-            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(std::time::Duration::from_secs_f64(*f / 1000.0)),
+            Some(HoconValue::Scalar(ScalarValue::Int(n))) => {
+                Ok(std::time::Duration::from_millis(*n as u64))
+            }
+            Some(HoconValue::Scalar(ScalarValue::Float(f))) => {
+                Ok(std::time::Duration::from_secs_f64(*f / 1000.0))
+            }
             _ => Err(ConfigError {
                 message: format!("expected duration at {}", path),
                 path: path.to_string(),
@@ -160,10 +162,12 @@ impl Config {
             path: path.to_string(),
         })?;
         match v {
-            HoconValue::Scalar(ScalarValue::String(s)) => parse_bytes(s).ok_or_else(|| ConfigError {
-                message: format!("invalid byte size at {}: {}", path, s),
-                path: path.to_string(),
-            }),
+            HoconValue::Scalar(ScalarValue::String(s)) => {
+                parse_bytes(s).ok_or_else(|| ConfigError {
+                    message: format!("invalid byte size at {}: {}", path, s),
+                    path: path.to_string(),
+                })
+            }
             HoconValue::Scalar(ScalarValue::Int(n)) => Ok(*n),
             _ => Err(ConfigError {
                 message: format!("expected byte size at {}", path),
@@ -230,7 +234,9 @@ fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Optio
 
 #[cfg(feature = "serde")]
 impl Config {
-    pub fn deserialize<T: ::serde::de::DeserializeOwned>(&self) -> Result<T, crate::serde::DeserializeError> {
+    pub fn deserialize<T: ::serde::de::DeserializeOwned>(
+        &self,
+    ) -> Result<T, crate::serde::DeserializeError> {
         let value = HoconValue::Object(self.root.clone());
         T::deserialize(crate::serde::HoconDeserializer::new(&value))
     }
@@ -238,7 +244,9 @@ impl Config {
 
 fn parse_duration(s: &str) -> Option<std::time::Duration> {
     let s = s.trim();
-    let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-').unwrap_or(s.len());
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+        .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
     let unit_str = s[num_end..].trim().to_lowercase();
 
@@ -255,7 +263,9 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
         _ => return None,
     };
 
-    Some(std::time::Duration::from_nanos((num * nanos_per_unit) as u64))
+    Some(std::time::Duration::from_nanos(
+        (num * nanos_per_unit) as u64,
+    ))
 }
 
 fn parse_bytes(s: &str) -> Option<i64> {
@@ -311,10 +321,18 @@ mod tests {
         Config::new(map)
     }
 
-    fn sv(s: &str) -> HoconValue { HoconValue::Scalar(ScalarValue::String(s.into())) }
-    fn iv(n: i64) -> HoconValue { HoconValue::Scalar(ScalarValue::Int(n)) }
-    fn fv(n: f64) -> HoconValue { HoconValue::Scalar(ScalarValue::Float(n)) }
-    fn bv(b: bool) -> HoconValue { HoconValue::Scalar(ScalarValue::Bool(b)) }
+    fn sv(s: &str) -> HoconValue {
+        HoconValue::Scalar(ScalarValue::String(s.into()))
+    }
+    fn iv(n: i64) -> HoconValue {
+        HoconValue::Scalar(ScalarValue::Int(n))
+    }
+    fn fv(n: f64) -> HoconValue {
+        HoconValue::Scalar(ScalarValue::Float(n))
+    }
+    fn bv(b: bool) -> HoconValue {
+        HoconValue::Scalar(ScalarValue::Bool(b))
+    }
 
     #[test]
     fn get_returns_value_at_path() {
@@ -478,55 +496,82 @@ mod tests {
     #[test]
     fn get_duration_nanoseconds() {
         let c = make_config(vec![("t", sv("100 ns"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_nanos(100));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_nanos(100)
+        );
     }
 
     #[test]
     fn get_duration_milliseconds() {
         let c = make_config(vec![("t", sv("500 ms"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_millis(500));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_millis(500)
+        );
     }
 
     #[test]
     fn get_duration_seconds() {
         let c = make_config(vec![("t", sv("30 seconds"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(30));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(30)
+        );
     }
 
     #[test]
     fn get_duration_minutes() {
         let c = make_config(vec![("t", sv("5 m"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(300));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(300)
+        );
     }
 
     #[test]
     fn get_duration_hours() {
         let c = make_config(vec![("t", sv("2 hours"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(7200));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(7200)
+        );
     }
 
     #[test]
     fn get_duration_days() {
         let c = make_config(vec![("t", sv("1 d"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(86400));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(86400)
+        );
     }
 
     #[test]
     fn get_duration_fractional() {
         let c = make_config(vec![("t", sv("1.5 hours"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(5400));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(5400)
+        );
     }
 
     #[test]
     fn get_duration_no_space() {
         let c = make_config(vec![("t", sv("100ms"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_millis(100));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_millis(100)
+        );
     }
 
     #[test]
     fn get_duration_singular_unit() {
         let c = make_config(vec![("t", sv("1 second"))]);
-        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(1));
+        assert_eq!(
+            c.get_duration("t").unwrap(),
+            std::time::Duration::from_secs(1)
+        );
     }
 
     #[test]

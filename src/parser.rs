@@ -11,12 +11,31 @@ pub struct Pos {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum AstNode {
-    Object { fields: Vec<AstField>, pos: Pos },
-    Array { items: Vec<AstNode>, pos: Pos },
-    Scalar { value: ScalarValue, pos: Pos },
-    Concat { nodes: Vec<AstNode>, pos: Pos },
-    Substitution { path: String, optional: bool, pos: Pos },
-    Include { path: String, pos: Pos },
+    Object {
+        fields: Vec<AstField>,
+        pos: Pos,
+    },
+    Array {
+        items: Vec<AstNode>,
+        pos: Pos,
+    },
+    Scalar {
+        value: ScalarValue,
+        pos: Pos,
+    },
+    Concat {
+        nodes: Vec<AstNode>,
+        pos: Pos,
+    },
+    Substitution {
+        path: String,
+        optional: bool,
+        pos: Pos,
+    },
+    Include {
+        path: String,
+        pos: Pos,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +65,9 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn peek_kind(&self) -> TokenKind {
-        self.tokens.get(self.pos).map_or(TokenKind::Eof, |t| t.kind.clone())
+        self.tokens
+            .get(self.pos)
+            .map_or(TokenKind::Eof, |t| t.kind.clone())
     }
 
     fn peek_value(&self) -> &str {
@@ -66,7 +87,10 @@ impl<'a> Parser<'a> {
     }
 
     fn current_pos(&self) -> Pos {
-        Pos { line: self.peek_line(), col: self.peek_col() }
+        Pos {
+            line: self.peek_line(),
+            col: self.peek_col(),
+        }
     }
 
     fn advance_get(&mut self) -> (TokenKind, String, usize, usize) {
@@ -123,9 +147,16 @@ impl<'a> Parser<'a> {
             let mut append = false;
             let sep_kind = self.peek_kind();
             match sep_kind {
-                TokenKind::Equals => { self.advance(); }
-                TokenKind::PlusEquals => { self.advance(); append = true; }
-                TokenKind::Colon => { self.advance(); }
+                TokenKind::Equals => {
+                    self.advance();
+                }
+                TokenKind::PlusEquals => {
+                    self.advance();
+                    append = true;
+                }
+                TokenKind::Colon => {
+                    self.advance();
+                }
                 TokenKind::LBrace => { /* key { ... } shorthand — no advance */ }
                 TokenKind::Newline | TokenKind::Eof => {}
                 _ => {
@@ -141,7 +172,12 @@ impl<'a> Parser<'a> {
 
             self.skip(&[TokenKind::Newline]);
             let value = self.parse_value()?;
-            fields.push(AstField { key, value, append, pos: key_pos });
+            fields.push(AstField {
+                key,
+                value,
+                append,
+                pos: key_pos,
+            });
 
             // trailing separator
             self.skip(&[TokenKind::Newline]);
@@ -268,7 +304,10 @@ impl<'a> Parser<'a> {
 
         Ok(AstField {
             key: vec![],
-            value: AstNode::Include { path, pos: p.clone() },
+            value: AstNode::Include {
+                path,
+                pos: p.clone(),
+            },
             append: false,
             pos: p,
         })
@@ -281,8 +320,11 @@ impl<'a> Parser<'a> {
         loop {
             let kind = self.peek_kind();
             match kind {
-                TokenKind::Eof | TokenKind::Newline | TokenKind::RBrace
-                | TokenKind::RBracket | TokenKind::Comma => break,
+                TokenKind::Eof
+                | TokenKind::Newline
+                | TokenKind::RBrace
+                | TokenKind::RBracket
+                | TokenKind::Comma => break,
                 _ => {}
             }
 
@@ -302,7 +344,11 @@ impl<'a> Parser<'a> {
                 TokenKind::Substitution | TokenKind::OptionalSubstitution => {
                     let optional = kind == TokenKind::OptionalSubstitution;
                     let (_, path, line, col) = self.advance_get();
-                    AstNode::Substitution { path, optional, pos: Pos { line, col } }
+                    AstNode::Substitution {
+                        path,
+                        optional,
+                        pos: Pos { line, col },
+                    }
                 }
                 TokenKind::QuotedString | TokenKind::TripleQuotedString => {
                     let (_, val, line, col) = self.advance_get();
@@ -331,7 +377,10 @@ impl<'a> Parser<'a> {
             if had_space {
                 parts.push(AstNode::Scalar {
                     value: ScalarValue::String(" ".into()),
-                    pos: Pos { line: t_line, col: t_col },
+                    pos: Pos {
+                        line: t_line,
+                        col: t_col,
+                    },
                 });
             }
             parts.push(node);
@@ -351,7 +400,10 @@ impl<'a> Parser<'a> {
             return Ok(parts.into_iter().next().unwrap());
         }
 
-        Ok(AstNode::Concat { nodes: parts, pos: p })
+        Ok(AstNode::Concat {
+            nodes: parts,
+            pos: p,
+        })
     }
 
     fn parse_array(&mut self) -> Result<AstNode, ParseError> {
@@ -483,21 +535,49 @@ mod tests {
     fn parses_boolean_and_null() {
         let node = parse("a = true\nb = false\nc = null");
         let fs = fields(&node);
-        assert!(matches!(&fs[0].value, AstNode::Scalar { value: ScalarValue::Bool(true), .. }));
-        assert!(matches!(&fs[1].value, AstNode::Scalar { value: ScalarValue::Bool(false), .. }));
-        assert!(matches!(&fs[2].value, AstNode::Scalar { value: ScalarValue::Null, .. }));
+        assert!(matches!(
+            &fs[0].value,
+            AstNode::Scalar {
+                value: ScalarValue::Bool(true),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &fs[1].value,
+            AstNode::Scalar {
+                value: ScalarValue::Bool(false),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &fs[2].value,
+            AstNode::Scalar {
+                value: ScalarValue::Null,
+                ..
+            }
+        ));
     }
 
     #[test]
     fn parses_integer_scalars() {
         let node = parse("port = 8080");
-        assert!(matches!(&fields(&node)[0].value, AstNode::Scalar { value: ScalarValue::Int(8080), .. }));
+        assert!(matches!(
+            &fields(&node)[0].value,
+            AstNode::Scalar {
+                value: ScalarValue::Int(8080),
+                ..
+            }
+        ));
     }
 
     #[test]
     fn parses_float_scalars() {
         let node = parse("ratio = 1.5");
-        if let AstNode::Scalar { value: ScalarValue::Float(f), .. } = &fields(&node)[0].value {
+        if let AstNode::Scalar {
+            value: ScalarValue::Float(f),
+            ..
+        } = &fields(&node)[0].value
+        {
             assert!((f - 1.5).abs() < f64::EPSILON);
         } else {
             panic!("expected float");

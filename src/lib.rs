@@ -107,20 +107,20 @@
 //! For the full specification, see the
 //! [Lightbend HOCON spec](https://github.com/lightbend/config/blob/main/HOCON.md).
 
-pub mod error;
-pub mod value;
 pub mod config;
+pub mod error;
 pub(crate) mod lexer;
 pub(crate) mod parser;
-pub(crate) mod resolver;
 pub(crate) mod properties;
+pub(crate) mod resolver;
+pub mod value;
 
 #[cfg(feature = "serde")]
 pub mod serde;
 
-pub use error::{ParseError, ResolveError, ConfigError};
-pub use value::{HoconValue, ScalarValue};
 pub use config::Config;
+pub use error::{ConfigError, ParseError, ResolveError};
+pub use value::{HoconValue, ScalarValue};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -136,7 +136,10 @@ pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Config, ParseError> {
 }
 
 /// Parse a HOCON file with a custom environment variable map.
-pub fn parse_file_with_env<P: AsRef<Path>>(path: P, env: &HashMap<String, String>) -> Result<Config, ParseError> {
+pub fn parse_file_with_env<P: AsRef<Path>>(
+    path: P,
+    env: &HashMap<String, String>,
+) -> Result<Config, ParseError> {
     let path = path.as_ref();
     let content = std::fs::read_to_string(path).map_err(|e| ParseError {
         message: format!("failed to read file {}: {}", path.display(), e),

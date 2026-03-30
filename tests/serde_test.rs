@@ -25,13 +25,16 @@ fn deserialize_flat_struct() {
 
 #[test]
 fn deserialize_nested_struct() {
-    let config = parse(r#"
+    let config = parse(
+        r#"
         server {
             host = "localhost"
             port = 8080
         }
         debug = false
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let app: AppConfig = config.deserialize().unwrap();
     assert_eq!(app.server.host, "localhost");
     assert_eq!(app.server.port, 8080);
@@ -46,7 +49,9 @@ fn deserialize_with_defaults() {
         #[serde(default = "default_port")]
         port: i64,
     }
-    fn default_port() -> i64 { 3000 }
+    fn default_port() -> i64 {
+        3000
+    }
 
     let config = parse("host = \"localhost\"").unwrap();
     let val: WithDefault = config.deserialize().unwrap();

@@ -1,10 +1,10 @@
+use crate::error::ResolveError;
+use crate::parser::{AstField, AstNode};
+use crate::value::{HoconValue, ScalarValue};
+use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use indexmap::IndexMap;
-use crate::error::ResolveError;
-use crate::parser::{AstNode, AstField};
-use crate::value::{HoconValue, ScalarValue};
 
 pub struct ResolveOptions {
     pub env: HashMap<String, String>,
@@ -102,10 +102,17 @@ fn build_res_obj(ast: AstNode, opts: &ResolveOptions) -> Result<ResObj, ResolveE
     }
 }
 
-fn apply_field(obj: &mut ResObj, field: AstField, opts: &ResolveOptions) -> Result<(), ResolveError> {
+fn apply_field(
+    obj: &mut ResObj,
+    field: AstField,
+    opts: &ResolveOptions,
+) -> Result<(), ResolveError> {
     // Include directive
     if field.key.is_empty() {
-        if let AstNode::Include { path: include_path, .. } = &field.value {
+        if let AstNode::Include {
+            path: include_path, ..
+        } = &field.value
+        {
             let included = load_include(include_path, opts)?;
             deep_merge_res_obj_into(obj, included);
         }
@@ -126,24 +133,33 @@ fn apply_field(obj: &mut ResObj, field: AstField, opts: &ResolveOptions) -> Resu
             }],
             pos: field.pos.clone(),
         };
-        return apply_field(obj, AstField {
-            key: vec![head],
-            value: synthetic,
-            append: false,
-            pos: field.pos,
-        }, opts);
+        return apply_field(
+            obj,
+            AstField {
+                key: vec![head],
+                value: synthetic,
+                append: false,
+                pos: field.pos,
+            },
+            opts,
+        );
     }
 
     if field.append {
-        let existing = obj.fields.get(&head).cloned().unwrap_or_else(|| {
-            ResolverValue::Resolved(HoconValue::Array(vec![]))
-        });
+        let existing = obj
+            .fields
+            .get(&head)
+            .cloned()
+            .unwrap_or_else(|| ResolverValue::Resolved(HoconValue::Array(vec![])));
         obj.prior_values.insert(head.clone(), existing.clone());
         let elem = ast_to_resolver_value(field.value, opts)?;
-        obj.fields.insert(head, ResolverValue::Append(AppendPlaceholder {
-            existing: Box::new(existing),
-            elem: Box::new(elem),
-        }));
+        obj.fields.insert(
+            head,
+            ResolverValue::Append(AppendPlaceholder {
+                existing: Box::new(existing),
+                elem: Box::new(elem),
+            }),
+        );
         return Ok(());
     }
 
@@ -167,7 +183,10 @@ fn apply_field(obj: &mut ResObj, field: AstField, opts: &ResolveOptions) -> Resu
     Ok(())
 }
 
-fn ast_to_resolver_value(ast: AstNode, opts: &ResolveOptions) -> Result<ResolverValue, ResolveError> {
+fn ast_to_resolver_value(
+    ast: AstNode,
+    opts: &ResolveOptions,
+) -> Result<ResolverValue, ResolveError> {
     match ast {
         AstNode::Scalar { value, .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(value))),
         AstNode::Array { items, .. } => {
@@ -175,7 +194,9 @@ fn ast_to_resolver_value(ast: AstNode, opts: &ResolveOptions) -> Result<Resolver
                 .into_iter()
                 .map(|item| ast_to_resolver_value(item, opts))
                 .collect::<Result<_, _>>()?;
-            let all_resolved = rv_items.iter().all(|v| matches!(v, ResolverValue::Resolved(_)));
+            let all_resolved = rv_items
+                .iter()
+                .all(|v| matches!(v, ResolverValue::Resolved(_)));
             if all_resolved {
                 let hv_items: Vec<HoconValue> = rv_items
                     .into_iter()
@@ -193,14 +214,16 @@ fn ast_to_resolver_value(ast: AstNode, opts: &ResolveOptions) -> Result<Resolver
             let inner = build_res_obj(ast, opts)?;
             Ok(ResolverValue::Obj(inner))
         }
-        AstNode::Substitution { path, optional, pos } => {
-            Ok(ResolverValue::Subst(SubstPlaceholder {
-                path,
-                optional,
-                line: pos.line,
-                col: pos.col,
-            }))
-        }
+        AstNode::Substitution {
+            path,
+            optional,
+            pos,
+        } => Ok(ResolverValue::Subst(SubstPlaceholder {
+            path,
+            optional,
+            line: pos.line,
+            col: pos.col,
+        })),
         AstNode::Concat { nodes, .. } => {
             let rv_nodes: Vec<ResolverValue> = nodes
                 .into_iter()
@@ -208,9 +231,9 @@ fn ast_to_resolver_value(ast: AstNode, opts: &ResolveOptions) -> Result<Resolver
                 .collect::<Result<_, _>>()?;
             Ok(ResolverValue::Concat(ConcatPlaceholder { nodes: rv_nodes }))
         }
-        AstNode::Include { .. } => {
-            Ok(ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::Null)))
-        }
+        AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
+            ScalarValue::Null,
+        ))),
     }
 }
 
@@ -262,7 +285,10 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
     }
 }
 
-fn load_single_include(candidate: &std::path::Path, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
+fn load_single_include(
+    candidate: &std::path::Path,
+    opts: &ResolveOptions,
+) -> Result<ResObj, ResolveError> {
     // Circular include detection
     if opts.include_stack.contains(&candidate.to_path_buf()) {
         return Err(ResolveError {
@@ -320,7 +346,8 @@ fn load_single_include(candidate: &std::path::Path, opts: &ResolveOptions) -> Re
 fn resolved_obj_to_res_obj(fields: &IndexMap<String, HoconValue>) -> ResObj {
     let mut obj = ResObj::new();
     for (k, v) in fields {
-        obj.fields.insert(k.clone(), ResolverValue::Resolved(v.clone()));
+        obj.fields
+            .insert(k.clone(), ResolverValue::Resolved(v.clone()));
     }
     obj
 }
@@ -330,7 +357,9 @@ fn resolved_obj_to_res_obj(fields: &IndexMap<String, HoconValue>) -> ResObj {
 fn as_res_obj(val: &ResolverValue) -> Option<ResObj> {
     match val {
         ResolverValue::Obj(o) => Some(o.clone()),
-        ResolverValue::Resolved(HoconValue::Object(fields)) => Some(resolved_obj_to_res_obj(fields)),
+        ResolverValue::Resolved(HoconValue::Object(fields)) => {
+            Some(resolved_obj_to_res_obj(fields))
+        }
         _ => None,
     }
 }
@@ -365,11 +394,15 @@ fn resolve_res_obj(
     let mut result = IndexMap::new();
     for (key, val) in &obj.fields {
         match resolve_val(val, obj, root, resolving, cache, env)? {
-            Some(resolved) => { result.insert(key.clone(), resolved); }
+            Some(resolved) => {
+                result.insert(key.clone(), resolved);
+            }
             None => {
                 // Unresolved optional: fall back to prior value
                 if let Some(prior) = obj.prior_values.get(key) {
-                    if let Some(prior_resolved) = resolve_val(prior, obj, root, resolving, cache, env)? {
+                    if let Some(prior_resolved) =
+                        resolve_val(prior, obj, root, resolving, cache, env)?
+                    {
                         result.insert(key.clone(), prior_resolved);
                     }
                 }
@@ -389,7 +422,9 @@ fn resolve_val(
 ) -> Result<Option<HoconValue>, ResolveError> {
     match v {
         ResolverValue::Subst(s) => resolve_subst(s, scope, root, resolving, cache, env),
-        ResolverValue::Concat(c) => resolve_concat(&c.nodes, scope, root, resolving, cache, env).map(Some),
+        ResolverValue::Concat(c) => {
+            resolve_concat(&c.nodes, scope, root, resolving, cache, env).map(Some)
+        }
         ResolverValue::Append(a) => resolve_append(a, scope, root, resolving, cache, env).map(Some),
         ResolverValue::Obj(o) => resolve_res_obj(o, root, resolving, cache, env).map(Some),
         ResolverValue::UnresolvedArray(items) => {
@@ -421,7 +456,9 @@ fn resolve_subst(
         // Cycle detected: try prior value for self-referential substitutions
         let segments = parse_subst_path(&s.path);
         let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
-        let prior = scope.prior_values.get(root_seg)
+        let prior = scope
+            .prior_values
+            .get(root_seg)
             .or_else(|| root.prior_values.get(root_seg));
         if let Some(prior) = prior {
             let mut fresh_resolving = resolving.clone();
@@ -448,7 +485,9 @@ fn resolve_subst(
             // If found value is a subst/concat pointing at itself, use prior value
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
                 let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
-                let prior = scope.prior_values.get(root_seg)
+                let prior = scope
+                    .prior_values
+                    .get(root_seg)
                     .or_else(|| root.prior_values.get(root_seg));
                 if let Some(prior) = prior {
                     let result = resolve_val(prior, scope, root, resolving, cache, env)?;
@@ -668,13 +707,19 @@ mod tests {
     #[test]
     fn resolves_simple_string() {
         let v = resolve_str("host = \"localhost\"");
-        assert_eq!(obj(&v).get("host"), Some(&HoconValue::Scalar(ScalarValue::String("localhost".into()))));
+        assert_eq!(
+            obj(&v).get("host"),
+            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+        );
     }
 
     #[test]
     fn resolves_number() {
         let v = resolve_str("port = 8080");
-        assert_eq!(obj(&v).get("port"), Some(&HoconValue::Scalar(ScalarValue::Int(8080))));
+        assert_eq!(
+            obj(&v).get("port"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(8080)))
+        );
     }
 
     #[test]
@@ -697,7 +742,10 @@ mod tests {
     #[test]
     fn last_value_wins_for_scalars() {
         let v = resolve_str("x = 1\nx = 2");
-        assert_eq!(obj(&v).get("x"), Some(&HoconValue::Scalar(ScalarValue::Int(2))));
+        assert_eq!(
+            obj(&v).get("x"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(2)))
+        );
     }
 
     #[test]
@@ -740,19 +788,28 @@ mod tests {
     #[test]
     fn resolves_substitution() {
         let v = resolve_str("host = \"localhost\"\nurl = ${host}");
-        assert_eq!(obj(&v).get("url"), Some(&HoconValue::Scalar(ScalarValue::String("localhost".into()))));
+        assert_eq!(
+            obj(&v).get("url"),
+            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+        );
     }
 
     #[test]
     fn resolves_nested_path_substitution() {
         let v = resolve_str("server { host = \"x\" }\nhost = ${server.host}");
-        assert_eq!(obj(&v).get("host"), Some(&HoconValue::Scalar(ScalarValue::String("x".into()))));
+        assert_eq!(
+            obj(&v).get("host"),
+            Some(&HoconValue::Scalar(ScalarValue::String("x".into())))
+        );
     }
 
     #[test]
     fn resolves_optional_substitution_exists() {
         let v = resolve_str("a = 1\nb = ${?a}");
-        assert_eq!(obj(&v).get("b"), Some(&HoconValue::Scalar(ScalarValue::Int(1))));
+        assert_eq!(
+            obj(&v).get("b"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(1)))
+        );
     }
 
     #[test]
@@ -764,7 +821,10 @@ mod tests {
     #[test]
     fn falls_back_to_prior_value() {
         let v = resolve_str("port = 50051\nport = ${?GRPC_PORT}");
-        assert_eq!(obj(&v).get("port"), Some(&HoconValue::Scalar(ScalarValue::Int(50051))));
+        assert_eq!(
+            obj(&v).get("port"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(50051)))
+        );
     }
 
     #[test]
@@ -772,7 +832,10 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("GRPC_PORT".into(), "9090".into());
         let v = resolve_str_with_env("port = 50051\nport = ${?GRPC_PORT}", &env);
-        assert_eq!(obj(&v).get("port"), Some(&HoconValue::Scalar(ScalarValue::String("9090".into()))));
+        assert_eq!(
+            obj(&v).get("port"),
+            Some(&HoconValue::Scalar(ScalarValue::String("9090".into())))
+        );
     }
 
     #[test]
@@ -787,7 +850,10 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("MY_VAR".into(), "hello".into());
         let v = resolve_str_with_env("b = ${MY_VAR}", &env);
-        assert_eq!(obj(&v).get("b"), Some(&HoconValue::Scalar(ScalarValue::String("hello".into()))));
+        assert_eq!(
+            obj(&v).get("b"),
+            Some(&HoconValue::Scalar(ScalarValue::String("hello".into())))
+        );
     }
 
     #[test]
@@ -803,7 +869,12 @@ mod tests {
     #[test]
     fn resolves_string_concat_with_substitution() {
         let v = resolve_str("host = \"localhost\"\nurl = \"http://\"${host}");
-        assert_eq!(obj(&v).get("url"), Some(&HoconValue::Scalar(ScalarValue::String("http://localhost".into()))));
+        assert_eq!(
+            obj(&v).get("url"),
+            Some(&HoconValue::Scalar(ScalarValue::String(
+                "http://localhost".into()
+            )))
+        );
     }
 
     #[test]
@@ -816,6 +887,9 @@ mod tests {
     #[test]
     fn resolves_forward_reference() {
         let v = resolve_str("url = ${host}\nhost = \"localhost\"");
-        assert_eq!(obj(&v).get("url"), Some(&HoconValue::Scalar(ScalarValue::String("localhost".into()))));
+        assert_eq!(
+            obj(&v).get("url"),
+            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+        );
     }
 }

@@ -9,7 +9,11 @@ pub struct ParseError {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ParseError at {}:{}: {}", self.line, self.col, self.message)
+        write!(
+            f,
+            "ParseError at {}:{}: {}",
+            self.line, self.col, self.message
+        )
     }
 }
 
@@ -25,7 +29,11 @@ pub struct ResolveError {
 
 impl fmt::Display for ResolveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ResolveError at {}:{}: {} (path: {})", self.line, self.col, self.message, self.path)
+        write!(
+            f,
+            "ResolveError at {}:{}: {} (path: {})",
+            self.line, self.col, self.message, self.path
+        )
     }
 }
 

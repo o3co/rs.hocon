@@ -2,11 +2,20 @@ use crate::error::ParseError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
-    LBrace, RBrace, LBracket, RBracket,
-    Comma, Colon, Equals, PlusEquals,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Comma,
+    Colon,
+    Equals,
+    PlusEquals,
     Newline,
-    QuotedString, TripleQuotedString, Unquoted,
-    Substitution, OptionalSubstitution,
+    QuotedString,
+    TripleQuotedString,
+    Unquoted,
+    Substitution,
+    OptionalSubstitution,
     Eof,
 }
 
@@ -34,9 +43,8 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         pos = 1;
     }
 
-    let peek = |pos: usize, offset: usize| -> char {
-        chars.get(pos + offset).copied().unwrap_or('\0')
-    };
+    let peek =
+        |pos: usize, offset: usize| -> char { chars.get(pos + offset).copied().unwrap_or('\0') };
 
     while pos < chars.len() {
         let sl = line;
@@ -56,10 +64,17 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             pos += 1;
             line += 1;
             col = 1;
-            if tokens.last().is_none_or(|t: &Token| t.kind != TokenKind::Newline) {
+            if tokens
+                .last()
+                .is_none_or(|t: &Token| t.kind != TokenKind::Newline)
+            {
                 tokens.push(Token {
-                    kind: TokenKind::Newline, value: "\n".into(),
-                    line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                    kind: TokenKind::Newline,
+                    value: "\n".into(),
+                    line: sl,
+                    col: sc,
+                    is_quoted: false,
+                    preceding_space: had_space,
                 });
                 had_space = false;
             }
@@ -98,8 +113,12 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             pos += 1;
             col += 1;
             tokens.push(Token {
-                kind, value: ch.to_string(),
-                line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                kind,
+                value: ch.to_string(),
+                line: sl,
+                col: sc,
+                is_quoted: false,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -107,19 +126,29 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         // = and +=
         if ch == '=' {
-            pos += 1; col += 1;
+            pos += 1;
+            col += 1;
             tokens.push(Token {
-                kind: TokenKind::Equals, value: "=".into(),
-                line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                kind: TokenKind::Equals,
+                value: "=".into(),
+                line: sl,
+                col: sc,
+                is_quoted: false,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
         }
         if ch == '+' && peek(pos, 1) == '=' {
-            pos += 2; col += 2;
+            pos += 2;
+            col += 2;
             tokens.push(Token {
-                kind: TokenKind::PlusEquals, value: "+=".into(),
-                line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                kind: TokenKind::PlusEquals,
+                value: "+=".into(),
+                line: sl,
+                col: sc,
+                is_quoted: false,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -127,25 +156,47 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         // Substitution ${...} or ${?...}
         if ch == '$' && peek(pos, 1) == '{' {
-            pos += 2; col += 2;
+            pos += 2;
+            col += 2;
             let optional = peek(pos, 0) == '?';
-            if optional { pos += 1; col += 1; }
+            if optional {
+                pos += 1;
+                col += 1;
+            }
             let mut path = String::new();
             while pos < chars.len() && chars[pos] != '}' {
                 if chars[pos] == '\n' {
-                    return Err(ParseError { message: "unterminated substitution".into(), line: sl, col: sc });
+                    return Err(ParseError {
+                        message: "unterminated substitution".into(),
+                        line: sl,
+                        col: sc,
+                    });
                 }
                 path.push(chars[pos]);
-                pos += 1; col += 1;
+                pos += 1;
+                col += 1;
             }
             if pos >= chars.len() || chars[pos] != '}' {
-                return Err(ParseError { message: "unterminated substitution".into(), line: sl, col: sc });
+                return Err(ParseError {
+                    message: "unterminated substitution".into(),
+                    line: sl,
+                    col: sc,
+                });
             }
-            pos += 1; col += 1;
-            let kind = if optional { TokenKind::OptionalSubstitution } else { TokenKind::Substitution };
+            pos += 1;
+            col += 1;
+            let kind = if optional {
+                TokenKind::OptionalSubstitution
+            } else {
+                TokenKind::Substitution
+            };
             tokens.push(Token {
-                kind, value: path.trim().to_string(),
-                line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                kind,
+                value: path.trim().to_string(),
+                line: sl,
+                col: sc,
+                is_quoted: false,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -153,31 +204,50 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         // Triple-quoted string
         if ch == '"' && peek(pos, 1) == '"' && peek(pos, 2) == '"' {
-            pos += 3; col += 3;
+            pos += 3;
+            col += 3;
             let mut value = String::new();
             loop {
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 if chars[pos] == '"' {
                     let mut quote_count = 0;
                     while pos < chars.len() && chars[pos] == '"' {
                         quote_count += 1;
-                        pos += 1; col += 1;
+                        pos += 1;
+                        col += 1;
                     }
                     if quote_count >= 3 {
-                        for _ in 0..(quote_count - 3) { value.push('"'); }
+                        for _ in 0..(quote_count - 3) {
+                            value.push('"');
+                        }
                         break;
                     }
-                    for _ in 0..quote_count { value.push('"'); }
+                    for _ in 0..quote_count {
+                        value.push('"');
+                    }
                     continue;
                 }
-                if chars[pos] == '\n' { line += 1; col = 1; } else { col += 1; }
+                if chars[pos] == '\n' {
+                    line += 1;
+                    col = 1;
+                } else {
+                    col += 1;
+                }
                 value.push(chars[pos]);
                 pos += 1;
             }
-            if value.starts_with('\n') { value = value[1..].to_string(); }
+            if value.starts_with('\n') {
+                value = value[1..].to_string();
+            }
             tokens.push(Token {
-                kind: TokenKind::TripleQuotedString, value,
-                line: sl, col: sc, is_quoted: true, preceding_space: had_space,
+                kind: TokenKind::TripleQuotedString,
+                value,
+                line: sl,
+                col: sc,
+                is_quoted: true,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -185,19 +255,30 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         // Quoted string
         if ch == '"' {
-            pos += 1; col += 1;
+            pos += 1;
+            col += 1;
             let mut value = String::new();
             while pos < chars.len() && chars[pos] != '"' {
                 if chars[pos] == '\n' {
-                    return Err(ParseError { message: "unterminated string".into(), line: sl, col: sc });
+                    return Err(ParseError {
+                        message: "unterminated string".into(),
+                        line: sl,
+                        col: sc,
+                    });
                 }
                 if chars[pos] == '\\' {
-                    pos += 1; col += 1;
+                    pos += 1;
+                    col += 1;
                     if pos >= chars.len() {
-                        return Err(ParseError { message: "unterminated string".into(), line: sl, col: sc });
+                        return Err(ParseError {
+                            message: "unterminated string".into(),
+                            line: sl,
+                            col: sc,
+                        });
                     }
                     let esc = chars[pos];
-                    pos += 1; col += 1;
+                    pos += 1;
+                    col += 1;
                     match esc {
                         'n' => value.push('\n'),
                         't' => value.push('\t'),
@@ -210,30 +291,47 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                         'u' => {
                             let hex: String = chars[pos..].iter().take(4).collect();
                             if hex.len() < 4 {
-                                return Err(ParseError { message: "invalid unicode escape".into(), line: sl, col: sc });
+                                return Err(ParseError {
+                                    message: "invalid unicode escape".into(),
+                                    line: sl,
+                                    col: sc,
+                                });
                             }
                             let code = u32::from_str_radix(&hex, 16).map_err(|_| ParseError {
-                                message: "invalid unicode escape".into(), line: sl, col: sc,
+                                message: "invalid unicode escape".into(),
+                                line: sl,
+                                col: sc,
                             })?;
                             if let Some(c) = char::from_u32(code) {
                                 value.push(c);
                             }
-                            pos += 4; col += 4;
+                            pos += 4;
+                            col += 4;
                         }
                         _ => value.push(esc),
                     }
                 } else {
                     value.push(chars[pos]);
-                    pos += 1; col += 1;
+                    pos += 1;
+                    col += 1;
                 }
             }
             if pos >= chars.len() || chars[pos] != '"' {
-                return Err(ParseError { message: "unterminated string".into(), line: sl, col: sc });
+                return Err(ParseError {
+                    message: "unterminated string".into(),
+                    line: sl,
+                    col: sc,
+                });
             }
-            pos += 1; col += 1;
+            pos += 1;
+            col += 1;
             tokens.push(Token {
-                kind: TokenKind::QuotedString, value,
-                line: sl, col: sc, is_quoted: true, preceding_space: had_space,
+                kind: TokenKind::QuotedString,
+                value,
+                line: sl,
+                col: sc,
+                is_quoted: true,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -244,12 +342,17 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             let mut value = String::new();
             while pos < chars.len() && is_unquoted_continue(chars[pos], || peek(pos, 1)) {
                 value.push(chars[pos]);
-                pos += 1; col += 1;
+                pos += 1;
+                col += 1;
             }
             let trimmed = value.trim_end().to_string();
             tokens.push(Token {
-                kind: TokenKind::Unquoted, value: trimmed,
-                line: sl, col: sc, is_quoted: false, preceding_space: had_space,
+                kind: TokenKind::Unquoted,
+                value: trimmed,
+                line: sl,
+                col: sc,
+                is_quoted: false,
+                preceding_space: had_space,
             });
             had_space = false;
             continue;
@@ -257,27 +360,42 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         return Err(ParseError {
             message: format!("unexpected character: {:?}", ch),
-            line: sl, col: sc,
+            line: sl,
+            col: sc,
         });
     }
 
     tokens.push(Token {
-        kind: TokenKind::Eof, value: String::new(),
-        line, col, is_quoted: false, preceding_space: false,
+        kind: TokenKind::Eof,
+        value: String::new(),
+        line,
+        col,
+        is_quoted: false,
+        preceding_space: false,
     });
     Ok(tokens)
 }
 
 fn is_unquoted_start(ch: char) -> bool {
-    !matches!(ch, '{' | '}' | '[' | ']' | ',' | ':' | '=' | '+' | '#' | '\n' | '\r' | '\t' | ' ' | '"' | '$')
+    !matches!(
+        ch,
+        '{' | '}' | '[' | ']' | ',' | ':' | '=' | '+' | '#' | '\n' | '\r' | '\t' | ' ' | '"' | '$'
+    )
 }
 
 fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
-    if matches!(ch, '{' | '}' | '[' | ']' | ',' | ':' | '=' | '\n' | '\r' | '\t' | '#' | '"' | '$' | ' ') {
+    if matches!(
+        ch,
+        '{' | '}' | '[' | ']' | ',' | ':' | '=' | '\n' | '\r' | '\t' | '#' | '"' | '$' | ' '
+    ) {
         return false;
     }
-    if ch == '+' && next_fn() == '=' { return false; }
-    if ch == '/' && next_fn() == '/' { return false; }
+    if ch == '+' && next_fn() == '=' {
+        return false;
+    }
+    if ch == '/' && next_fn() == '/' {
+        return false;
+    }
     true
 }
 
@@ -286,7 +404,11 @@ mod tests {
     use super::*;
 
     fn kinds(input: &str) -> Vec<TokenKind> {
-        tokenize(input).unwrap().iter().map(|t| t.kind.clone()).collect()
+        tokenize(input)
+            .unwrap()
+            .iter()
+            .map(|t| t.kind.clone())
+            .collect()
     }
 
     fn first(input: &str) -> Token {
@@ -304,7 +426,13 @@ mod tests {
     fn tokenizes_braces_and_brackets() {
         assert_eq!(
             kinds("{}[]"),
-            vec![TokenKind::LBrace, TokenKind::RBrace, TokenKind::LBracket, TokenKind::RBracket, TokenKind::Eof]
+            vec![
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::LBracket,
+                TokenKind::RBracket,
+                TokenKind::Eof
+            ]
         );
     }
 
@@ -317,7 +445,10 @@ mod tests {
 
     #[test]
     fn tokenizes_colon_and_comma() {
-        assert_eq!(kinds(":,"), vec![TokenKind::Colon, TokenKind::Comma, TokenKind::Eof]);
+        assert_eq!(
+            kinds(":,"),
+            vec![TokenKind::Colon, TokenKind::Comma, TokenKind::Eof]
+        );
     }
 
     #[test]
@@ -407,7 +538,10 @@ mod tests {
     #[test]
     fn deduplicates_consecutive_newlines() {
         let tokens = tokenize("a\n\n\nb").unwrap();
-        let newlines: Vec<_> = tokens.iter().filter(|t| t.kind == TokenKind::Newline).collect();
+        let newlines: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Newline)
+            .collect();
         assert_eq!(newlines.len(), 1);
     }
 
