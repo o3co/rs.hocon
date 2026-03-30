@@ -225,8 +225,9 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
     // Build candidate list: exact path, then .conf and .json extensions
     let mut candidates = vec![abs_path.clone()];
     if abs_path.extension().is_none() {
-        candidates.push(abs_path.with_extension("conf"));
+        candidates.push(abs_path.with_extension("properties"));
         candidates.push(abs_path.with_extension("json"));
+        candidates.push(abs_path.with_extension("conf"));
     }
 
     for candidate in &candidates {
@@ -244,6 +245,19 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
             Ok(c) => c,
             Err(_) => continue,
         };
+
+        // Handle .properties files specially
+        if candidate.extension().and_then(|e| e.to_str()) == Some("properties") {
+            let hv = crate::properties::properties_to_hocon(&content);
+            if let HoconValue::Object(fields) = hv {
+                let mut obj = ResObj::new();
+                for (k, v) in fields {
+                    obj.fields.insert(k, ResolverValue::Resolved(v));
+                }
+                return Ok(obj);
+            }
+            return Ok(ResObj::new());
+        }
 
         let tokens = crate::lexer::tokenize(&content).map_err(|e| ResolveError {
             message: e.message,

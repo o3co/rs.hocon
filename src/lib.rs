@@ -4,6 +4,7 @@ pub mod config;
 pub(crate) mod lexer;
 pub(crate) mod parser;
 pub(crate) mod resolver;
+pub(crate) mod properties;
 
 #[cfg(feature = "serde")]
 pub mod serde;
