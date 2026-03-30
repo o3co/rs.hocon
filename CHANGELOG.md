@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-03-30
+
+### Fixed
+
+- Set MSRV to 1.82 (required by indexmap 2)
+- Apply `cargo fmt` formatting
+- Fix Windows line ending issue in Lightbend test suite
+- Add CI workflows for test (multi-OS, MSRV) and lint (clippy, fmt)
+- Rename crate to `o3co-hocon` (lib name remains `hocon`)
+
 ## [0.1.0] - 2026-03-30
 
 ### Added
@@ -25,4 +35,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
+[0.1.1]: https://github.com/o3co/rs.hocon/releases/tag/v0.1.1
 [0.1.0]: https://github.com/o3co/rs.hocon/releases/tag/v0.1.0
