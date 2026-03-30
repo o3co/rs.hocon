@@ -222,78 +222,130 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
 
     let abs_path = base.join(include_path);
 
-    // Build candidate list: exact path, then .conf and .json extensions
-    let mut candidates = vec![abs_path.clone()];
-    if abs_path.extension().is_none() {
-        candidates.push(abs_path.with_extension("properties"));
-        candidates.push(abs_path.with_extension("json"));
-        candidates.push(abs_path.with_extension("conf"));
-    }
+    let has_extension = abs_path.extension().is_some();
 
-    for candidate in &candidates {
-        // Circular include detection
-        if opts.include_stack.contains(candidate) {
-            return Err(ResolveError {
-                message: format!("circular include: {}", candidate.display()),
-                path: candidate.display().to_string(),
-                line: 0,
-                col: 0,
-            });
-        }
-
-        let content = match fs::read_to_string(candidate) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        // Handle .properties files specially
-        if candidate.extension().and_then(|e| e.to_str()) == Some("properties") {
-            let hv = crate::properties::properties_to_hocon(&content);
-            if let HoconValue::Object(fields) = hv {
-                let mut obj = ResObj::new();
-                for (k, v) in fields {
-                    obj.fields.insert(k, ResolverValue::Resolved(v));
-                }
-                return Ok(obj);
+    if has_extension {
+        // Exact path: try only this candidate, silently ignore if file not found
+        return match load_single_include(&abs_path, opts) {
+            Ok(obj) => Ok(obj),
+            Err(e) if !abs_path.exists() => {
+                // Missing includes silently ignored per HOCON spec
+                let _ = e;
+                Ok(ResObj::new())
             }
-            return Ok(ResObj::new());
-        }
-
-        let tokens = crate::lexer::tokenize(&content).map_err(|e| ResolveError {
-            message: e.message,
-            path: candidate.display().to_string(),
-            line: e.line,
-            col: e.col,
-        })?;
-        let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
-            message: e.message,
-            path: candidate.display().to_string(),
-            line: e.line,
-            col: e.col,
-        })?;
-
-        let mut child_opts = ResolveOptions::new(opts.env.clone());
-        if let Some(parent) = candidate.parent() {
-            child_opts = child_opts.with_base_dir(parent.to_path_buf());
-        }
-        child_opts.include_stack = opts.include_stack.clone();
-        child_opts.include_stack.push(candidate.clone());
-
-        return build_res_obj(ast, &child_opts);
+            Err(e) => Err(e),
+        };
     }
 
-    // Missing includes silently ignored per HOCON spec
-    Ok(ResObj::new())
+    // No extension: per HOCON spec, try .conf, .json, .properties and merge all that exist
+    let extensions = ["conf", "json", "properties"];
+    let mut merged = ResObj::new();
+    let mut found_any = false;
+    for ext in &extensions {
+        let candidate = abs_path.with_extension(ext);
+        match load_single_include(&candidate, opts) {
+            Ok(obj) => {
+                found_any = true;
+                deep_merge_res_obj_into(&mut merged, obj);
+            }
+            Err(_) => {
+                // File doesn't exist or can't be read — skip
+            }
+        }
+    }
+
+    if found_any {
+        Ok(merged)
+    } else {
+        // Missing includes silently ignored per HOCON spec
+        Ok(ResObj::new())
+    }
+}
+
+fn load_single_include(candidate: &std::path::Path, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
+    // Circular include detection
+    if opts.include_stack.contains(&candidate.to_path_buf()) {
+        return Err(ResolveError {
+            message: format!("circular include: {}", candidate.display()),
+            path: candidate.display().to_string(),
+            line: 0,
+            col: 0,
+        });
+    }
+
+    let content = fs::read_to_string(candidate).map_err(|e| ResolveError {
+        message: format!("failed to read {}: {}", candidate.display(), e),
+        path: candidate.display().to_string(),
+        line: 0,
+        col: 0,
+    })?;
+
+    // Handle .properties files specially
+    if candidate.extension().and_then(|e| e.to_str()) == Some("properties") {
+        let hv = crate::properties::properties_to_hocon(&content);
+        if let HoconValue::Object(fields) = hv {
+            let mut obj = ResObj::new();
+            for (k, v) in fields {
+                obj.fields.insert(k, ResolverValue::Resolved(v));
+            }
+            return Ok(obj);
+        }
+        return Ok(ResObj::new());
+    }
+
+    let tokens = crate::lexer::tokenize(&content).map_err(|e| ResolveError {
+        message: e.message,
+        path: candidate.display().to_string(),
+        line: e.line,
+        col: e.col,
+    })?;
+    let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
+        message: e.message,
+        path: candidate.display().to_string(),
+        line: e.line,
+        col: e.col,
+    })?;
+
+    let mut child_opts = ResolveOptions::new(opts.env.clone());
+    if let Some(parent) = candidate.parent() {
+        child_opts = child_opts.with_base_dir(parent.to_path_buf());
+    }
+    child_opts.include_stack = opts.include_stack.clone();
+    child_opts.include_stack.push(candidate.to_path_buf());
+
+    build_res_obj(ast, &child_opts)
+}
+
+/// Convert a Resolved(Object) into a ResObj so we can deep-merge it.
+fn resolved_obj_to_res_obj(fields: &IndexMap<String, HoconValue>) -> ResObj {
+    let mut obj = ResObj::new();
+    for (k, v) in fields {
+        obj.fields.insert(k.clone(), ResolverValue::Resolved(v.clone()));
+    }
+    obj
+}
+
+/// Extract the inner ResObj if the value is an object-like ResolverValue.
+/// Returns Some(ResObj) for Obj or Resolved(Object), None otherwise.
+fn as_res_obj(val: &ResolverValue) -> Option<ResObj> {
+    match val {
+        ResolverValue::Obj(o) => Some(o.clone()),
+        ResolverValue::Resolved(HoconValue::Object(fields)) => Some(resolved_obj_to_res_obj(fields)),
+        _ => None,
+    }
 }
 
 fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
     for (k, src_val) in src.fields {
-        if let Some(ResolverValue::Obj(dst_obj)) = dst.fields.get_mut(&k) {
-            if let ResolverValue::Obj(src_obj) = src_val {
-                deep_merge_res_obj_into(dst_obj, src_obj);
-                continue;
-            }
+        let dst_is_obj = dst.fields.get(&k).and_then(as_res_obj);
+        let src_obj = as_res_obj(&src_val);
+
+        if let (Some(mut dst_obj), Some(src_obj)) = (dst_is_obj, src_obj) {
+            deep_merge_res_obj_into(&mut dst_obj, src_obj);
+            dst.fields.insert(k, ResolverValue::Obj(dst_obj));
+            continue;
         }
+
         if let Some(old) = dst.fields.get(&k) {
             dst.prior_values.insert(k.clone(), old.clone());
         }

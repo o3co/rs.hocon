@@ -10,7 +10,7 @@ pub fn parse_properties(input: &str) -> IndexMap<String, String> {
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('!') {
             continue;
         }
-        let sep_pos = trimmed.find(|c: char| c == '=' || c == ':');
+        let sep_pos = trimmed.find(['=', ':']);
         if let Some(pos) = sep_pos {
             let key = trimmed[..pos].trim().to_string();
             let value = trimmed[pos + 1..].trim().to_string();
