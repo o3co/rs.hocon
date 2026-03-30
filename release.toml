@@ -1,0 +1,9 @@
+# cargo-release configuration
+# Release flow: cargo release patch|minor|major
+# This bumps Cargo.toml, commits, tags (v*), and pushes.
+# CI handles `cargo publish` on tag push.
+
+publish = false
+push-remote = "origin"
+tag-prefix = "v"
+allow-branch = ["master", "develop"]

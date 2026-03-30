@@ -66,6 +66,29 @@ All pull requests must pass `cargo test` and `cargo test --features serde`.
 4. Open a PR against `develop` with a clear description of what changed and why.
 5. Link any related issues.
 
+## Releasing
+
+Releases are published to crates.io automatically by CI when a `v*` tag is pushed.
+Use [cargo-release](https://github.com/crate-ci/cargo-release) to do everything in one command:
+
+```sh
+# Install once
+cargo install cargo-release
+
+# Release a patch (0.1.3 → 0.1.4), minor, or major bump
+cargo release patch   # or: cargo release minor / cargo release major
+```
+
+This will:
+
+1. Bump the version in `Cargo.toml`
+2. Create a commit (`chore: release v0.1.4`)
+3. Tag it (`v0.1.4`)
+4. Push the commit and tag to origin
+5. CI picks up the tag and runs `cargo publish`
+
+> **Do not** run `cargo publish` locally — CI handles it and verifies the tag matches `Cargo.toml`.
+
 ## License Agreement
 
 By contributing, you agree that your contributions will be licensed under the
