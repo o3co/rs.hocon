@@ -9,7 +9,7 @@ jobs:
   test:
     strategy:
       matrix:
-        rust: [stable, "1.70"]
+        rust: [stable, "1.82"]
         os: [ubuntu-latest]
         include:
           - rust: stable

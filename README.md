@@ -205,7 +205,7 @@ and all other spec-defined behaviors.
 
 ## Minimum Supported Rust Version
 
-The MSRV is **1.70**.
+The MSRV is **1.82**.
 
 ## Related Projects
 
