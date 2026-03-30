@@ -1,0 +1,14 @@
+/target
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code (local-only settings)
+.claude/settings.local.json
+
+# Superpowers (development process artifacts)
+docs/superpowers/
