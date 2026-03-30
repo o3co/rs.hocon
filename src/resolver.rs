@@ -1,8 +1,30 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use indexmap::IndexMap;
 use crate::error::ResolveError;
 use crate::parser::{AstNode, AstField};
 use crate::value::{HoconValue, ScalarValue};
+
+pub struct ResolveOptions {
+    pub env: HashMap<String, String>,
+    pub base_dir: Option<PathBuf>,
+    pub include_stack: Vec<PathBuf>,
+}
+
+impl ResolveOptions {
+    pub fn new(env: HashMap<String, String>) -> Self {
+        ResolveOptions {
+            env,
+            base_dir: None,
+            include_stack: Vec::new(),
+        }
+    }
+
+    pub fn with_base_dir(mut self, base_dir: PathBuf) -> Self {
+        self.base_dir = Some(base_dir);
+        self
+    }
+}
 
 // ---- Internal placeholder types ----
 
@@ -52,21 +74,21 @@ impl ResObj {
 
 // ---- Public entry point ----
 
-pub fn resolve(ast: AstNode, env: &HashMap<String, String>) -> Result<HoconValue, ResolveError> {
-    let root = build_res_obj(ast)?;
+pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, ResolveError> {
+    let root = build_res_obj(ast, opts)?;
     let mut resolving = HashSet::new();
     let mut cache = HashMap::new();
-    resolve_res_obj(&root, &root, &mut resolving, &mut cache, env)
+    resolve_res_obj(&root, &root, &mut resolving, &mut cache, &opts.env)
 }
 
 // ---- Pass 1: structure building ----
 
-fn build_res_obj(ast: AstNode) -> Result<ResObj, ResolveError> {
+fn build_res_obj(ast: AstNode, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
     match ast {
         AstNode::Object { fields, .. } => {
             let mut obj = ResObj::new();
             for field in fields {
-                apply_field(&mut obj, field)?;
+                apply_field(&mut obj, field, opts)?;
             }
             Ok(obj)
         }
@@ -79,7 +101,7 @@ fn build_res_obj(ast: AstNode) -> Result<ResObj, ResolveError> {
     }
 }
 
-fn apply_field(obj: &mut ResObj, field: AstField) -> Result<(), ResolveError> {
+fn apply_field(obj: &mut ResObj, field: AstField, opts: &ResolveOptions) -> Result<(), ResolveError> {
     // Include directive
     if field.key.is_empty() {
         if matches!(field.value, AstNode::Include { .. }) {
@@ -108,7 +130,7 @@ fn apply_field(obj: &mut ResObj, field: AstField) -> Result<(), ResolveError> {
             value: synthetic,
             append: false,
             pos: field.pos,
-        });
+        }, opts);
     }
 
     if field.append {
@@ -116,7 +138,7 @@ fn apply_field(obj: &mut ResObj, field: AstField) -> Result<(), ResolveError> {
             ResolverValue::Resolved(HoconValue::Array(vec![]))
         });
         obj.prior_values.insert(head.clone(), existing.clone());
-        let elem = ast_to_resolver_value(field.value)?;
+        let elem = ast_to_resolver_value(field.value, opts)?;
         obj.fields.insert(head, ResolverValue::Append(AppendPlaceholder {
             existing: Box::new(existing),
             elem: Box::new(elem),
@@ -126,7 +148,7 @@ fn apply_field(obj: &mut ResObj, field: AstField) -> Result<(), ResolveError> {
 
     // Normal assignment
     let existing = obj.fields.get(&head).cloned();
-    let new_val = ast_to_resolver_value(field.value)?;
+    let new_val = ast_to_resolver_value(field.value, opts)?;
 
     if let Some(ref ex) = existing {
         obj.prior_values.insert(head.clone(), ex.clone());
@@ -144,13 +166,13 @@ fn apply_field(obj: &mut ResObj, field: AstField) -> Result<(), ResolveError> {
     Ok(())
 }
 
-fn ast_to_resolver_value(ast: AstNode) -> Result<ResolverValue, ResolveError> {
+fn ast_to_resolver_value(ast: AstNode, opts: &ResolveOptions) -> Result<ResolverValue, ResolveError> {
     match ast {
         AstNode::Scalar { value, .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(value))),
         AstNode::Array { items, .. } => {
             let rv_items: Vec<ResolverValue> = items
                 .into_iter()
-                .map(ast_to_resolver_value)
+                .map(|item| ast_to_resolver_value(item, opts))
                 .collect::<Result<_, _>>()?;
             let all_resolved = rv_items.iter().all(|v| matches!(v, ResolverValue::Resolved(_)));
             if all_resolved {
@@ -167,7 +189,7 @@ fn ast_to_resolver_value(ast: AstNode) -> Result<ResolverValue, ResolveError> {
             }
         }
         AstNode::Object { .. } => {
-            let inner = build_res_obj(ast)?;
+            let inner = build_res_obj(ast, opts)?;
             Ok(ResolverValue::Obj(inner))
         }
         AstNode::Substitution { path, optional, pos } => {
@@ -181,7 +203,7 @@ fn ast_to_resolver_value(ast: AstNode) -> Result<ResolverValue, ResolveError> {
         AstNode::Concat { nodes, .. } => {
             let rv_nodes: Vec<ResolverValue> = nodes
                 .into_iter()
-                .map(ast_to_resolver_value)
+                .map(|node| ast_to_resolver_value(node, opts))
                 .collect::<Result<_, _>>()?;
             Ok(ResolverValue::Concat(ConcatPlaceholder { nodes: rv_nodes }))
         }
@@ -508,7 +530,7 @@ mod tests {
     fn resolve_str_with_env(input: &str, env: &HashMap<String, String>) -> HoconValue {
         let tokens = tokenize(input).unwrap();
         let ast = parse_tokens(&tokens).unwrap();
-        resolve(ast, env).unwrap()
+        resolve(ast, &ResolveOptions::new(env.clone())).unwrap()
     }
 
     fn obj(v: &HoconValue) -> &IndexMap<String, HoconValue> {
@@ -632,7 +654,7 @@ mod tests {
     fn throws_on_unresolved_mandatory() {
         let tokens = tokenize("b = ${missing}").unwrap();
         let ast = parse_tokens(&tokens).unwrap();
-        assert!(resolve(ast, &HashMap::new()).is_err());
+        assert!(resolve(ast, &ResolveOptions::new(HashMap::new())).is_err());
     }
 
     #[test]
@@ -663,7 +685,7 @@ mod tests {
     fn throws_on_circular_substitution() {
         let tokens = tokenize("a = ${b}\nb = ${a}").unwrap();
         let ast = parse_tokens(&tokens).unwrap();
-        assert!(resolve(ast, &HashMap::new()).is_err());
+        assert!(resolve(ast, &ResolveOptions::new(HashMap::new())).is_err());
     }
 
     #[test]

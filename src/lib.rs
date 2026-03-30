@@ -20,7 +20,8 @@ pub fn parse(input: &str) -> Result<Config, ParseError> {
 pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Config, ParseError> {
     let tokens = lexer::tokenize(input)?;
     let ast = parser::parse_tokens(&tokens)?;
-    let value = resolver::resolve(ast, env).map_err(|e| ParseError {
+    let opts = resolver::ResolveOptions::new(env.clone());
+    let value = resolver::resolve(ast, &opts).map_err(|e| ParseError {
         message: e.message,
         line: e.line,
         col: e.col,
