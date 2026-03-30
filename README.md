@@ -207,6 +207,16 @@ and all other spec-defined behaviors.
 
 The MSRV is **1.70**.
 
+## Related Projects
+
+| Project | Language | Description |
+|---------|----------|-------------|
+| [go.hocon](https://github.com/o3co/go.hocon) | Go | HOCON parser for Go |
+| [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | HOCON parser for TypeScript/Node.js |
+| [hocon2](https://github.com/o3co/hocon2) | Go | CLI tools to convert HOCON → JSON/YAML/TOML/Properties |
+
+All implementations are full Lightbend HOCON spec compliant.
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
