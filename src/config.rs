@@ -132,6 +132,28 @@ impl Config {
         self.get_list(path).ok()
     }
 
+    pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
+        match self.lookup_node(path) {
+            None => Err(missing(path)),
+            Some(HoconValue::Scalar(ScalarValue::String(s))) => {
+                parse_duration(s).ok_or_else(|| ConfigError {
+                    message: format!("invalid duration at {}: {}", path, s),
+                    path: path.to_string(),
+                })
+            }
+            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(std::time::Duration::from_millis(*n as u64)),
+            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(std::time::Duration::from_secs_f64(*f / 1000.0)),
+            _ => Err(ConfigError {
+                message: format!("expected duration at {}", path),
+                path: path.to_string(),
+            }),
+        }
+    }
+
+    pub fn get_duration_option(&self, path: &str) -> Option<std::time::Duration> {
+        self.get_duration(path).ok()
+    }
+
     // Inspection
 
     pub fn has(&self, path: &str) -> bool {
@@ -190,6 +212,28 @@ impl Config {
         let value = HoconValue::Object(self.root.clone());
         T::deserialize(crate::serde::HoconDeserializer::new(&value))
     }
+}
+
+fn parse_duration(s: &str) -> Option<std::time::Duration> {
+    let s = s.trim();
+    let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-').unwrap_or(s.len());
+    let num_str = s[..num_end].trim();
+    let unit_str = s[num_end..].trim().to_lowercase();
+
+    let num: f64 = num_str.parse().ok()?;
+
+    let nanos_per_unit: f64 = match unit_str.as_str() {
+        "ns" | "nanosecond" | "nanoseconds" => 1.0,
+        "us" | "microsecond" | "microseconds" => 1_000.0,
+        "ms" | "millisecond" | "milliseconds" => 1_000_000.0,
+        "s" | "second" | "seconds" => 1_000_000_000.0,
+        "m" | "minute" | "minutes" => 60_000_000_000.0,
+        "h" | "hour" | "hours" => 3_600_000_000_000.0,
+        "d" | "day" | "days" => 86_400_000_000_000.0,
+        _ => return None,
+    };
+
+    Some(std::time::Duration::from_nanos((num * nanos_per_unit) as u64))
 }
 
 fn missing(path: &str) -> ConfigError {
@@ -382,5 +426,71 @@ mod tests {
         assert!(c.get_i64_option("x").is_none());
         assert!(c.get_f64_option("x").is_none());
         assert!(c.get_bool_option("x").is_none());
+    }
+
+    #[test]
+    fn get_duration_nanoseconds() {
+        let c = make_config(vec![("t", sv("100 ns"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_nanos(100));
+    }
+
+    #[test]
+    fn get_duration_milliseconds() {
+        let c = make_config(vec![("t", sv("500 ms"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn get_duration_seconds() {
+        let c = make_config(vec![("t", sv("30 seconds"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn get_duration_minutes() {
+        let c = make_config(vec![("t", sv("5 m"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(300));
+    }
+
+    #[test]
+    fn get_duration_hours() {
+        let c = make_config(vec![("t", sv("2 hours"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(7200));
+    }
+
+    #[test]
+    fn get_duration_days() {
+        let c = make_config(vec![("t", sv("1 d"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(86400));
+    }
+
+    #[test]
+    fn get_duration_fractional() {
+        let c = make_config(vec![("t", sv("1.5 hours"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(5400));
+    }
+
+    #[test]
+    fn get_duration_no_space() {
+        let c = make_config(vec![("t", sv("100ms"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_millis(100));
+    }
+
+    #[test]
+    fn get_duration_singular_unit() {
+        let c = make_config(vec![("t", sv("1 second"))]);
+        assert_eq!(c.get_duration("t").unwrap(), std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn get_duration_error_invalid_unit() {
+        let c = make_config(vec![("t", sv("100 foos"))]);
+        assert!(c.get_duration("t").is_err());
+    }
+
+    #[test]
+    fn get_duration_option_missing() {
+        let c = make_config(vec![]);
+        assert!(c.get_duration_option("t").is_none());
     }
 }
