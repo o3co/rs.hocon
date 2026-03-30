@@ -2,11 +2,17 @@ use crate::error::ConfigError;
 use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 
+/// A parsed HOCON configuration object.
+///
+/// `Config` wraps an ordered map of top-level keys to [`HoconValue`]s and
+/// provides typed getters that accept dot-separated paths
+/// (e.g., `"server.host"`).
 pub struct Config {
     root: IndexMap<String, HoconValue>,
 }
 
 impl Config {
+    /// Create a `Config` from a pre-built ordered map of key-value pairs.
     pub fn new(root: IndexMap<String, HoconValue>) -> Self {
         Self { root }
     }
@@ -28,13 +34,15 @@ impl Config {
         }
     }
 
-    // Raw access
+    /// Return the raw [`HoconValue`] at the given dot-separated path,
+    /// or `None` if the path does not exist.
     pub fn get(&self, path: &str) -> Option<&HoconValue> {
         self.lookup_node(path)
     }
 
-    // Typed getters
-
+    /// Return the value at `path` as a `String`.
+    ///
+    /// Returns [`ConfigError`] if the path is missing or the value is not a string.
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -43,6 +51,11 @@ impl Config {
         }
     }
 
+    /// Return the value at `path` as an `i64`.
+    ///
+    /// Whole-number floats and numeric strings are coerced automatically.
+    /// Returns [`ConfigError`] if the path is missing or the value cannot be
+    /// represented as `i64`.
     pub fn get_i64(&self, path: &str) -> Result<i64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -63,6 +76,11 @@ impl Config {
         }
     }
 
+    /// Return the value at `path` as an `f64`.
+    ///
+    /// Integers and numeric strings are coerced automatically.
+    /// Returns [`ConfigError`] if the path is missing or the value cannot be
+    /// represented as `f64`.
     pub fn get_f64(&self, path: &str) -> Result<f64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -75,6 +93,11 @@ impl Config {
         }
     }
 
+    /// Return the value at `path` as a `bool`.
+    ///
+    /// String values `"true"`, `"yes"`, `"on"` (case-insensitive) coerce to
+    /// `true`; `"false"`, `"no"`, `"off"` coerce to `false`.
+    /// Returns [`ConfigError`] if the path is missing or the value is not boolean-like.
     pub fn get_bool(&self, path: &str) -> Result<bool, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -88,6 +111,9 @@ impl Config {
         }
     }
 
+    /// Return the sub-object at `path` as a new [`Config`].
+    ///
+    /// Returns [`ConfigError`] if the path is missing or the value is not an object.
     pub fn get_config(&self, path: &str) -> Result<Config, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -96,6 +122,9 @@ impl Config {
         }
     }
 
+    /// Return the array at `path` as a `Vec<HoconValue>`.
+    ///
+    /// Returns [`ConfigError`] if the path is missing or the value is not an array.
     pub fn get_list(&self, path: &str) -> Result<Vec<HoconValue>, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -104,32 +133,43 @@ impl Config {
         }
     }
 
-    // Option variants
-
+    /// Like [`get_string`](Self::get_string) but returns `None` instead of an error.
     pub fn get_string_option(&self, path: &str) -> Option<String> {
         self.get_string(path).ok()
     }
 
+    /// Like [`get_i64`](Self::get_i64) but returns `None` instead of an error.
     pub fn get_i64_option(&self, path: &str) -> Option<i64> {
         self.get_i64(path).ok()
     }
 
+    /// Like [`get_f64`](Self::get_f64) but returns `None` instead of an error.
     pub fn get_f64_option(&self, path: &str) -> Option<f64> {
         self.get_f64(path).ok()
     }
 
+    /// Like [`get_bool`](Self::get_bool) but returns `None` instead of an error.
     pub fn get_bool_option(&self, path: &str) -> Option<bool> {
         self.get_bool(path).ok()
     }
 
+    /// Like [`get_config`](Self::get_config) but returns `None` instead of an error.
     pub fn get_config_option(&self, path: &str) -> Option<Config> {
         self.get_config(path).ok()
     }
 
+    /// Like [`get_list`](Self::get_list) but returns `None` instead of an error.
     pub fn get_list_option(&self, path: &str) -> Option<Vec<HoconValue>> {
         self.get_list(path).ok()
     }
 
+    /// Return the value at `path` as a [`Duration`](std::time::Duration).
+    ///
+    /// Accepts HOCON duration strings (e.g., `"30 seconds"`, `"100ms"`,
+    /// `"2 hours"`). Bare integers are interpreted as milliseconds.
+    ///
+    /// Supported units: `ns`, `us`, `ms`, `s`/`second`/`seconds`,
+    /// `m`/`minute`/`minutes`, `h`/`hour`/`hours`, `d`/`day`/`days`.
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -152,10 +192,18 @@ impl Config {
         }
     }
 
+    /// Like [`get_duration`](Self::get_duration) but returns `None` instead of an error.
     pub fn get_duration_option(&self, path: &str) -> Option<std::time::Duration> {
         self.get_duration(path).ok()
     }
 
+    /// Return the value at `path` as a byte count (`i64`).
+    ///
+    /// Accepts HOCON byte-size strings (e.g., `"512 MB"`, `"1 GiB"`).
+    /// Bare integers are returned as-is (assumed bytes).
+    ///
+    /// Supported units: `B`, `KB`/`KiB`, `MB`/`MiB`, `GB`/`GiB`, `TB`/`TiB`
+    /// (and long forms like `megabytes`, `mebibytes`).
     pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
         let v = self.lookup_node(path).ok_or_else(|| ConfigError {
             message: format!("path not found: {}", path),
@@ -176,21 +224,35 @@ impl Config {
         }
     }
 
+    /// Like [`get_bytes`](Self::get_bytes) but returns `None` instead of an error.
     pub fn get_bytes_option(&self, path: &str) -> Option<i64> {
         self.get_bytes(path).ok()
     }
 
-    // Inspection
-
+    /// Return `true` if a value exists at the given dot-separated path.
     pub fn has(&self, path: &str) -> bool {
         self.lookup_node(path).is_some()
     }
 
+    /// Return the top-level keys in insertion order.
     pub fn keys(&self) -> Vec<&str> {
         self.root.keys().map(|s| s.as_str()).collect()
     }
 
-    // Merge — receiver wins, fallback fills gaps
+    /// Merge this config with a fallback. Keys present in `self` win;
+    /// missing keys are filled from `fallback`. Nested objects are deep-merged.
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let app = hocon::parse(r#"server.port = 9090"#)?;
+    /// let defaults = hocon::parse(r#"server { host = "0.0.0.0", port = 8080 }"#)?;
+    /// let merged = app.with_fallback(&defaults);
+    ///
+    /// assert_eq!(merged.get_i64("server.port")?, 9090);       // app wins
+    /// assert_eq!(merged.get_string("server.host")?, "0.0.0.0"); // filled from defaults
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_fallback(&self, fallback: &Config) -> Config {
         let mut merged = self.root.clone();
         for (key, fallback_val) in &fallback.root {
@@ -234,6 +296,10 @@ fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Optio
 
 #[cfg(feature = "serde")]
 impl Config {
+    /// Deserialize this config into any type implementing [`serde::Deserialize`].
+    ///
+    /// Requires the `serde` feature. HOCON-aware coercion (e.g., string-to-number)
+    /// is applied during deserialization.
     pub fn deserialize<T: ::serde::de::DeserializeOwned>(
         &self,
     ) -> Result<T, crate::serde::DeserializeError> {
