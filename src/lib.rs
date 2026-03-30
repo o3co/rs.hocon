@@ -5,6 +5,9 @@ pub(crate) mod lexer;
 pub(crate) mod parser;
 pub(crate) mod resolver;
 
+#[cfg(feature = "serde")]
+pub mod serde;
+
 pub use error::{ParseError, ResolveError, ConfigError};
 pub use value::{HoconValue, ScalarValue};
 pub use config::Config;

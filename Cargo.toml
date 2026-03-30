@@ -8,5 +8,11 @@ repository = "https://github.com/o3co/rs.hocon"
 keywords = ["hocon", "config", "configuration", "parser"]
 categories = ["config", "parser-implementations"]
 
+[features]
+default = []
+serde = ["dep:serde", "dep:serde_json"]
+
 [dependencies]
 indexmap = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }

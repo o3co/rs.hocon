@@ -184,6 +184,14 @@ fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Optio
     }
 }
 
+#[cfg(feature = "serde")]
+impl Config {
+    pub fn deserialize<T: ::serde::de::DeserializeOwned>(&self) -> Result<T, crate::serde::DeserializeError> {
+        let value = HoconValue::Object(self.root.clone());
+        T::deserialize(crate::serde::HoconDeserializer::new(&value))
+    }
+}
+
 fn missing(path: &str) -> ConfigError {
     ConfigError {
         message: "key not found".to_string(),
