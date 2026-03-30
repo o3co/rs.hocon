@@ -1,9 +1,9 @@
-# hocon
+# o3co-hocon
 
-[![Crates.io](https://img.shields.io/crates/v/hocon.svg)](https://crates.io/crates/hocon)
-[![docs.rs](https://docs.rs/hocon/badge.svg)](https://docs.rs/hocon)
+[![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
+[![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
-[![License](https://img.shields.io/crates/l/hocon.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/o3co-hocon.svg)](LICENSE)
 
 Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)-compliant
 parser for Rust. Zero-copy lexer, recursive-descent parser, and a typed `Config` API
@@ -26,13 +26,13 @@ with optional Serde integration.
 ## Installation
 
 ```sh
-cargo add hocon
+cargo add o3co-hocon
 ```
 
 To enable Serde support:
 
 ```sh
-cargo add hocon --features serde
+cargo add o3co-hocon --features serde
 ```
 
 ## Quick Start

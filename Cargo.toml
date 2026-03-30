@@ -1,5 +1,5 @@
 [package]
-name = "hocon"
+name = "o3co-hocon"
 version = "0.1.0"
 edition = "2021"
 description = "Full Lightbend HOCON specification-compliant parser for Rust"
@@ -7,6 +7,9 @@ license = "Apache-2.0"
 repository = "https://github.com/o3co/rs.hocon"
 keywords = ["hocon", "config", "configuration", "parser"]
 categories = ["config", "parser-implementations"]
+
+[lib]
+name = "hocon"
 
 [features]
 default = []
