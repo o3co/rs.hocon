@@ -195,16 +195,24 @@ fn lightbend_test03_includes_with_substitution_fallback() {
     let path = testdata_dir().join("test03.conf");
     let result = hocon::parse_file(&path);
 
-    if let Ok(config) = result {
-        // If parsing succeeds, verify key values
-        assert_eq!(config.get_i64("test01.booleans").unwrap(), 42);
-        assert_eq!(
-            config.get_string("b").unwrap(),
-            "This is in the including file"
-        );
+    match result {
+        Ok(config) => {
+            assert_eq!(config.get_i64("test01.booleans").unwrap(), 42);
+            assert_eq!(
+                config.get_string("b").unwrap(),
+                "This is in the including file"
+            );
+        }
+        Err(e) => {
+            let msg = e.to_string().to_lowercase();
+            assert!(
+                msg.contains("substitution"),
+                "unexpected parse error for {}: {}",
+                path.display(),
+                e
+            );
+        }
     }
-    // If parsing fails due to substitution scope in nested include, that's
-    // a known limitation — test still verifies the file is attempted.
 }
 
 #[test]
@@ -252,27 +260,16 @@ fn lightbend_test06_delayed_merge() {
 
 #[test]
 fn lightbend_test07_classpath_include() {
-    // test07 includes "test-lib.conf" which doesn't exist in our test data.
-    // Missing includes should be silently ignored per HOCON spec.
     let path = testdata_dir().join("test07.conf");
-    let result = hocon::parse_file(&path);
-    // Should either succeed (missing include silently ignored) or we skip
-    if let Err(e) = &result {
-        // If the parser doesn't silently ignore, that's acceptable — skip
-        eprintln!("test07 skipped (classpath include not supported): {}", e);
-        return;
-    }
+    let _config = hocon::parse_file(&path)
+        .unwrap_or_else(|e| panic!("ParseFile({}) failed: {}", path.display(), e));
 }
 
 #[test]
 fn lightbend_test08_classpath_include_absolute() {
-    // test08 includes "/test-lib.conf" — same situation as test07
     let path = testdata_dir().join("test08.conf");
-    let result = hocon::parse_file(&path);
-    if let Err(e) = &result {
-        eprintln!("test08 skipped (classpath include not supported): {}", e);
-        return;
-    }
+    let _config = hocon::parse_file(&path)
+        .unwrap_or_else(|e| panic!("ParseFile({}) failed: {}", path.display(), e));
 }
 
 #[test]
@@ -290,17 +287,13 @@ fn lightbend_test09_delayed_merge_object() {
 
 #[test]
 fn lightbend_test10_nested_include() {
-    // test10.conf includes test09.conf inside nested keys (foo, bar.nested).
-    // test09.conf contains cross-references like a=${y} which need to resolve
-    // within the nested scope — same limitation as test03.
     let path = testdata_dir().join("test10.conf");
     let result = hocon::parse_file(&path);
-
-    if let Ok(config) = result {
-        assert_eq!(config.get_i64("foo.x.q").unwrap(), 10);
-        assert_eq!(config.get_i64("bar.nested.x.q").unwrap(), 10);
-    }
-    // Known limitation: substitution scope in nested include may fail.
+    assert!(
+        result.is_err(),
+        "ParseFile({}) unexpectedly succeeded; update test to assert resolved values",
+        path.display()
+    );
 }
 
 #[test]
@@ -353,9 +346,17 @@ fn lightbend_test13_substitution_override() {
     // application overrides b="overridden"
     assert_eq!(app_config.get_string("b").unwrap(), "overridden");
 
-    // Merge: app with ref fallback — a should resolve to overridden b
+    // Merge: app with ref fallback — simple key merge (already-resolved values)
     let merged = app_config.with_fallback(&ref_config);
     assert_eq!(merged.get_string("b").unwrap(), "overridden");
+
+    // For proper substitution re-resolution, merge at the text level
+    // (concatenate configs before parsing, as HOCON spec intends)
+    let ref_text = fs::read_to_string(&ref_path).unwrap();
+    let app_text = fs::read_to_string(&app_path).unwrap();
+    let combined = format!("{}\n{}", ref_text, app_text);
+    let resolved = hocon::parse(&combined).unwrap();
+    assert_eq!(resolved.get_string("a").unwrap(), "overridden");
 }
 
 #[test]

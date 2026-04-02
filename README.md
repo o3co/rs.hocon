@@ -246,11 +246,21 @@ config/
 - Use schema validation (Zod for TypeScript, struct unmarshaling for Go, Serde for Rust) to catch errors early
 
 ```rust
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct ServerConfig {
+    host: String,
+    port: u16,
+}
+
 #[derive(Deserialize)]
 struct AppConfig {
     server: ServerConfig,
     debug: bool,
 }
+
+// requires the `serde` feature
 let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
 

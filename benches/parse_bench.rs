@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 /// Generate a flat/shallow HOCON config string with `total_keys` keys spread
 /// across objects up to `max_depth` levels deep.
@@ -75,22 +75,22 @@ fn bench_config_size(c: &mut Criterion) {
 
     group.bench_function("parse_small_10", |b| {
         b.iter(|| {
-            let config = hocon::parse(&small).unwrap();
-            config.get_string("level0.key0").unwrap();
+            let config = hocon::parse(black_box(&small)).unwrap();
+            black_box(config.get_string("level0.key0").unwrap());
         });
     });
 
     group.bench_function("parse_medium_100", |b| {
         b.iter(|| {
-            let config = hocon::parse(&medium).unwrap();
-            config.get_string("level0.key0").unwrap();
+            let config = hocon::parse(black_box(&medium)).unwrap();
+            black_box(config.get_string("level0.key0").unwrap());
         });
     });
 
     group.bench_function("parse_large_1000", |b| {
         b.iter(|| {
-            let config = hocon::parse(&large).unwrap();
-            config.get_string("level0.key0").unwrap();
+            let config = hocon::parse(black_box(&large)).unwrap();
+            black_box(config.get_string("level0.key0").unwrap());
         });
     });
 
@@ -110,22 +110,22 @@ fn bench_substitutions(c: &mut Criterion) {
 
     group.bench_function("substitutions_10", |b| {
         b.iter(|| {
-            let config = hocon::parse(&sub10).unwrap();
-            config.get_string("sub.key0").unwrap();
+            let config = hocon::parse(black_box(&sub10)).unwrap();
+            black_box(config.get_string("sub.key0").unwrap());
         });
     });
 
     group.bench_function("substitutions_50", |b| {
         b.iter(|| {
-            let config = hocon::parse(&sub50).unwrap();
-            config.get_string("sub.key0").unwrap();
+            let config = hocon::parse(black_box(&sub50)).unwrap();
+            black_box(config.get_string("sub.key0").unwrap());
         });
     });
 
     group.bench_function("substitutions_100", |b| {
         b.iter(|| {
-            let config = hocon::parse(&sub100).unwrap();
-            config.get_string("sub.key0").unwrap();
+            let config = hocon::parse(black_box(&sub100)).unwrap();
+            black_box(config.get_string("sub.key0").unwrap());
         });
     });
 
@@ -150,22 +150,22 @@ fn bench_deep_nesting(c: &mut Criterion) {
 
     group.bench_function("deep_nest_5", |b| {
         b.iter(|| {
-            let config = hocon::parse(&nest5).unwrap();
-            config.get_string(&path5).unwrap();
+            let config = hocon::parse(black_box(&nest5)).unwrap();
+            black_box(config.get_string(&path5).unwrap());
         });
     });
 
     group.bench_function("deep_nest_10", |b| {
         b.iter(|| {
-            let config = hocon::parse(&nest10).unwrap();
-            config.get_string(&path10).unwrap();
+            let config = hocon::parse(black_box(&nest10)).unwrap();
+            black_box(config.get_string(&path10).unwrap());
         });
     });
 
     group.bench_function("deep_nest_20", |b| {
         b.iter(|| {
-            let config = hocon::parse(&nest20).unwrap();
-            config.get_string(&path20).unwrap();
+            let config = hocon::parse(black_box(&nest20)).unwrap();
+            black_box(config.get_string(&path20).unwrap());
         });
     });
 
