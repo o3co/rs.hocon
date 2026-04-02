@@ -1,4 +1,4 @@
-# o3co-hocon
+# o3co-hocon — Rust 向け HOCON パーサー
 
 [![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
 [![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
@@ -227,11 +227,11 @@ MSRV は **1.82** です。
 
 ## 関連プロジェクト
 
-| プロジェクト | 言語 | 説明 |
-|---------|----------|-------------|
-| [go.hocon](https://github.com/o3co/go.hocon) | Go | Go 向け HOCON パーサー |
-| [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | TypeScript/Node.js 向け HOCON パーサー |
-| [hocon2](https://github.com/o3co/hocon2) | Go | HOCON → JSON/YAML/TOML/Properties 変換 CLI ツール |
+| プロジェクト | 言語 | レジストリ | 説明 |
+|---------|----------|----------|-------------|
+| [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | [npm](https://www.npmjs.com/package/@o3co/ts.hocon) | TypeScript/Node.js 向け HOCON パーサー |
+| [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | Go 向け HOCON パーサー |
+| [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties 変換 CLI |
 
 すべての実装が Lightbend HOCON 仕様に完全準拠しています。
 
