@@ -1,6 +1,6 @@
 [package]
 name = "o3co-hocon"
-version = "0.1.4"
+version = "0.1.5-alpha.1"
 edition = "2021"
 rust-version = "1.82"
 description = "Full Lightbend HOCON specification-compliant parser for Rust"
