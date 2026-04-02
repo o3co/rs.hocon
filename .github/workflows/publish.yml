@@ -14,17 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify tag matches Cargo.toml version
-        run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          CARGO_VER="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
-          if [ "$TAG" != "$CARGO_VER" ]; then
-            echo "::error::Tag v${TAG} does not match Cargo.toml version ${CARGO_VER}"
-            exit 1
-          fi
-
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-set-version
+        run: cargo install cargo-set-version
+
+      - name: Set version from tag
+        run: cargo set-version "${GITHUB_REF#refs/tags/v}"
 
       - run: cargo test
       - run: cargo test --features serde
