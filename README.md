@@ -9,21 +9,9 @@ Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/ma
 parser for Rust. Zero-copy lexer, recursive-descent parser, and a typed `Config` API
 with optional Serde integration.
 
-## Features
+## Quick Start
 
-- Complete HOCON syntax: objects, arrays, comments, multi-line strings, unquoted strings
-- Substitutions (`${foo}`, `${?foo}`) with cycle detection
-- `include` directives (file, classpath, URL) with relative path resolution
-- Object merging and array concatenation per spec
-- String, array, and object value concatenation
-- Duration and byte-size parsing (`10 seconds`, `512 MB`)
-- Environment variable substitution (`${HOME}`)
-- Dot-separated path expressions (`server.host`)
-- Fallback configuration merging (`with_fallback`)
-- Optional Serde deserialization support
-- Passes Lightbend equivalence tests (equiv01 through equiv05)
-
-## Installation
+### 1. Install
 
 ```sh
 cargo add o3co-hocon
@@ -35,7 +23,7 @@ To enable Serde support:
 cargo add o3co-hocon --features serde
 ```
 
-## Quick Start
+### 2. Use
 
 ```rust
 use hocon;
@@ -59,6 +47,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Why HOCON?
+
+| | `.env` | JSON | YAML | HOCON |
+|---|---|---|---|---|
+| Comments | No | No | Yes | Yes |
+| Nesting | No | Yes | Yes | Yes |
+| References / Substitution | No | No | No | Yes (`${var}`) |
+| File inclusion | No | No | No | Yes (`include`) |
+| Object merging | No | No | Anchors (fragile) | Yes (deep merge) |
+| Optional values | No | No | No | Yes (`${?var}`) |
+| Trailing commas | N/A | No | N/A | Yes |
+| Unquoted strings | Yes | No | Yes | Yes |
+
+HOCON gives you the readability of YAML, the structure of JSON, and features that neither has — substitutions, includes, and deep merge. If your config is more than a few flat key-value pairs, HOCON is worth considering.
+
+## Features
+
+- Complete HOCON syntax: objects, arrays, comments, multi-line strings, unquoted strings
+- Substitutions (`${foo}`, `${?foo}`) with cycle detection
+- `include` directives (file, classpath, URL) with relative path resolution
+- Object merging and array concatenation per spec
+- String, array, and object value concatenation
+- Duration and byte-size parsing (`10 seconds`, `512 MB`)
+- Environment variable substitution (`${HOME}`)
+- Dot-separated path expressions (`server.host`)
+- Fallback configuration merging (`with_fallback`)
+- Optional Serde deserialization support
+- Passes Lightbend equivalence tests (equiv01 through equiv05)
 
 ## API Reference
 
@@ -271,3 +288,4 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 ## Attribution
 
 Designed and built end-to-end with [Claude Code](https://claude.ai/claude-code).
+Reviewed by [GitHub Copilot](https://github.com/features/copilot) and [OpenAI Codex](https://openai.com/index/openai-codex/).
