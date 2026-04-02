@@ -1,8 +1,9 @@
-# o3co-hocon
+# o3co-hocon — Rust 向け HOCON パーサー
 
 [![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
 [![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/o3co-hocon.svg)](LICENSE)
 
 [Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。ゼロコピーレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
@@ -227,11 +228,11 @@ MSRV は **1.82** です。
 
 ## 関連プロジェクト
 
-| プロジェクト | 言語 | 説明 |
-|---------|----------|-------------|
-| [go.hocon](https://github.com/o3co/go.hocon) | Go | Go 向け HOCON パーサー |
-| [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | TypeScript/Node.js 向け HOCON パーサー |
-| [hocon2](https://github.com/o3co/hocon2) | Go | HOCON → JSON/YAML/TOML/Properties 変換 CLI ツール |
+| プロジェクト | 言語 | レジストリ | 説明 |
+|---------|----------|----------|-------------|
+| [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | [npm](https://www.npmjs.com/package/@o3co/ts.hocon) | TypeScript/Node.js 向け HOCON パーサー |
+| [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | Go 向け HOCON パーサー |
+| [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties 変換 CLI |
 
 すべての実装が Lightbend HOCON 仕様に完全準拠しています。
 

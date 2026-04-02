@@ -6,7 +6,7 @@ rust-version = "1.82"
 description = "Full Lightbend HOCON specification-compliant parser for Rust"
 license = "Apache-2.0"
 repository = "https://github.com/o3co/rs.hocon"
-keywords = ["hocon", "config", "configuration", "parser"]
+keywords = ["hocon", "config", "configuration", "parser", "rust"]
 categories = ["config", "parser-implementations"]
 readme = "README.md"
 
