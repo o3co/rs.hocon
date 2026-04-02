@@ -9,6 +9,8 @@ Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/ma
 parser for Rust. Zero-copy lexer, recursive-descent parser, and a typed `Config` API
 with optional Serde integration.
 
+[日本語](README.ja.md)
+
 ## Quick Start
 
 ### 1. Install
