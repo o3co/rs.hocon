@@ -24,7 +24,14 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - run: cargo test
         if: matrix.rust == 'stable'
-      - run: cargo test --lib --tests
+      # MSRV: remove criterion dev-dependency before testing because
+      # criterion's transitive dep clap_lex requires edition 2024
+      - name: Remove bench deps for MSRV
+        if: matrix.rust != 'stable'
+        run: |
+          sed -i '/\[dev-dependencies\]/,/^\[/{/criterion/d}' Cargo.toml
+          sed -i '/\[\[bench\]\]/,/^$/d' Cargo.toml
+      - run: cargo test
         if: matrix.rust != 'stable'
       - run: cargo test --features serde
         if: matrix.rust == 'stable'
