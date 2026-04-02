@@ -144,9 +144,21 @@ fn bench_deep_nesting(c: &mut Criterion) {
     let nest20 = generate_deep_nested(20);
 
     // Build the path to the deepest leaf for each depth.
-    let path5: String = (0..5).map(|d| format!("nest{d}")).collect::<Vec<_>>().join(".") + ".leaf0";
-    let path10: String = (0..10).map(|d| format!("nest{d}")).collect::<Vec<_>>().join(".") + ".leaf0";
-    let path20: String = (0..20).map(|d| format!("nest{d}")).collect::<Vec<_>>().join(".") + ".leaf0";
+    let path5: String = (0..5)
+        .map(|d| format!("nest{d}"))
+        .collect::<Vec<_>>()
+        .join(".")
+        + ".leaf0";
+    let path10: String = (0..10)
+        .map(|d| format!("nest{d}"))
+        .collect::<Vec<_>>()
+        .join(".")
+        + ".leaf0";
+    let path20: String = (0..20)
+        .map(|d| format!("nest{d}"))
+        .collect::<Vec<_>>()
+        .join(".")
+        + ".leaf0";
 
     group.bench_function("deep_nest_5", |b| {
         b.iter(|| {
@@ -172,5 +184,10 @@ fn bench_deep_nesting(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_config_size, bench_substitutions, bench_deep_nesting);
+criterion_group!(
+    benches,
+    bench_config_size,
+    bench_substitutions,
+    bench_deep_nesting
+);
 criterion_main!(benches);

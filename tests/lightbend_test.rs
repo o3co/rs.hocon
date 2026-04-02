@@ -223,10 +223,7 @@ fn lightbend_test04_akka_reference_config() {
     let config = hocon::parse_file(&path)
         .unwrap_or_else(|e| panic!("ParseFile({}) failed: {}", path.display(), e));
 
-    assert_eq!(
-        config.get_string("akka.version").unwrap(),
-        "2.0-SNAPSHOT"
-    );
+    assert_eq!(config.get_string("akka.version").unwrap(), "2.0-SNAPSHOT");
     assert!(config.has("akka.actor"));
 }
 

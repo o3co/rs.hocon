@@ -23,6 +23,9 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - run: cargo test
+        if: matrix.rust == 'stable'
+      - run: cargo test --lib --tests
+        if: matrix.rust != 'stable'
       - run: cargo test --features serde
         if: matrix.rust == 'stable'
 
