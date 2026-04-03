@@ -37,6 +37,7 @@ pub enum AstNode {
     },
     Include {
         path: String,
+        required: bool,
         pos: Pos,
     },
 }
@@ -310,11 +311,38 @@ impl<'a> Parser<'a> {
         self.skip(&[TokenKind::Newline]);
         let kind = self.peek_kind();
 
+        // Check for `required(...)` wrapper
+        let required = kind == TokenKind::Unquoted
+            && (self.peek_value() == "required(" || self.peek_value() == "required");
+        if required {
+            self.advance(); // consume "required(" or "required"
+                            // If the token was "required" (without paren), consume the opening "("
+                            // The lexer may split "required" and "(" as separate tokens when there is no
+                            // space, but actually "(" is not an unquoted-stop char... However "(" IS
+                            // included in is_unquoted_start/continue since it's not in the stop set.
+                            // The lexer will actually produce "required(" as one token (paren is unquoted).
+                            // But to be safe, also handle "required" + "(" as separate tokens:
+            if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with('(') {
+                // e.g. token was "required" and next is "(" or "(\"..."
+                let val = self.peek_value().to_string();
+                if val == "(" {
+                    self.advance(); // consume standalone "("
+                }
+                // else: paren is embedded in next unquoted token — handled below
+            }
+        }
+
         let path;
-        if kind == TokenKind::QuotedString {
+        if self.peek_kind() == TokenKind::QuotedString {
             path = self.peek_value().to_string();
             self.advance();
-        } else if kind == TokenKind::Unquoted
+            if required {
+                // Consume closing ")" — may be part of an Unquoted token or standalone
+                if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with(')') {
+                    self.advance();
+                }
+            }
+        } else if self.peek_kind() == TokenKind::Unquoted
             && (self.peek_value() == "file(" || self.peek_value() == "file")
         {
             let err_line = self.peek_line();
@@ -345,7 +373,7 @@ impl<'a> Parser<'a> {
             let line = self.peek_line();
             let col = self.peek_col();
             return Err(ParseError {
-                message: format!("expected include path, got {:?}", kind),
+                message: format!("expected include path, got {:?}", self.peek_kind()),
                 line,
                 col,
             });
@@ -355,6 +383,7 @@ impl<'a> Parser<'a> {
             key: vec![],
             value: AstNode::Include {
                 path,
+                required,
                 pos: p.clone(),
             },
             append: false,

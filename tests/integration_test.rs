@@ -284,3 +284,45 @@ fn test_unterminated_quoted_path_fallback() {
     let cfg = hocon::parse("a = 1").unwrap();
     assert!(cfg.get_i64(r#""unterminated"#).is_err());
 }
+
+// Task 1c/2c: include required() support
+#[test]
+fn test_include_required_missing_file_errors() {
+    let result = hocon::parse(r#"include required("nonexistent.conf")"#);
+    assert!(
+        result.is_err(),
+        "required include of missing file should error"
+    );
+}
+
+#[test]
+fn test_include_required_existing_file_ok() {
+    // base.conf lives in tests/testdata/; parse_file sets the base_dir correctly
+    use std::path::PathBuf;
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let conf = manifest.join("tests/testdata/required_base.conf");
+    // Write a tiny fixture if it doesn't exist yet
+    if !conf.exists() {
+        std::fs::write(&conf, "req_key = 42\n").unwrap();
+    }
+    let content = format!("include required({:?})\nextra = 1", conf.to_str().unwrap());
+    let result = hocon::parse(&content);
+    assert!(
+        result.is_ok(),
+        "required include of existing file should succeed: {:?}",
+        result.err()
+    );
+    let cfg = result.unwrap();
+    assert_eq!(cfg.get_i64("req_key").unwrap(), 42);
+}
+
+#[test]
+fn test_include_optional_missing_file_ok() {
+    let result = hocon::parse("include \"nonexistent.conf\"\na = 1");
+    assert!(
+        result.is_ok(),
+        "optional include of missing file should succeed"
+    );
+    let cfg = result.unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+}
