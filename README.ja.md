@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。ゼロコピーレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
 
 > **[Claude Code](https://claude.ai/claude-code)（Anthropic）による設計・実装。**
 > [GitHub Copilot](https://github.com/features/copilot) および [OpenAI Codex](https://openai.com/index/openai-codex/) によるレビュー。

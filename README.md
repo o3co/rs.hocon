@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
 Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)-compliant
-parser for Rust. Zero-copy lexer, recursive-descent parser, and a typed `Config` API
+parser for Rust. Hand-written lexer, recursive-descent parser, and a typed `Config` API
 with optional Serde integration.
 
 [日本語](README.ja.md)
