@@ -148,21 +148,17 @@ fn parse_self_referential_substitution() {
 }
 
 #[test]
-fn test_trailing_garbage_after_braced_root() {
-    let result = hocon::parse("{ a = 1 } garbage");
-    assert!(
-        result.is_err(),
-        "expected error for trailing garbage after braced root"
-    );
+fn test_braced_root_object_concat() {
+    let cfg = hocon::parse("{ a = 1 } { b = 2 }").unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
 }
 
 #[test]
-fn test_trailing_tokens_after_braced_root() {
-    let result = hocon::parse("{ a = 1 } extra tokens here");
-    assert!(
-        result.is_err(),
-        "expected error for trailing tokens after braced root"
-    );
+fn test_braced_root_with_trailing_fields() {
+    let cfg = hocon::parse("{ a = 1 }\nb = 2").unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
 }
 
 #[test]

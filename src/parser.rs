@@ -53,20 +53,37 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
     if parser.peek_kind() == TokenKind::LBrace {
         parser.pos += 1;
         let node = parser.parse_object(true)?;
-        parser.skip(&[TokenKind::Newline]);
-        if parser.peek_kind() != TokenKind::Eof {
-            let line = parser.peek_line();
-            let col = parser.peek_col();
-            return Err(ParseError {
-                message: format!(
-                    "unexpected token after root object: {:?}",
-                    parser.peek_kind()
-                ),
-                line,
-                col,
-            });
+        let mut all_fields = match node {
+            AstNode::Object { fields, .. } => fields,
+            _ => unreachable!(),
+        };
+
+        // Loop: merge additional braced objects or trailing unbraced fields
+        loop {
+            parser.skip(&[TokenKind::Newline]);
+            if parser.peek_kind() == TokenKind::Eof {
+                break;
+            }
+            if parser.peek_kind() == TokenKind::LBrace {
+                parser.pos += 1;
+                let extra = parser.parse_object(true)?;
+                if let AstNode::Object { fields, .. } = extra {
+                    all_fields.extend(fields);
+                }
+            } else {
+                // Remaining tokens are unbraced root fields
+                let extra = parser.parse_object(false)?;
+                if let AstNode::Object { fields, .. } = extra {
+                    all_fields.extend(fields);
+                }
+                break; // unbraced parse consumes to EOF
+            }
         }
-        Ok(node)
+
+        Ok(AstNode::Object {
+            fields: all_fields,
+            pos: Pos { line: 1, col: 1 },
+        })
     } else {
         parser.parse_object(false)
     }
