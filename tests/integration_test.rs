@@ -437,3 +437,16 @@ fn test_config_partial_eq() {
     let cfg2 = hocon::parse("a = 1").unwrap();
     assert_eq!(cfg1, cfg2);
 }
+
+#[test]
+fn unquoted_forbids_spec_special_chars() {
+    let specials = ['?', '!', '@', '*', '&', '^', '\\'];
+    for ch in &specials {
+        let input = format!("key = foo{}bar", ch);
+        assert!(
+            hocon::parse(&input).is_err(),
+            "char '{}' should be rejected in unquoted strings, but parsed successfully",
+            ch,
+        );
+    }
+}
