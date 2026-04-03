@@ -215,6 +215,64 @@ defaults { color = "blue", size = 10 }
 defaults { size = 20 }  # merges: color stays, size updated
 ```
 
+## Performance
+
+Measured with [Criterion](https://github.com/bheisler/criterion.rs). Run `cargo bench` to reproduce.
+
+| Scenario | ops/sec | Time per op |
+|---|---|---|
+| Small config (10 keys) | ~33,000 | ~30 µs |
+| Medium config (100 keys) | ~1,000 | ~776 µs |
+| Large config (1,000 keys) | ~16 | ~64 ms |
+| 10 substitutions | ~24,000 | ~41 µs |
+| 50 substitutions | ~3,000 | ~321 µs |
+| 100 substitutions | ~1,000 | ~1.0 ms |
+| Depth 5 nesting | ~63,000 | ~16 µs |
+| Depth 10 nesting | ~54,000 | ~19 µs |
+| Depth 20 nesting | ~41,000 | ~24 µs |
+
+For typical application configs (loaded once at startup), the parsing cost is negligible — even a 1,000-key config parses in under 65 ms.
+
+## Comparison
+
+✅ Full support / ⚠️ Partial / ❌ Not supported
+
+### HOCON Implementation
+
+| Feature | rs.hocon | [hocon-rs](https://github.com/mockersf/hocon.rs) |
+|---|:---:|:---:|
+| Substitutions (`${path}`) | ✅ | ✅ |
+| Optional substitutions (`${?path}`) | ✅ | ✅ |
+| Include | ✅ | ✅ |
+| `include required()` | ✅ | ❌ |
+| Object/Array concatenation | ✅ | ✅ |
+| Type coercion | ✅ | ⚠️ |
+| Duration parsing | ✅ | ✅ |
+| Byte size parsing | ✅ | ✅ |
+| `+=` append | ✅ | ❌ |
+| Serde deserialization | ✅ | ✅ |
+| Env variable fallback | ✅ | ❌ |
+| Circular include detection | ✅ | ❌ |
+
+### Config Framework
+
+| | rs.hocon | [config-rs](https://github.com/mehcode/config-rs) |
+|---|:---:|:---:|
+| **Formats** | | |
+| HOCON | ✅ | ❌ |
+| JSON | ✅ (via include) | ✅ |
+| YAML | ❌ | ✅ |
+| TOML | ❌ | ✅ |
+| Env vars | ✅ (fallback) | ✅ |
+| .properties | ✅ (via include) | ❌ |
+| **Features** | | |
+| Substitutions | ✅ | ❌ |
+| File includes | ✅ | ❌ |
+| Type coercion | ✅ | ✅ |
+| Serde support | ✅ | ✅ |
+| Watch/reload | ❌ | ❌ |
+| Layered config | ❌ | ✅ |
+
 ## Spec Compliance
 
 This library targets full compliance with the
