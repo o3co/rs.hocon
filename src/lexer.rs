@@ -388,7 +388,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 fn is_unquoted_start(ch: char) -> bool {
     !matches!(
         ch,
-        '{' | '}' | '[' | ']' | ',' | ':' | '=' | '+' | '#' | '\n' | '\r' | '\t' | ' ' | '"' | '$'
+        '{' | '}' | '[' | ']' | ',' | ':' | '=' | '+' | '#'
+            | '\n' | '\r' | '\t' | ' ' | '"' | '$'
+            | '?' | '!' | '@' | '*' | '&' | '^' | '\\'
     )
 }
 
@@ -396,6 +398,7 @@ fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
     if matches!(
         ch,
         '{' | '}' | '[' | ']' | ',' | ':' | '=' | '\n' | '\r' | '\t' | '#' | '"' | '$' | ' '
+            | '?' | '!' | '@' | '*' | '&' | '^' | '\\'
     ) {
         return false;
     }
