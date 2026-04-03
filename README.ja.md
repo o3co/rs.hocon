@@ -285,8 +285,9 @@ let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
 
 ## 既知の制約
 
-- **`include url(...)` と `include classpath(...)`** は未対応です。Lightbend 仕様の JVM 固有形式です。`include "file"`、`include file("file")`、`include required(...)` のみ対応しています。
-- **監視/リロード機能なし** — 設定はロード時に解析されます。ライブリロードには、変更時に `parse()` や `parse_file()` を再呼び出ししてください。
+- **`include url(...)`** は未対応です。リモート設定の取得はパーサーのスコープ外です。アプリケーションの HTTP クライアントでコンテンツを取得し、`parse()` に渡してください。
+- **`include classpath(...)`** は未対応です。これは JVM 固有の include 形式で、Java ランタイム外には同等の仕組みがありません。
+- **監視/リロード機能なし** — 設定はロード時に解析されます。ライブリロードには、変更時に `parse()` や `parse_file()` を再度呼び出してください。
 - **ストリーミングパーサーなし** — 入力全体がメモリに読み込まれます。
 - **`.properties` include** — 基本的な `key=value` 形式のみ対応。複数行値（バックスラッシュ継続）、Unicode エスケープ、キーエスケープには対応していません。
 
