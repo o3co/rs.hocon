@@ -381,7 +381,7 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
 fn parse_bytes(s: &str) -> Option<i64> {
     let s = s.trim();
     let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
         .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
     let unit_str = s[num_end..].trim();
@@ -403,7 +403,7 @@ fn parse_bytes(s: &str) -> Option<i64> {
 
     // Try lossless integer path first, fall back to f64 for fractional values
     if let Ok(n) = num_str.parse::<i64>() {
-        Some(n * multiplier)
+        n.checked_mul(multiplier)
     } else {
         let num: f64 = num_str.parse().ok()?;
         Some((num * multiplier as f64) as i64)

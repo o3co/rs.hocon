@@ -24,7 +24,6 @@ pub enum AstNode {
         pos: Pos,
         /// True when this scalar was synthesized by the parser as whitespace
         /// between concatenated tokens (not user-authored).
-        #[allow(dead_code)]
         separator: bool,
     },
     Concat {
