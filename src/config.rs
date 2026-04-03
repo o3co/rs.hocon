@@ -341,27 +341,30 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
 
 fn parse_bytes(s: &str) -> Option<i64> {
     let s = s.trim();
-    let num_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
     let unit_str = s[num_end..].trim();
 
-    let num: i64 = num_str.parse().ok()?;
+    let num: f64 = num_str.parse().ok()?;
 
-    // Case-sensitive matching: KB vs KiB matters
-    let multiplier: i64 = match unit_str {
-        "B" | "byte" | "bytes" => 1,
-        "KB" | "kilobyte" | "kilobytes" => 1_000,
-        "KiB" | "kibibyte" | "kibibytes" => 1_024,
-        "MB" | "megabyte" | "megabytes" => 1_000_000,
-        "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
-        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
-        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
-        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
-        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
+    // Case-sensitive matching: KB vs KiB matters. Short forms (K, M, G, T) are
+    // treated as SI decimal units (KB, MB, GB, TB).
+    let multiplier: f64 = match unit_str {
+        "" | "B" | "byte" | "bytes" => 1.0,
+        "K" | "KB" | "kilobyte" | "kilobytes" => 1_000.0,
+        "KiB" | "kibibyte" | "kibibytes" => 1_024.0,
+        "M" | "MB" | "megabyte" | "megabytes" => 1_000_000.0,
+        "MiB" | "mebibyte" | "mebibytes" => 1_048_576.0,
+        "G" | "GB" | "gigabyte" | "gigabytes" => 1_000_000_000.0,
+        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824.0,
+        "T" | "TB" | "terabyte" | "terabytes" => 1_000_000_000_000.0,
+        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776.0,
         _ => return None,
     };
 
-    Some(num * multiplier)
+    Some((num * multiplier) as i64)
 }
 
 fn missing(path: &str) -> ConfigError {

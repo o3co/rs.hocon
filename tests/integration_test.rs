@@ -170,6 +170,21 @@ fn test_trailing_comments_after_braced_root_ok() {
     assert!(result2.is_ok(), "trailing # comments should be accepted");
 }
 
+// Task 13: parse_bytes fractional number support
+#[test]
+fn test_parse_bytes_fractional() {
+    let cfg = hocon::parse("size = 0.5M").unwrap();
+    let bytes = cfg.get_bytes("size").unwrap();
+    assert_eq!(bytes, 500_000);
+}
+
+#[test]
+fn test_parse_bytes_fractional_binary() {
+    let cfg = hocon::parse("size = 1.5MiB").unwrap();
+    let bytes = cfg.get_bytes("size").unwrap();
+    assert_eq!(bytes, 1_572_864);
+}
+
 // Task 12: duration parsing missing units
 #[test]
 fn test_duration_missing_units() {
