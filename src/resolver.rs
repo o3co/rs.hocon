@@ -549,15 +549,31 @@ fn resolve_concat(
         return Ok(resolved.into_iter().next().unwrap());
     }
 
-    // Object concatenation
-    if resolved.iter().all(|v| matches!(v, HoconValue::Object(_))) {
+    // Object concatenation — whitespace-only string scalars between objects are ignored
+    // (the parser inserts a literal " " between space-separated tokens)
+    let is_whitespace_scalar = |v: &HoconValue| matches!(
+        v,
+        HoconValue::Scalar(ScalarValue::String(s)) if s.trim().is_empty()
+    );
+    if resolved
+        .iter()
+        .all(|v| matches!(v, HoconValue::Object(_)) || is_whitespace_scalar(v))
+        && resolved.iter().any(|v| matches!(v, HoconValue::Object(_)))
+    {
         let mut merged = IndexMap::new();
         for v in resolved {
             if let HoconValue::Object(fields) = v {
                 for (k, val) in fields {
-                    merged.insert(k, val);
+                    if let (Some(HoconValue::Object(existing)), HoconValue::Object(new_fields)) =
+                        (merged.get(&k).cloned(), &val)
+                    {
+                        merged.insert(k, deep_merge_hocon_objects(existing, new_fields.clone()));
+                    } else {
+                        merged.insert(k, val);
+                    }
                 }
             }
+            // whitespace scalars are skipped
         }
         return Ok(HoconValue::Object(merged));
     }
@@ -577,6 +593,23 @@ fn resolve_concat(
     // String concatenation
     let s: String = resolved.iter().map(stringify_value).collect();
     Ok(HoconValue::Scalar(ScalarValue::String(s)))
+}
+
+fn deep_merge_hocon_objects(
+    base: IndexMap<String, HoconValue>,
+    overlay: IndexMap<String, HoconValue>,
+) -> HoconValue {
+    let mut merged = base;
+    for (k, v) in overlay {
+        if let (Some(HoconValue::Object(existing)), HoconValue::Object(new_fields)) =
+            (merged.get(&k).cloned(), &v)
+        {
+            merged.insert(k, deep_merge_hocon_objects(existing, new_fields.clone()));
+        } else {
+            merged.insert(k, v);
+        }
+    }
+    HoconValue::Object(merged)
 }
 
 fn resolve_append(

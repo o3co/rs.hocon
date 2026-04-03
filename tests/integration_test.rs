@@ -169,3 +169,19 @@ fn test_trailing_comments_after_braced_root_ok() {
     let result2 = hocon::parse("{ a = 1 } # comment");
     assert!(result2.is_ok(), "trailing # comments should be accepted");
 }
+
+// Task 10: object concatenation deep-merge
+#[test]
+fn test_object_concat_deep_merge() {
+    let cfg = hocon::parse(r#"a = {x: {y: 1}} {x: {z: 2}}"#).unwrap();
+    assert_eq!(cfg.get_i64("a.x.y").unwrap(), 1);
+    assert_eq!(cfg.get_i64("a.x.z").unwrap(), 2);
+}
+
+#[test]
+fn test_object_concat_deep_merge_multiple() {
+    let cfg = hocon::parse(r#"a = {nested: {a: 1}} {nested: {b: 2}} {nested: {c: 3}}"#).unwrap();
+    assert_eq!(cfg.get_i64("a.nested.a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("a.nested.b").unwrap(), 2);
+    assert_eq!(cfg.get_i64("a.nested.c").unwrap(), 3);
+}
