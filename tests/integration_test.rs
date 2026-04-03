@@ -146,3 +146,26 @@ fn parse_self_referential_substitution() {
     assert!(path.contains("/usr"));
     assert!(path.contains("/extra"));
 }
+
+#[test]
+fn test_braced_root_object_concat() {
+    let cfg = hocon::parse("{ a = 1 } { b = 2 }").unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
+}
+
+#[test]
+fn test_braced_root_with_trailing_fields() {
+    let cfg = hocon::parse("{ a = 1 }\nb = 2").unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
+}
+
+#[test]
+fn test_trailing_comments_after_braced_root_ok() {
+    // Comments after root should be OK (lexer strips them)
+    let result = hocon::parse("{ a = 1 } // comment");
+    assert!(result.is_ok(), "trailing comments should be accepted");
+    let result2 = hocon::parse("{ a = 1 } # comment");
+    assert!(result2.is_ok(), "trailing # comments should be accepted");
+}
