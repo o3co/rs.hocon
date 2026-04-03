@@ -89,7 +89,10 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
         if parser.peek_kind() != TokenKind::Eof {
             let pos = parser.current_pos();
             return Err(ParseError {
-                message: format!("unexpected token after closing brace: {:?}", parser.peek_kind()),
+                message: format!(
+                    "unexpected token after closing brace: {:?}",
+                    parser.peek_kind()
+                ),
                 line: pos.line,
                 col: pos.col,
             });

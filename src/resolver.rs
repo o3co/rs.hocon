@@ -230,11 +230,20 @@ fn ast_to_resolver_value(
             let mut separator_flags = Vec::with_capacity(nodes.len());
             let mut rv_nodes = Vec::with_capacity(nodes.len());
             for node in nodes {
-                let is_sep = matches!(node, AstNode::Scalar { separator: true, .. });
+                let is_sep = matches!(
+                    node,
+                    AstNode::Scalar {
+                        separator: true,
+                        ..
+                    }
+                );
                 rv_nodes.push(ast_to_resolver_value(node, opts)?);
                 separator_flags.push(is_sep);
             }
-            Ok(ResolverValue::Concat(ConcatPlaceholder { nodes: rv_nodes, separator_flags }))
+            Ok(ResolverValue::Concat(ConcatPlaceholder {
+                nodes: rv_nodes,
+                separator_flags,
+            }))
         }
         AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
             ScalarValue::Null,
@@ -427,9 +436,16 @@ fn resolve_val(
 ) -> Result<Option<HoconValue>, ResolveError> {
     match v {
         ResolverValue::Subst(s) => resolve_subst(s, scope, root, resolving, cache, env),
-        ResolverValue::Concat(c) => {
-            resolve_concat(&c.nodes, &c.separator_flags, scope, root, resolving, cache, env).map(Some)
-        }
+        ResolverValue::Concat(c) => resolve_concat(
+            &c.nodes,
+            &c.separator_flags,
+            scope,
+            root,
+            resolving,
+            cache,
+            env,
+        )
+        .map(Some),
         ResolverValue::Append(a) => resolve_append(a, scope, root, resolving, cache, env).map(Some),
         ResolverValue::Obj(o) => resolve_res_obj(o, root, resolving, cache, env).map(Some),
         ResolverValue::UnresolvedArray(items) => {
@@ -560,7 +576,9 @@ fn resolve_concat(
     if resolved
         .iter()
         .all(|(v, is_sep)| matches!(v, HoconValue::Object(_)) || *is_sep)
-        && resolved.iter().any(|(v, _)| matches!(v, HoconValue::Object(_)))
+        && resolved
+            .iter()
+            .any(|(v, _)| matches!(v, HoconValue::Object(_)))
     {
         let mut merged = IndexMap::new();
         for (v, is_sep) in resolved {
@@ -583,7 +601,10 @@ fn resolve_concat(
     }
 
     // Array concatenation
-    if resolved.iter().any(|(v, _)| matches!(v, HoconValue::Array(_))) {
+    if resolved
+        .iter()
+        .any(|(v, _)| matches!(v, HoconValue::Array(_)))
+    {
         let mut items = Vec::new();
         for (v, _) in resolved {
             match v {
