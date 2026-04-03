@@ -430,3 +430,10 @@ fn test_config_clone() {
     let cloned = cfg.clone();
     assert_eq!(cloned.get_i64("a").unwrap(), 1);
 }
+
+#[test]
+fn test_config_partial_eq() {
+    let cfg1 = hocon::parse("a = 1").unwrap();
+    let cfg2 = hocon::parse("a = 1").unwrap();
+    assert_eq!(cfg1, cfg2);
+}

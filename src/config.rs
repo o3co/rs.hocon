@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 /// `Config` wraps an ordered map of top-level keys to [`HoconValue`]s and
 /// provides typed getters that accept dot-separated paths
 /// (e.g., `"server.host"`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     root: IndexMap<String, HoconValue>,
 }
