@@ -19,19 +19,8 @@ impl Config {
 
     // Walk the dot-separated path through nested objects.
     fn lookup_node(&self, path: &str) -> Option<&HoconValue> {
-        let mut parts = path.splitn(2, '.');
-        let key = parts.next()?;
-        let rest = parts.next();
-
-        let value = self.root.get(key)?;
-
-        match rest {
-            None => Some(value),
-            Some(remaining) => match value {
-                HoconValue::Object(map) => lookup_in_map(map, remaining),
-                _ => None,
-            },
-        }
+        let segments = split_config_path(path);
+        lookup_in_map_by_segments(&self.root, &segments)
     }
 
     /// Return the raw [`HoconValue`] at the given dot-separated path,
@@ -280,21 +269,63 @@ impl Config {
     }
 }
 
-// Free function that walks a map recursively using a dot path, avoiding lifetime issues
-// in methods that would need to return references into temporary Config values.
-fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Option<&'a HoconValue> {
-    let mut parts = path.splitn(2, '.');
-    let key = parts.next()?;
-    let rest = parts.next();
+/// Split a HOCON config path into segments, respecting quoted keys.
+/// e.g. `server."web.api".port` → `["server", "web.api", "port"]`
+fn split_config_path(path: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let chars: Vec<char> = path.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            // Quoted segment — collect until closing quote
+            i += 1; // skip opening quote
+            let start = i;
+            while i < chars.len() && chars[i] != '"' {
+                i += 1;
+            }
+            segments.push(chars[start..i].iter().collect());
+            if i < chars.len() {
+                i += 1; // skip closing quote
+            }
+            // skip optional '.' separator
+            if i < chars.len() && chars[i] == '.' {
+                i += 1;
+            }
+        } else {
+            // Unquoted segment — collect until '.' or '"'
+            let start = i;
+            while i < chars.len() && chars[i] != '.' && chars[i] != '"' {
+                i += 1;
+            }
+            if i > start {
+                segments.push(chars[start..i].iter().collect());
+            }
+            // skip optional '.' separator
+            if i < chars.len() && chars[i] == '.' {
+                i += 1;
+            }
+        }
+    }
+    segments
+}
 
+fn lookup_in_map_by_segments<'a>(
+    map: &'a IndexMap<String, HoconValue>,
+    segments: &[String],
+) -> Option<&'a HoconValue> {
+    if segments.is_empty() {
+        return None;
+    }
+    let key = &segments[0];
+    let rest = &segments[1..];
     let value = map.get(key)?;
-
-    match rest {
-        None => Some(value),
-        Some(remaining) => match value {
-            HoconValue::Object(inner) => lookup_in_map(inner, remaining),
+    if rest.is_empty() {
+        Some(value)
+    } else {
+        match value {
+            HoconValue::Object(inner) => lookup_in_map_by_segments(inner, rest),
             _ => None,
-        },
+        }
     }
 }
 

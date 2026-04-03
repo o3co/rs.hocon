@@ -170,6 +170,20 @@ fn test_trailing_comments_after_braced_root_ok() {
     assert!(result2.is_ok(), "trailing # comments should be accepted");
 }
 
+// Task 14: quoted path segments in Config lookups
+#[test]
+fn test_quoted_path_lookup() {
+    let cfg = hocon::parse(r#""a.b" = 1"#).unwrap();
+    assert!(cfg.has(r#""a.b""#));
+    assert_eq!(cfg.get_i64(r#""a.b""#).unwrap(), 1);
+}
+
+#[test]
+fn test_nested_quoted_path_lookup() {
+    let cfg = hocon::parse(r#"server { "web.api" { port = 8080 } }"#).unwrap();
+    assert_eq!(cfg.get_i64(r#"server."web.api".port"#).unwrap(), 8080);
+}
+
 // Task 13: parse_bytes fractional number support
 #[test]
 fn test_parse_bytes_fractional() {
