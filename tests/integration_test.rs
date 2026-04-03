@@ -342,3 +342,18 @@ fn test_include_probing_propagates_parse_error() {
     );
 }
 
+// Task 4c: url() and classpath() include forms must produce errors
+#[test]
+fn test_include_url_not_supported() {
+    let result = hocon::parse(r#"include url("http://example.com/config")"#);
+    assert!(result.is_err(), "include url(...) should return an error");
+}
+
+#[test]
+fn test_include_classpath_not_supported() {
+    let result = hocon::parse(r#"include classpath("reference.conf")"#);
+    assert!(
+        result.is_err(),
+        "include classpath(...) should return an error"
+    );
+}
