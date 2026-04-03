@@ -336,14 +336,26 @@ impl<'a> Parser<'a> {
 
         if required {
             if raw == "required" {
-                // Separate tokens: consume "required", then expect "(" next
+                // Separate tokens: consume "required", then expect "(" (possibly fused with "file(")
                 self.advance();
                 if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with('(') {
                     let val = self.peek_value().to_string();
                     if val == "(" {
-                        self.advance(); // standalone "("
+                        self.advance(); // standalone "(" — inner content is next token
+                    } else {
+                        // Token is "(file(...)" or similar — strip leading "(" and treat
+                        // the remainder as if it were emitted without "required(".
+                        // We do this by rewriting the token in place via file_prefix_consumed.
+                        let after_paren = &val[1..]; // strip leading "("
+                        if after_paren == "file("
+                            || after_paren.starts_with("file(")
+                            || after_paren == "file"
+                        {
+                            file_prefix_consumed = true;
+                            self.advance(); // consume "(file(..." token; path follows
+                        }
+                        // else: bare "(content" — inner content; fall through to path reading below
                     }
-                    // else inner content starts immediately; handled below
                 }
             } else {
                 // raw starts with "required(" — consume this token.

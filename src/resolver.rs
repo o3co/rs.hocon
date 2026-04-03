@@ -114,10 +114,10 @@ fn apply_field(
         if let AstNode::Include {
             path: include_path,
             required,
-            ..
+            pos,
         } = &field.value
         {
-            let included = load_include(include_path, *required, opts)?;
+            let included = load_include(include_path, *required, pos.line, pos.col, opts)?;
             deep_merge_res_obj_into(obj, included);
         }
         return Ok(());
@@ -256,6 +256,8 @@ fn ast_to_resolver_value(
 fn load_include(
     include_path: &str,
     required: bool,
+    line: usize,
+    col: usize,
     opts: &ResolveOptions,
 ) -> Result<ResObj, ResolveError> {
     let base = match &opts.base_dir {
@@ -276,8 +278,8 @@ fn load_include(
                     return Err(ResolveError {
                         message: format!("required include file not found: {}", abs_path.display()),
                         path: abs_path.display().to_string(),
-                        line: 0,
-                        col: 0,
+                        line,
+                        col,
                     });
                 }
                 Ok(ResObj::new())
@@ -313,8 +315,8 @@ fn load_include(
         Err(ResolveError {
             message: format!("required include file not found: {}", abs_path.display()),
             path: abs_path.display().to_string(),
-            line: 0,
-            col: 0,
+            line,
+            col,
         })
     } else {
         // Missing includes silently ignored per HOCON spec
