@@ -14,28 +14,37 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-/// Generate a flat/shallow HOCON config string with `total_keys` keys spread
-/// across objects up to `max_depth` levels deep.
+/// Generate a HOCON config string with `total_keys` keys distributed across
+/// `max_depth` braced groups (matching the Go benchmark generator pattern).
 fn generate_config(total_keys: usize, max_depth: usize) -> String {
+    let max_depth = max_depth.min(total_keys).max(1);
+    let keys_per_group = total_keys / max_depth;
     let mut buf = String::new();
-    for i in 0..total_keys {
-        let depth = if max_depth == 0 { 0 } else { i % max_depth };
-        let segments: Vec<String> = (0..=depth).map(|d| format!("level{d}")).collect();
-        let path = segments.join(".");
-        buf.push_str(&format!("{path}.key{i} = \"value{i}\"\n"));
+    for d in 0..max_depth {
+        let count = if d == max_depth - 1 {
+            total_keys - keys_per_group * (max_depth - 1)
+        } else {
+            keys_per_group
+        };
+        buf.push_str(&format!("group{d} {{\n"));
+        for i in 0..count {
+            buf.push_str(&format!("  key{i} = \"value{d}_{i}\"\n"));
+        }
+        buf.push_str("}\n");
     }
     buf
 }
 
-/// Generate a HOCON string with `count` base keys followed by `count`
-/// substitution keys that reference them via `${}`.
+/// Generate a HOCON string with flat base keys followed by substitution keys
+/// that reference them via `${}` (matching the Go benchmark generator pattern).
 fn generate_with_substitutions(count: usize) -> String {
     let mut buf = String::new();
-    for i in 0..count {
-        buf.push_str(&format!("base.key{i} = \"val{i}\"\n"));
+    let total = count * 2;
+    for i in 0..total {
+        buf.push_str(&format!("base{i} = \"value{i}\"\n"));
     }
     for i in 0..count {
-        buf.push_str(&format!("sub.key{i} = ${{base.key{i}}}\n"));
+        buf.push_str(&format!("sub{i} = ${{base{}}}\n", i % total));
     }
     buf
 }
@@ -70,27 +79,27 @@ fn bench_config_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("config_size");
 
     let small = generate_config(10, 2);
-    let medium = generate_config(100, 3);
-    let large = generate_config(1000, 4);
+    let medium = generate_config(100, 4);
+    let large = generate_config(1000, 6);
 
     group.bench_function("parse_small_10", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&small)).unwrap();
-            black_box(config.get_string("level0.key0").unwrap());
+            black_box(config.get_string("group0.key0").unwrap());
         });
     });
 
     group.bench_function("parse_medium_100", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&medium)).unwrap();
-            black_box(config.get_string("level0.key0").unwrap());
+            black_box(config.get_string("group0.key0").unwrap());
         });
     });
 
     group.bench_function("parse_large_1000", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&large)).unwrap();
-            black_box(config.get_string("level0.key0").unwrap());
+            black_box(config.get_string("group0.key0").unwrap());
         });
     });
 
@@ -111,21 +120,21 @@ fn bench_substitutions(c: &mut Criterion) {
     group.bench_function("substitutions_10", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&sub10)).unwrap();
-            black_box(config.get_string("sub.key0").unwrap());
+            black_box(config.get_string("sub0").unwrap());
         });
     });
 
     group.bench_function("substitutions_50", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&sub50)).unwrap();
-            black_box(config.get_string("sub.key0").unwrap());
+            black_box(config.get_string("sub0").unwrap());
         });
     });
 
     group.bench_function("substitutions_100", |b| {
         b.iter(|| {
             let config = hocon::parse(black_box(&sub100)).unwrap();
-            black_box(config.get_string("sub.key0").unwrap());
+            black_box(config.get_string("sub0").unwrap());
         });
     });
 

@@ -221,17 +221,17 @@ Measured with [Criterion](https://github.com/bheisler/criterion.rs). Each iterat
 
 | Scenario | ops/sec | Time per op |
 |---|---|---|
-| Small config (10 keys) | ~33,000 | ~30 µs |
-| Medium config (100 keys) | ~1,000 | ~776 µs |
-| Large config (1,000 keys) | ~16 | ~64 ms |
-| 10 substitutions | ~24,000 | ~41 µs |
-| 50 substitutions | ~3,000 | ~321 µs |
-| 100 substitutions | ~1,000 | ~1.0 ms |
-| Depth 5 nesting | ~63,000 | ~16 µs |
-| Depth 10 nesting | ~54,000 | ~19 µs |
-| Depth 20 nesting | ~41,000 | ~24 µs |
+| Small config (10 keys) | ~62,000 | ~16 µs |
+| Medium config (100 keys) | ~19,000 | ~52 µs |
+| Large config (1,000 keys) | ~2,400 | ~408 µs |
+| 10 substitutions | ~37,000 | ~27 µs |
+| 50 substitutions | ~12,000 | ~86 µs |
+| 100 substitutions | ~6,400 | ~156 µs |
+| Depth 5 nesting | ~58,000 | ~17 µs |
+| Depth 10 nesting | ~50,000 | ~20 µs |
+| Depth 20 nesting | ~39,000 | ~26 µs |
 
-For typical application configs (loaded once at startup), the parsing cost is negligible — even a 1,000-key config parses in under 65 ms.
+For typical application configs (loaded once at startup), the parsing cost is negligible — even a 1,000-key config parses in under 0.5 ms.
 
 ## Comparison
 
