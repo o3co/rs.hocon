@@ -6,6 +6,7 @@ use std::fmt;
 // Error type
 // ---------------------------------------------------------------------------
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct DeserializeError {
     pub message: String,
@@ -31,12 +32,12 @@ impl ::serde::de::Error for DeserializeError {
 // Deserializer
 // ---------------------------------------------------------------------------
 
-pub struct HoconDeserializer<'de> {
+pub(crate) struct HoconDeserializer<'de> {
     value: &'de HoconValue,
 }
 
 impl<'de> HoconDeserializer<'de> {
-    pub fn new(value: &'de HoconValue) -> Self {
+    pub(crate) fn new(value: &'de HoconValue) -> Self {
         Self { value }
     }
 }
@@ -345,7 +346,7 @@ use ::serde::de::IntoDeserializer;
 // MapAccess
 // ---------------------------------------------------------------------------
 
-pub struct HoconMapAccess<'de> {
+pub(crate) struct HoconMapAccess<'de> {
     iter: indexmap::map::Iter<'de, String, HoconValue>,
     current_value: Option<&'de HoconValue>,
 }
@@ -412,7 +413,7 @@ impl<'de, 'a> ::serde::Deserializer<'de> for StringKeyDeserializer<'a> {
 // SeqAccess
 // ---------------------------------------------------------------------------
 
-pub struct HoconSeqAccess<'de> {
+pub(crate) struct HoconSeqAccess<'de> {
     iter: std::slice::Iter<'de, HoconValue>,
 }
 

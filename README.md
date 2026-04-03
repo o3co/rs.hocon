@@ -1,13 +1,13 @@
-# o3co-hocon — HOCON Parser for Rust
+# hocon-parser — HOCON Parser for Rust
 
-[![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
-[![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
+[![Crates.io](https://img.shields.io/crates/v/hocon-parser.svg)](https://crates.io/crates/hocon-parser)
+[![docs.rs](https://docs.rs/hocon-parser/badge.svg)](https://docs.rs/hocon-parser)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
-[![License](https://img.shields.io/crates/l/o3co-hocon.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
 Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)-compliant
-parser for Rust. Zero-copy lexer, recursive-descent parser, and a typed `Config` API
+parser for Rust. Hand-written lexer, recursive-descent parser, and a typed `Config` API
 with optional Serde integration.
 
 [日本語](README.ja.md)
@@ -17,13 +17,13 @@ with optional Serde integration.
 ### 1. Install
 
 ```sh
-cargo add o3co-hocon
+cargo add hocon-parser
 ```
 
 To enable Serde support:
 
 ```sh
-cargo add o3co-hocon --features serde
+cargo add hocon-parser --features serde
 ```
 
 ### 2. Use
@@ -244,7 +244,7 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 | Substitutions (`${path}`) | ✅ | ✅ |
 | Optional substitutions (`${?path}`) | ✅ | ✅ |
 | Include | ✅ | ✅ |
-| `include required()` | ✅ | ❌ |
+| `include required(file(...))` | ✅ | ❌ |
 | Object/Array concatenation | ✅ | ✅ |
 | Type coercion | ✅ | ⚠️ |
 | Duration parsing | ✅ | ✅ |
@@ -341,6 +341,13 @@ struct AppConfig {
 // requires the `serde` feature
 let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
+
+## Security Considerations
+
+When parsing untrusted HOCON input, be aware of:
+
+- **Path traversal in includes:** `include "../../../etc/passwd"` will resolve relative to `base_dir`. Validate include paths if parsing untrusted input.
+- **Input size:** The parser has no built-in input size limit. For untrusted input, validate size before calling `parse()`.
 
 ## License
 

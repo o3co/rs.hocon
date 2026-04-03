@@ -45,7 +45,9 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
             hocon::ScalarValue::Float(f) => serde_json::json!(*f),
             hocon::ScalarValue::Bool(b) => serde_json::Value::Bool(*b),
             hocon::ScalarValue::Null => serde_json::Value::Null,
+            _ => unreachable!("unknown ScalarValue variant"),
         },
+        _ => unreachable!("unknown HoconValue variant"),
     }
 }
 

@@ -122,6 +122,9 @@ pub use config::Config;
 pub use error::{ConfigError, ParseError, ResolveError};
 pub use value::{HoconValue, ScalarValue};
 
+#[cfg(feature = "serde")]
+pub use serde::DeserializeError;
+
 use std::collections::HashMap;
 use std::path::Path;
 

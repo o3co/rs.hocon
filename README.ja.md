@@ -1,12 +1,12 @@
-# o3co-hocon — Rust 向け HOCON パーサー
+# hocon-parser — Rust 向け HOCON パーサー
 
-[![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
-[![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
+[![Crates.io](https://img.shields.io/crates/v/hocon-parser.svg)](https://crates.io/crates/hocon-parser)
+[![docs.rs](https://docs.rs/hocon-parser/badge.svg)](https://docs.rs/hocon-parser)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
-[![License](https://img.shields.io/crates/l/o3co-hocon.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。ゼロコピーレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
 
 > **[Claude Code](https://claude.ai/claude-code)（Anthropic）による設計・実装。**
 > [GitHub Copilot](https://github.com/features/copilot) および [OpenAI Codex](https://openai.com/index/openai-codex/) によるレビュー。
@@ -20,13 +20,13 @@
 ### 1. インストール
 
 ```sh
-cargo add o3co-hocon
+cargo add hocon-parser
 ```
 
 Serde サポートを有効にする場合:
 
 ```sh
-cargo add o3co-hocon --features serde
+cargo add hocon-parser --features serde
 ```
 
 ### 2. 使い方
@@ -282,6 +282,13 @@ struct AppConfig {
 // `serde` フィーチャーが必要
 let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
 ```
+
+## セキュリティに関する注意
+
+信頼できない HOCON 入力を解析する場合、以下に注意してください：
+
+- **include のパストラバーサル:** `include "../../../etc/passwd"` は `base_dir` からの相対パスで解決されます。信頼できない入力を解析する場合は、include パスを検証してください。
+- **入力サイズ:** パーサーには入力サイズの制限がありません。信頼できない入力の場合は、`parse()` を呼ぶ前にサイズを検証してください。
 
 ## ライセンス
 
