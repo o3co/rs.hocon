@@ -71,3 +71,57 @@ impl fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
+
+/// Unified error type returned by top-level parse functions.
+///
+/// Wraps the three possible failure modes: syntax errors ([`ParseError`]),
+/// substitution resolution failures ([`ResolveError`]), and file I/O
+/// errors ([`std::io::Error`]).
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum HoconError {
+    /// Syntax error during lexing or parsing.
+    Parse(ParseError),
+    /// Substitution resolution failure (missing key, cycle, etc.).
+    Resolve(ResolveError),
+    /// File I/O error when reading the top-level config file.
+    Io(std::io::Error),
+}
+
+impl fmt::Display for HoconError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HoconError::Parse(e) => write!(f, "{}", e),
+            HoconError::Resolve(e) => write!(f, "{}", e),
+            HoconError::Io(e) => write!(f, "I/O error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for HoconError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            HoconError::Parse(e) => Some(e),
+            HoconError::Resolve(e) => Some(e),
+            HoconError::Io(e) => Some(e),
+        }
+    }
+}
+
+impl From<ParseError> for HoconError {
+    fn from(e: ParseError) -> Self {
+        HoconError::Parse(e)
+    }
+}
+
+impl From<ResolveError> for HoconError {
+    fn from(e: ResolveError) -> Self {
+        HoconError::Resolve(e)
+    }
+}
+
+impl From<std::io::Error> for HoconError {
+    fn from(e: std::io::Error) -> Self {
+        HoconError::Io(e)
+    }
+}
