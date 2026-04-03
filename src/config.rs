@@ -47,6 +47,10 @@ impl Config {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Scalar(ScalarValue::String(s))) => Ok(s.clone()),
+            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(n.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(f.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Bool(b))) => Ok(b.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Null)) => Ok("null".to_string()),
             _ => Err(type_mismatch(path, "String")),
         }
     }
@@ -419,9 +423,38 @@ mod tests {
     }
 
     #[test]
-    fn get_string_error_on_non_string() {
+    fn get_string_coerces_int() {
         let c = make_config(vec![("port", iv(8080))]);
-        assert!(c.get_string("port").is_err());
+        assert_eq!(c.get_string("port").unwrap(), "8080");
+    }
+
+    #[test]
+    fn get_string_coerces_float() {
+        let c = make_config(vec![("ratio", fv(3.14))]);
+        // f64::to_string may produce "3.14" or similar; just check it parses back
+        let s = c.get_string("ratio").unwrap();
+        let v: f64 = s.parse().unwrap();
+        assert!((v - 3.14).abs() < 1e-10);
+    }
+
+    #[test]
+    fn get_string_coerces_bool() {
+        let c = make_config(vec![("flag", bv(true))]);
+        assert_eq!(c.get_string("flag").unwrap(), "true");
+    }
+
+    #[test]
+    fn get_string_coerces_null() {
+        let c = make_config(vec![("v", HoconValue::Scalar(ScalarValue::Null))]);
+        assert_eq!(c.get_string("v").unwrap(), "null");
+    }
+
+    #[test]
+    fn get_string_error_on_object() {
+        let mut inner = IndexMap::new();
+        inner.insert("x".into(), iv(1));
+        let c = make_config(vec![("obj", HoconValue::Object(inner))]);
+        assert!(c.get_string("obj").is_err());
     }
 
     #[test]

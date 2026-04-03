@@ -170,6 +170,31 @@ fn test_trailing_comments_after_braced_root_ok() {
     assert!(result2.is_ok(), "trailing # comments should be accepted");
 }
 
+// Task 11: get_string coercion for non-string scalars
+#[test]
+fn test_get_string_coerces_int() {
+    let cfg = hocon::parse("port = 8080").unwrap();
+    assert_eq!(cfg.get_string("port").unwrap(), "8080");
+}
+
+#[test]
+fn test_get_string_coerces_float() {
+    let cfg = hocon::parse("ratio = 3.14").unwrap();
+    assert_eq!(cfg.get_string("ratio").unwrap(), "3.14");
+}
+
+#[test]
+fn test_get_string_coerces_bool() {
+    let cfg = hocon::parse("enabled = true").unwrap();
+    assert_eq!(cfg.get_string("enabled").unwrap(), "true");
+}
+
+#[test]
+fn test_get_string_coerces_null() {
+    let cfg = hocon::parse("val = null").unwrap();
+    assert_eq!(cfg.get_string("val").unwrap(), "null");
+}
+
 // Task 10: object concatenation deep-merge
 #[test]
 fn test_object_concat_deep_merge() {
