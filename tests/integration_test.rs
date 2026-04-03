@@ -443,17 +443,10 @@ fn unquoted_forbids_spec_special_chars() {
     let specials = ['?', '!', '@', '*', '&', '^', '\\'];
     for ch in &specials {
         let input = format!("key = foo{}bar", ch);
-        match hocon::parse(&input) {
-            Err(_) => {} // parse error is valid rejection
-            Ok(config) => {
-                let val = config.get_string("key").unwrap();
-                assert!(
-                    !val.contains(*ch),
-                    "char '{}' should be forbidden in unquoted strings, got: {:?}",
-                    ch,
-                    val,
-                );
-            }
-        }
+        assert!(
+            hocon::parse(&input).is_err(),
+            "char '{}' should be rejected in unquoted strings, but parsed successfully",
+            ch,
+        );
     }
 }

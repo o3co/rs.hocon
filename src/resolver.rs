@@ -288,7 +288,7 @@ fn load_include(
         };
     }
 
-    // No extension: per HOCON spec, try .conf, .json, .properties and merge all that exist
+    // No extension: probe and merge in .properties, .json, .conf order; later merges win, so .conf has highest precedence
     let extensions = ["properties", "json", "conf"];
     let mut merged = ResObj::new();
     let mut found_any = false;
