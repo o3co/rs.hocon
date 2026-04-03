@@ -216,7 +216,12 @@ fn test_duration_missing_units() {
     for (input, path, expected_nanos) in tests {
         let cfg = hocon::parse(input).unwrap();
         let dur = cfg.get_duration(path).unwrap();
-        assert_eq!(dur.as_nanos(), expected_nanos, "failed for input: {}", input);
+        assert_eq!(
+            dur.as_nanos(),
+            expected_nanos,
+            "failed for input: {}",
+            input
+        );
     }
 }
 
@@ -264,4 +269,18 @@ fn test_object_concat_deep_merge_multiple() {
 #[test]
 fn test_stray_brace_after_root() {
     assert!(hocon::parse("{ a = 1 } }").is_err());
+}
+
+#[test]
+fn test_parse_bytes_overflow_returns_none() {
+    // Fractional value that overflows i64 should return error, not bogus value
+    let cfg = hocon::parse("size = 99999999999999999.0TiB").unwrap();
+    assert!(cfg.get_bytes("size").is_err());
+}
+
+#[test]
+fn test_unterminated_quoted_path_fallback() {
+    // Unterminated quoted path should fall back to literal (no panic)
+    let cfg = hocon::parse("a = 1").unwrap();
+    assert!(cfg.get_i64(r#""unterminated"#).is_err());
 }

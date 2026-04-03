@@ -305,10 +305,10 @@ fn split_config_path(path: &str) -> Vec<String> {
                 seg.push(chars[i]);
                 i += 1;
             }
-            segments.push(seg);
             if !closed {
-                break;
+                return vec![path.to_string()]; // treat as literal if unterminated
             }
+            segments.push(seg);
             // skip optional '.' separator
             if i < chars.len() && chars[i] == '.' {
                 i += 1;
@@ -423,7 +423,11 @@ fn parse_bytes(s: &str) -> Option<i64> {
         n.checked_mul(multiplier)
     } else {
         let num: f64 = num_str.parse().ok()?;
-        Some((num * multiplier as f64).round() as i64)
+        let result = (num * multiplier as f64).round();
+        if !result.is_finite() || result > i64::MAX as f64 || result < i64::MIN as f64 {
+            return None;
+        }
+        Some(result as i64)
     }
 }
 
