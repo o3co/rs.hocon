@@ -50,6 +50,8 @@ struct SubstPlaceholder {
 #[derive(Debug, Clone)]
 struct ConcatPlaceholder {
     nodes: Vec<ResolverValue>,
+    /// Parallel array: true if the corresponding node is a parser-synthesized separator.
+    separator_flags: Vec<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -225,11 +227,14 @@ fn ast_to_resolver_value(
             col: pos.col,
         })),
         AstNode::Concat { nodes, .. } => {
-            let rv_nodes: Vec<ResolverValue> = nodes
-                .into_iter()
-                .map(|node| ast_to_resolver_value(node, opts))
-                .collect::<Result<_, _>>()?;
-            Ok(ResolverValue::Concat(ConcatPlaceholder { nodes: rv_nodes }))
+            let mut separator_flags = Vec::with_capacity(nodes.len());
+            let mut rv_nodes = Vec::with_capacity(nodes.len());
+            for node in nodes {
+                let is_sep = matches!(node, AstNode::Scalar { separator: true, .. });
+                rv_nodes.push(ast_to_resolver_value(node, opts)?);
+                separator_flags.push(is_sep);
+            }
+            Ok(ResolverValue::Concat(ConcatPlaceholder { nodes: rv_nodes, separator_flags }))
         }
         AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
             ScalarValue::Null,
@@ -423,7 +428,7 @@ fn resolve_val(
     match v {
         ResolverValue::Subst(s) => resolve_subst(s, scope, root, resolving, cache, env),
         ResolverValue::Concat(c) => {
-            resolve_concat(&c.nodes, scope, root, resolving, cache, env).map(Some)
+            resolve_concat(&c.nodes, &c.separator_flags, scope, root, resolving, cache, env).map(Some)
         }
         ResolverValue::Append(a) => resolve_append(a, scope, root, resolving, cache, env).map(Some),
         ResolverValue::Obj(o) => resolve_res_obj(o, root, resolving, cache, env).map(Some),
@@ -529,16 +534,18 @@ fn resolve_subst(
 
 fn resolve_concat(
     nodes: &[ResolverValue],
+    separator_flags: &[bool],
     scope: &ResObj,
     root: &ResObj,
     resolving: &mut HashSet<String>,
     cache: &mut HashMap<String, HoconValue>,
     env: &HashMap<String, String>,
 ) -> Result<HoconValue, ResolveError> {
-    let mut resolved = Vec::new();
-    for n in nodes {
+    let mut resolved: Vec<(HoconValue, bool)> = Vec::new();
+    for (i, n) in nodes.iter().enumerate() {
+        let is_sep = separator_flags.get(i).copied().unwrap_or(false);
         if let Some(v) = resolve_val(n, scope, root, resolving, cache, env)? {
-            resolved.push(v);
+            resolved.push((v, is_sep));
         }
     }
 
@@ -546,22 +553,20 @@ fn resolve_concat(
         return Ok(HoconValue::Scalar(ScalarValue::Null));
     }
     if resolved.len() == 1 {
-        return Ok(resolved.into_iter().next().unwrap());
+        return Ok(resolved.into_iter().next().unwrap().0);
     }
 
-    // Object concatenation — whitespace-only string scalars between objects are ignored
-    // (the parser inserts a literal " " between space-separated tokens)
-    let is_whitespace_scalar = |v: &HoconValue| matches!(
-        v,
-        HoconValue::Scalar(ScalarValue::String(s)) if s.trim().is_empty()
-    );
+    // Object concatenation — only skip parser-synthesized separators (not user-authored strings).
     if resolved
         .iter()
-        .all(|v| matches!(v, HoconValue::Object(_)) || is_whitespace_scalar(v))
-        && resolved.iter().any(|v| matches!(v, HoconValue::Object(_)))
+        .all(|(v, is_sep)| matches!(v, HoconValue::Object(_)) || *is_sep)
+        && resolved.iter().any(|(v, _)| matches!(v, HoconValue::Object(_)))
     {
         let mut merged = IndexMap::new();
-        for v in resolved {
+        for (v, is_sep) in resolved {
+            if is_sep {
+                continue; // skip parser-synthesized separator whitespace
+            }
             if let HoconValue::Object(fields) = v {
                 for (k, val) in fields {
                     if let (Some(HoconValue::Object(existing)), HoconValue::Object(new_fields)) =
@@ -573,15 +578,14 @@ fn resolve_concat(
                     }
                 }
             }
-            // whitespace scalars are skipped
         }
         return Ok(HoconValue::Object(merged));
     }
 
     // Array concatenation
-    if resolved.iter().any(|v| matches!(v, HoconValue::Array(_))) {
+    if resolved.iter().any(|(v, _)| matches!(v, HoconValue::Array(_))) {
         let mut items = Vec::new();
-        for v in resolved {
+        for (v, _) in resolved {
             match v {
                 HoconValue::Array(arr) => items.extend(arr),
                 other => items.push(other),
@@ -591,7 +595,7 @@ fn resolve_concat(
     }
 
     // String concatenation
-    let s: String = resolved.iter().map(stringify_value).collect();
+    let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
     Ok(HoconValue::Scalar(ScalarValue::String(s)))
 }
 

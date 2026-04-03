@@ -31,7 +31,9 @@ impl Config {
 
     /// Return the value at `path` as a `String`.
     ///
-    /// Returns [`ConfigError`] if the path is missing or the value is not a string.
+    /// Scalar values (Int, Float, Bool, Null) are coerced to their string
+    /// representation. Returns [`ConfigError`] if the path is missing or
+    /// the value is an Object or Array.
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -161,8 +163,11 @@ impl Config {
     /// Accepts HOCON duration strings (e.g., `"30 seconds"`, `"100ms"`,
     /// `"2 hours"`). Bare integers are interpreted as milliseconds.
     ///
-    /// Supported units: `ns`, `us`, `ms`, `s`/`second`/`seconds`,
-    /// `m`/`minute`/`minutes`, `h`/`hour`/`hours`, `d`/`day`/`days`.
+    /// Supported units: `ns`/`nano`/`nanos`/`nanosecond`/`nanoseconds`,
+    /// `us`/`micro`/`micros`/`microsecond`/`microseconds`,
+    /// `ms`/`milli`/`millis`/`millisecond`/`milliseconds`,
+    /// `s`/`second`/`seconds`, `m`/`minute`/`minutes`,
+    /// `h`/`hour`/`hours`, `d`/`day`/`days`, `w`/`week`/`weeks`.
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -195,8 +200,11 @@ impl Config {
     /// Accepts HOCON byte-size strings (e.g., `"512 MB"`, `"1 GiB"`).
     /// Bare integers are returned as-is (assumed bytes).
     ///
-    /// Supported units: `B`, `KB`/`KiB`, `MB`/`MiB`, `GB`/`GiB`, `TB`/`TiB`
-    /// (and long forms like `megabytes`, `mebibytes`).
+    /// Supported units: `B`/`byte`/`bytes`, `K`/`KB`/`kilobyte`/`kilobytes`,
+    /// `KiB`/`kibibyte`/`kibibytes`, `M`/`MB`/`megabyte`/`megabytes`,
+    /// `MiB`/`mebibyte`/`mebibytes`, `G`/`GB`/`gigabyte`/`gigabytes`,
+    /// `GiB`/`gibibyte`/`gibibytes`, `T`/`TB`/`terabyte`/`terabytes`,
+    /// `TiB`/`tebibyte`/`tebibytes`. Fractional numbers (e.g. `0.5M`) are supported.
     pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
         let v = self.lookup_node(path).ok_or_else(|| ConfigError {
             message: format!("path not found: {}", path),
@@ -373,29 +381,33 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
 fn parse_bytes(s: &str) -> Option<i64> {
     let s = s.trim();
     let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
         .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
     let unit_str = s[num_end..].trim();
 
-    let num: f64 = num_str.parse().ok()?;
-
     // Case-sensitive matching: KB vs KiB matters. Short forms (K, M, G, T) are
     // treated as SI decimal units (KB, MB, GB, TB).
-    let multiplier: f64 = match unit_str {
-        "" | "B" | "byte" | "bytes" => 1.0,
-        "K" | "KB" | "kilobyte" | "kilobytes" => 1_000.0,
-        "KiB" | "kibibyte" | "kibibytes" => 1_024.0,
-        "M" | "MB" | "megabyte" | "megabytes" => 1_000_000.0,
-        "MiB" | "mebibyte" | "mebibytes" => 1_048_576.0,
-        "G" | "GB" | "gigabyte" | "gigabytes" => 1_000_000_000.0,
-        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824.0,
-        "T" | "TB" | "terabyte" | "terabytes" => 1_000_000_000_000.0,
-        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776.0,
+    let multiplier: i64 = match unit_str {
+        "" | "B" | "byte" | "bytes" => 1,
+        "K" | "KB" | "kilobyte" | "kilobytes" => 1_000,
+        "KiB" | "kibibyte" | "kibibytes" => 1_024,
+        "M" | "MB" | "megabyte" | "megabytes" => 1_000_000,
+        "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
+        "G" | "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
+        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
+        "T" | "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
+        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
         _ => return None,
     };
 
-    Some((num * multiplier) as i64)
+    // Try lossless integer path first, fall back to f64 for fractional values
+    if let Ok(n) = num_str.parse::<i64>() {
+        Some(n * multiplier)
+    } else {
+        let num: f64 = num_str.parse().ok()?;
+        Some((num * multiplier as f64) as i64)
+    }
 }
 
 fn missing(path: &str) -> ConfigError {

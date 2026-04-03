@@ -22,6 +22,10 @@ pub enum AstNode {
     Scalar {
         value: ScalarValue,
         pos: Pos,
+        /// True when this scalar was synthesized by the parser as whitespace
+        /// between concatenated tokens (not user-authored).
+        #[allow(dead_code)]
+        separator: bool,
     },
     Concat {
         nodes: Vec<AstNode>,
@@ -398,6 +402,7 @@ impl<'a> Parser<'a> {
                     AstNode::Scalar {
                         value: ScalarValue::String(val),
                         pos: Pos { line, col },
+                        separator: false,
                     }
                 }
                 TokenKind::Unquoted => {
@@ -405,6 +410,7 @@ impl<'a> Parser<'a> {
                     AstNode::Scalar {
                         value: parse_scalar_value(&val),
                         pos: Pos { line, col },
+                        separator: false,
                     }
                 }
                 TokenKind::Colon | TokenKind::Equals if !parts.is_empty() => {
@@ -412,6 +418,7 @@ impl<'a> Parser<'a> {
                     AstNode::Scalar {
                         value: ScalarValue::String(val),
                         pos: Pos { line, col },
+                        separator: false,
                     }
                 }
                 _ => break,
@@ -424,6 +431,7 @@ impl<'a> Parser<'a> {
                         line: t_line,
                         col: t_col,
                     },
+                    separator: true,
                 });
             }
             parts.push(node);
