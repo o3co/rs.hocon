@@ -1,6 +1,14 @@
 use hocon::parse;
 use std::collections::HashMap;
 
+/// Create (and return) a temporary directory for tests.
+/// The caller is responsible for cleanup via `std::fs::remove_dir_all`.
+fn test_tmp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("hocon_test_{}", name));
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 #[test]
 fn parse_simple_config() {
     let config = parse("host = \"localhost\"\nport = 8080").unwrap();
@@ -283,4 +291,114 @@ fn test_unterminated_quoted_path_fallback() {
     // Unterminated quoted path should fall back to literal (no panic)
     let cfg = hocon::parse("a = 1").unwrap();
     assert!(cfg.get_i64(r#""unterminated"#).is_err());
+}
+
+// Fix 1: include required(file("...")) form
+#[test]
+fn test_include_required_file_form() {
+    let dir = test_tmp_dir("required_file_form");
+    let conf = dir.join("base.conf");
+    std::fs::write(&conf, "x = 1").unwrap();
+
+    let path_str = conf.display().to_string().replace('\\', "\\\\");
+    let input = format!(r#"include required(file("{}"))"#, path_str);
+    let cfg = hocon::parse(&input).unwrap();
+    assert_eq!(cfg.get_i64("x").unwrap(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Fix 2: include required (file("...")) with space before paren
+#[test]
+fn test_include_required_space_file_form() {
+    let dir = test_tmp_dir("required_space_file_form");
+    let conf = dir.join("spaced.conf");
+    std::fs::write(&conf, "y = 42").unwrap();
+
+    let path_str = conf.display().to_string().replace('\\', "\\\\");
+    let input = format!(r#"include required (file("{}"))"#, path_str);
+    let cfg = hocon::parse(&input).unwrap();
+    assert_eq!(cfg.get_i64("y").unwrap(), 42);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Task 1c/2c: include required() support
+#[test]
+fn test_include_required_missing_file_errors() {
+    let result = hocon::parse(r#"include required("nonexistent.conf")"#);
+    assert!(
+        result.is_err(),
+        "required include of missing file should error"
+    );
+}
+
+#[test]
+fn test_include_required_file_form_missing_errors() {
+    let result = hocon::parse(r#"include required(file("nonexistent.conf"))"#);
+    assert!(
+        result.is_err(),
+        "required include with file() form of missing file should error"
+    );
+}
+
+#[test]
+fn test_include_required_existing_file_ok() {
+    let dir = test_tmp_dir("required_existing");
+    let conf = dir.join("required_base.conf");
+    std::fs::write(&conf, "req_key = 42\n").unwrap();
+    let path_str = conf.display().to_string().replace('\\', "/");
+    let content = format!("include required(\"{}\")\nextra = 1", path_str);
+    let result = hocon::parse(&content);
+    assert!(
+        result.is_ok(),
+        "required include of existing file should succeed: {:?}",
+        result.err()
+    );
+    let cfg = result.unwrap();
+    assert_eq!(cfg.get_i64("req_key").unwrap(), 42);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_include_optional_missing_file_ok() {
+    let result = hocon::parse("include \"nonexistent.conf\"\na = 1");
+    assert!(
+        result.is_ok(),
+        "optional include of missing file should succeed"
+    );
+    let cfg = result.unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+}
+
+// Task 3c: parse errors in existing included files must propagate
+#[test]
+fn test_include_probing_propagates_parse_error() {
+    let dir = test_tmp_dir("probing_parse_error");
+    let broken_path = dir.join("broken.conf");
+    std::fs::write(&broken_path, "{ invalid = }").unwrap();
+
+    let stem = dir.join("broken");
+    let path_str = stem.display().to_string().replace('\\', "/");
+    let input = format!(r#"include "{}""#, path_str);
+    let result = hocon::parse(&input);
+    assert!(
+        result.is_err(),
+        "parse error in included file should propagate"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Task 4c: url() and classpath() include forms must produce errors
+#[test]
+fn test_include_url_not_supported() {
+    let result = hocon::parse(r#"include url("http://example.com/config")"#);
+    assert!(result.is_err(), "include url(...) should return an error");
+}
+
+#[test]
+fn test_include_classpath_not_supported() {
+    let result = hocon::parse(r#"include classpath("reference.conf")"#);
+    assert!(
+        result.is_err(),
+        "include classpath(...) should return an error"
+    );
 }

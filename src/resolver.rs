@@ -112,10 +112,12 @@ fn apply_field(
     // Include directive
     if field.key.is_empty() {
         if let AstNode::Include {
-            path: include_path, ..
+            path: include_path,
+            required,
+            pos,
         } = &field.value
         {
-            let included = load_include(include_path, opts)?;
+            let included = load_include(include_path, *required, pos.line, pos.col, opts)?;
             deep_merge_res_obj_into(obj, included);
         }
         return Ok(());
@@ -251,7 +253,13 @@ fn ast_to_resolver_value(
     }
 }
 
-fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
+fn load_include(
+    include_path: &str,
+    required: bool,
+    line: usize,
+    col: usize,
+    opts: &ResolveOptions,
+) -> Result<ResObj, ResolveError> {
     let base = match &opts.base_dir {
         Some(dir) => dir.clone(),
         None => std::env::current_dir().unwrap_or_default(),
@@ -262,12 +270,18 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
     let has_extension = abs_path.extension().is_some();
 
     if has_extension {
-        // Exact path: try only this candidate, silently ignore if file not found
+        // Exact path: try only this candidate, silently ignore if file not found (unless required)
         return match load_single_include(&abs_path, opts) {
             Ok(obj) => Ok(obj),
-            Err(e) if !abs_path.exists() => {
-                // Missing includes silently ignored per HOCON spec
-                let _ = e;
+            Err(_) if !abs_path.exists() => {
+                if required {
+                    return Err(ResolveError {
+                        message: format!("required include file not found: {}", abs_path.display()),
+                        path: abs_path.display().to_string(),
+                        line,
+                        col,
+                    });
+                }
                 Ok(ResObj::new())
             }
             Err(e) => Err(e),
@@ -285,14 +299,25 @@ fn load_include(include_path: &str, opts: &ResolveOptions) -> Result<ResObj, Res
                 found_any = true;
                 deep_merge_res_obj_into(&mut merged, obj);
             }
-            Err(_) => {
-                // File doesn't exist or can't be read — skip
+            Err(e) => {
+                if candidate.exists() {
+                    // File exists but parsing failed — propagate the error
+                    return Err(e);
+                }
+                // File not found — try next extension
             }
         }
     }
 
     if found_any {
         Ok(merged)
+    } else if required {
+        Err(ResolveError {
+            message: format!("required include file not found: {}", abs_path.display()),
+            path: abs_path.display().to_string(),
+            line,
+            col,
+        })
     } else {
         // Missing includes silently ignored per HOCON spec
         Ok(ResObj::new())
