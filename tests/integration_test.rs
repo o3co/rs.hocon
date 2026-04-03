@@ -450,3 +450,42 @@ fn unquoted_forbids_spec_special_chars() {
         );
     }
 }
+
+#[test]
+fn parse_error_is_hocon_error_parse_variant() {
+    let result = hocon::parse("{ unterminated");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        hocon::HoconError::Parse(pe) => {
+            assert!(pe.line > 0 || pe.col > 0, "should have position info");
+        }
+        _ => panic!("expected HoconError::Parse, got {:?}", err),
+    }
+}
+
+#[test]
+fn resolve_error_is_hocon_error_resolve_variant() {
+    let result = hocon::parse("a = ${missing.required.key}");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        hocon::HoconError::Resolve(re) => {
+            assert!(!re.path.is_empty(), "should have substitution path");
+        }
+        _ => panic!("expected HoconError::Resolve, got {:?}", err),
+    }
+}
+
+#[test]
+fn io_error_is_hocon_error_io_variant() {
+    let result = hocon::parse_file("/nonexistent/path/to/file.conf");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        hocon::HoconError::Io(io_err) => {
+            assert_eq!(io_err.kind(), std::io::ErrorKind::NotFound);
+        }
+        _ => panic!("expected HoconError::Io, got {:?}", err),
+    }
+}
