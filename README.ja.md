@@ -283,6 +283,13 @@ struct AppConfig {
 let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
 ```
 
+## セキュリティに関する注意
+
+信頼できない HOCON 入力を解析する場合、以下に注意してください：
+
+- **include のパストラバーサル:** `include "../../../etc/passwd"` は `base_dir` からの相対パスで解決されます。信頼できない入力を解析する場合は、include パスを検証してください。
+- **入力サイズ:** パーサーには入力サイズの制限がありません。信頼できない入力の場合は、`parse()` を呼ぶ前にサイズを検証してください。
+
 ## ライセンス
 
 Apache License 2.0 — [LICENSE](LICENSE) を参照。

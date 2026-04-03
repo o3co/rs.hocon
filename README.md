@@ -342,6 +342,13 @@ struct AppConfig {
 let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
 
+## Security Considerations
+
+When parsing untrusted HOCON input, be aware of:
+
+- **Path traversal in includes:** `include "../../../etc/passwd"` will resolve relative to `base_dir`. Validate include paths if parsing untrusted input.
+- **Input size:** The parser has no built-in input size limit. For untrusted input, validate size before calling `parse()`.
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
