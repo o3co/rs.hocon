@@ -326,3 +326,19 @@ fn test_include_optional_missing_file_ok() {
     let cfg = result.unwrap();
     assert_eq!(cfg.get_i64("a").unwrap(), 1);
 }
+
+// Task 3c: parse errors in existing included files must propagate
+#[test]
+fn test_include_probing_propagates_parse_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let broken_path = dir.path().join("broken.conf");
+    std::fs::write(&broken_path, "{ invalid = }").unwrap();
+
+    let input = format!(r#"include "{}""#, dir.path().join("broken").display());
+    let result = hocon::parse(&input);
+    assert!(
+        result.is_err(),
+        "parse error in included file should propagate"
+    );
+}
+

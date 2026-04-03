@@ -298,8 +298,12 @@ fn load_include(
                 found_any = true;
                 deep_merge_res_obj_into(&mut merged, obj);
             }
-            Err(_) => {
-                // File doesn't exist or can't be read — skip
+            Err(e) => {
+                if candidate.exists() {
+                    // File exists but parsing failed — propagate the error
+                    return Err(e);
+                }
+                // File not found — try next extension
             }
         }
     }
