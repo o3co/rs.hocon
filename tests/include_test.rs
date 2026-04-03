@@ -49,6 +49,14 @@ fn include_extension_probing() {
 }
 
 #[test]
+fn include_probe_order_conf_wins() {
+    let config = hocon::parse_file(testdata("probe-order-wrapper.conf")).unwrap();
+    assert_eq!(config.get_bool("from_json").unwrap(), true);
+    assert_eq!(config.get_bool("from_conf").unwrap(), true);
+    assert_eq!(config.get_string("shared").unwrap(), "conf");
+}
+
+#[test]
 fn include_missing_silently_ignored() {
     let config = hocon::parse(
         r#"include "nonexistent.conf"

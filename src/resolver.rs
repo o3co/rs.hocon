@@ -289,7 +289,7 @@ fn load_include(
     }
 
     // No extension: per HOCON spec, try .conf, .json, .properties and merge all that exist
-    let extensions = ["conf", "json", "properties"];
+    let extensions = ["properties", "json", "conf"];
     let mut merged = ResObj::new();
     let mut found_any = false;
     for ext in &extensions {
