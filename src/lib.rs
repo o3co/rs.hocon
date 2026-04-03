@@ -101,7 +101,7 @@
 //! - [`HoconError`] -- unified error returned by parse functions. Wraps:
 //!   - [`ParseError`] -- syntax errors during lexing or parsing (includes line/column).
 //!   - [`ResolveError`] -- substitution resolution failures, cycle detection.
-//!   - `std::io::Error` -- file I/O errors.
+//!   - `std::io::Error` -- file I/O errors (top-level file read; include file errors appear as [`ResolveError`]).
 //! - [`ConfigError`] -- missing keys or type mismatches when accessing values.
 //!
 //! ## HOCON Specification
@@ -146,7 +146,8 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
     env: &HashMap<String, String>,
 ) -> Result<Config, HoconError> {
     let path = path.as_ref();
-    let content = std::fs::read_to_string(path)?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
     let tokens = lexer::tokenize(&content)?;
     let ast = parser::parse_tokens(&tokens)?;
     let mut opts = resolver::ResolveOptions::new(env.clone());

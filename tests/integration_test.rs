@@ -458,7 +458,10 @@ fn parse_error_is_hocon_error_parse_variant() {
     let err = result.unwrap_err();
     match err {
         hocon::HoconError::Parse(pe) => {
-            assert!(pe.line > 0 || pe.col > 0, "should have position info");
+            assert!(
+                pe.line > 0 && pe.col > 0,
+                "should have position info (line and col)"
+            );
         }
         _ => panic!("expected HoconError::Parse, got {:?}", err),
     }
@@ -479,7 +482,12 @@ fn resolve_error_is_hocon_error_resolve_variant() {
 
 #[test]
 fn io_error_is_hocon_error_io_variant() {
-    let result = hocon::parse_file("/nonexistent/path/to/file.conf");
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "hocon_test_nonexistent_{}.conf",
+        std::process::id()
+    ));
+    let result = hocon::parse_file(&path);
     assert!(result.is_err());
     let err = result.unwrap_err();
     match err {

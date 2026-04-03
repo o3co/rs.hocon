@@ -84,7 +84,7 @@ pub enum HoconError {
     Parse(ParseError),
     /// Substitution resolution failure (missing key, cycle, etc.).
     Resolve(ResolveError),
-    /// File I/O error (e.g., include file not found).
+    /// File I/O error when reading the top-level config file.
     Io(std::io::Error),
 }
 
