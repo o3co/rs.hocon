@@ -332,6 +332,15 @@ fn test_include_required_missing_file_errors() {
 }
 
 #[test]
+fn test_include_required_file_form_missing_errors() {
+    let result = hocon::parse(r#"include required(file("nonexistent.conf"))"#);
+    assert!(
+        result.is_err(),
+        "required include with file() form of missing file should error"
+    );
+}
+
+#[test]
 fn test_include_required_existing_file_ok() {
     let dir = test_tmp_dir("required_existing");
     let conf = dir.join("required_base.conf");

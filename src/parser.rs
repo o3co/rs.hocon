@@ -383,10 +383,8 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             }
-        } else if self.peek_kind() == TokenKind::Unquoted
-            && (self.peek_value() == "file("
-                || self.peek_value() == "file"
-                || self.peek_value().starts_with("file("))
+        } else if (self.peek_kind() == TokenKind::Unquoted
+            && (self.peek_value() == "file" || self.peek_value().starts_with("file(")))
             || file_prefix_consumed
         {
             // file("path") form — possibly with required( already consumed.
