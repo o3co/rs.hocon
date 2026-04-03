@@ -52,7 +52,21 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
     parser.skip(&[TokenKind::Newline]);
     if parser.peek_kind() == TokenKind::LBrace {
         parser.pos += 1;
-        parser.parse_object(true)
+        let node = parser.parse_object(true)?;
+        parser.skip(&[TokenKind::Newline]);
+        if parser.peek_kind() != TokenKind::Eof {
+            let line = parser.peek_line();
+            let col = parser.peek_col();
+            return Err(ParseError {
+                message: format!(
+                    "unexpected token after root object: {:?}",
+                    parser.peek_kind()
+                ),
+                line,
+                col,
+            });
+        }
+        Ok(node)
     } else {
         parser.parse_object(false)
     }

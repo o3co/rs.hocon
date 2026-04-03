@@ -146,3 +146,30 @@ fn parse_self_referential_substitution() {
     assert!(path.contains("/usr"));
     assert!(path.contains("/extra"));
 }
+
+#[test]
+fn test_trailing_garbage_after_braced_root() {
+    let result = hocon::parse("{ a = 1 } garbage");
+    assert!(
+        result.is_err(),
+        "expected error for trailing garbage after braced root"
+    );
+}
+
+#[test]
+fn test_trailing_tokens_after_braced_root() {
+    let result = hocon::parse("{ a = 1 } extra tokens here");
+    assert!(
+        result.is_err(),
+        "expected error for trailing tokens after braced root"
+    );
+}
+
+#[test]
+fn test_trailing_comments_after_braced_root_ok() {
+    // Comments after root should be OK (lexer strips them)
+    let result = hocon::parse("{ a = 1 } // comment");
+    assert!(result.is_ok(), "trailing comments should be accepted");
+    let result2 = hocon::parse("{ a = 1 } # comment");
+    assert!(result2.is_ok(), "trailing # comments should be accepted");
+}
