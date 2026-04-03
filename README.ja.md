@@ -1,10 +1,10 @@
-# o3co-hocon — Rust 向け HOCON パーサー
+# hocon-parser — Rust 向け HOCON パーサー
 
-[![Crates.io](https://img.shields.io/crates/v/o3co-hocon.svg)](https://crates.io/crates/o3co-hocon)
-[![docs.rs](https://docs.rs/o3co-hocon/badge.svg)](https://docs.rs/o3co-hocon)
+[![Crates.io](https://img.shields.io/crates/v/hocon-parser.svg)](https://crates.io/crates/hocon-parser)
+[![docs.rs](https://docs.rs/hocon-parser/badge.svg)](https://docs.rs/hocon-parser)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
-[![License](https://img.shields.io/crates/l/o3co-hocon.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
 [Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。ゼロコピーレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
 
@@ -20,13 +20,13 @@
 ### 1. インストール
 
 ```sh
-cargo add o3co-hocon
+cargo add hocon-parser
 ```
 
 Serde サポートを有効にする場合:
 
 ```sh
-cargo add o3co-hocon --features serde
+cargo add hocon-parser --features serde
 ```
 
 ### 2. 使い方
