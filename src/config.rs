@@ -279,21 +279,35 @@ impl Config {
 
 /// Split a HOCON config path into segments, respecting quoted keys.
 /// e.g. `server."web.api".port` → `["server", "web.api", "port"]`
+/// Empty segments are preserved: `a..b` → `["a", "", "b"]`.
+/// Quoted segments process escape sequences (e.g. `\"` → `"`).
 fn split_config_path(path: &str) -> Vec<String> {
     let mut segments = Vec::new();
     let chars: Vec<char> = path.chars().collect();
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == '"' {
-            // Quoted segment — collect until closing quote
+            // Quoted segment — collect until closing quote, processing escapes
             i += 1; // skip opening quote
-            let start = i;
-            while i < chars.len() && chars[i] != '"' {
+            let mut seg = String::new();
+            let mut closed = false;
+            while i < chars.len() {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    seg.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == '"' {
+                    closed = true;
+                    i += 1;
+                    break;
+                }
+                seg.push(chars[i]);
                 i += 1;
             }
-            segments.push(chars[start..i].iter().collect());
-            if i < chars.len() {
-                i += 1; // skip closing quote
+            segments.push(seg);
+            if !closed {
+                break;
             }
             // skip optional '.' separator
             if i < chars.len() && chars[i] == '.' {
@@ -301,18 +315,21 @@ fn split_config_path(path: &str) -> Vec<String> {
             }
         } else {
             // Unquoted segment — collect until '.' or '"'
+            // Always push the segment (even empty) to preserve consecutive-dot semantics.
             let start = i;
             while i < chars.len() && chars[i] != '.' && chars[i] != '"' {
                 i += 1;
             }
-            if i > start {
-                segments.push(chars[start..i].iter().collect());
-            }
+            segments.push(chars[start..i].iter().collect());
             // skip optional '.' separator
             if i < chars.len() && chars[i] == '.' {
                 i += 1;
             }
         }
+    }
+    // A trailing dot means there is a final empty segment
+    if path.ends_with('.') {
+        segments.push(String::new());
     }
     segments
 }
@@ -406,7 +423,7 @@ fn parse_bytes(s: &str) -> Option<i64> {
         n.checked_mul(multiplier)
     } else {
         let num: f64 = num_str.parse().ok()?;
-        Some((num * multiplier as f64) as i64)
+        Some((num * multiplier as f64).round() as i64)
     }
 }
 
@@ -808,5 +825,37 @@ mod tests {
     fn get_bytes_option_missing() {
         let c = make_config(vec![]);
         assert!(c.get_bytes_option("s").is_none());
+    }
+
+    #[test]
+    fn get_bytes_fractional_rounds() {
+        // 1.5 KiB = 1536 bytes exactly; rounding should not change it
+        let c = make_config(vec![("s", sv("1.5 KiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1536);
+    }
+
+    #[test]
+    fn split_config_path_consecutive_dots_preserve_empty() {
+        let segs = split_config_path("a..b");
+        assert_eq!(segs, vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn split_config_path_trailing_dot_empty_segment() {
+        let segs = split_config_path("a.b.");
+        assert_eq!(segs, vec!["a", "b", ""]);
+    }
+
+    #[test]
+    fn split_config_path_quoted_escape() {
+        // "a\"b" as a path key should produce the key: a"b
+        let segs = split_config_path(r#""a\"b""#);
+        assert_eq!(segs, vec!["a\"b"]);
+    }
+
+    #[test]
+    fn split_config_path_quoted_with_dot() {
+        let segs = split_config_path(r#"server."web.api".port"#);
+        assert_eq!(segs, vec!["server", "web.api", "port"]);
     }
 }
