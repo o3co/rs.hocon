@@ -310,7 +310,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                         }
                         _ => {
                             return Err(ParseError {
-                                message: format!("unknown escape sequence: \\{}", esc),
+                                message: format!(
+                                    "unknown escape sequence: \\{}",
+                                    esc.escape_debug()
+                                ),
                                 line: sl,
                                 col: col.saturating_sub(1),
                             });
