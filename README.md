@@ -217,7 +217,7 @@ defaults { size = 20 }  # merges: color stays, size updated
 
 ## Performance
 
-Measured with [Criterion](https://github.com/bheisler/criterion.rs). Run `cargo bench` to reproduce.
+Measured with [Criterion](https://github.com/bheisler/criterion.rs). Each iteration includes parsing and a `get_string` lookup. Run `cargo bench` to reproduce.
 
 | Scenario | ops/sec | Time per op |
 |---|---|---|
@@ -260,7 +260,7 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 |---|:---:|:---:|
 | **Formats** | | |
 | HOCON | ✅ | ❌ |
-| JSON | ✅ (via include) | ✅ |
+| JSON | ✅ | ✅ |
 | YAML | ❌ | ✅ |
 | TOML | ❌ | ✅ |
 | Env vars | ✅ (fallback) | ✅ |
