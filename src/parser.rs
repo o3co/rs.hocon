@@ -51,6 +51,7 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
     let mut parser = Parser { tokens, pos: 0 };
     parser.skip(&[TokenKind::Newline]);
     if parser.peek_kind() == TokenKind::LBrace {
+        let first_pos = parser.current_pos();
         parser.pos += 1;
         let node = parser.parse_object(true)?;
         let mut all_fields = match node {
@@ -80,9 +81,20 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
             }
         }
 
+        // Verify no remaining tokens after braced root (e.g. stray `}`)
+        parser.skip(&[TokenKind::Newline]);
+        if parser.peek_kind() != TokenKind::Eof {
+            let pos = parser.current_pos();
+            return Err(ParseError {
+                message: format!("unexpected token after closing brace: {:?}", parser.peek_kind()),
+                line: pos.line,
+                col: pos.col,
+            });
+        }
+
         Ok(AstNode::Object {
             fields: all_fields,
-            pos: Pos { line: 1, col: 1 },
+            pos: first_pos,
         })
     } else {
         parser.parse_object(false)

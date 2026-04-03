@@ -260,3 +260,8 @@ fn test_object_concat_deep_merge_multiple() {
     assert_eq!(cfg.get_i64("a.nested.b").unwrap(), 2);
     assert_eq!(cfg.get_i64("a.nested.c").unwrap(), 3);
 }
+
+#[test]
+fn test_stray_brace_after_root() {
+    assert!(hocon::parse("{ a = 1 } }").is_err());
+}
