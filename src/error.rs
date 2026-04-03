@@ -3,6 +3,7 @@ use std::fmt;
 /// Error returned when HOCON input contains a syntax error.
 ///
 /// Includes the line and column where the error was detected.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ParseError {
     /// Human-readable description of the error.
@@ -27,6 +28,7 @@ impl std::error::Error for ParseError {}
 
 /// Error returned when substitution resolution fails (e.g., missing
 /// required substitution, cyclic reference).
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ResolveError {
     /// Human-readable description of the error.
@@ -53,6 +55,7 @@ impl std::error::Error for ResolveError {}
 
 /// Error returned by [`Config`](crate::Config) getters when a key is missing
 /// or the value has the wrong type.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ConfigError {
     /// Human-readable description of the error.

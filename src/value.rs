@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 /// with it through the typed getters on `Config`, but it is also returned
 /// directly by [`Config::get`](crate::Config::get) and
 /// [`Config::get_list`](crate::Config::get_list).
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum HoconValue {
     /// An ordered map of key-value pairs (HOCON object / JSON object).
@@ -17,6 +18,7 @@ pub enum HoconValue {
 }
 
 /// A scalar (leaf) value inside a HOCON document.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalarValue {
     /// A string value.

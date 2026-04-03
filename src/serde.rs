@@ -6,6 +6,7 @@ use std::fmt;
 // Error type
 // ---------------------------------------------------------------------------
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct DeserializeError {
     pub message: String,
