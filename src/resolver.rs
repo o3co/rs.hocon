@@ -271,7 +271,7 @@ fn load_include(
         // Exact path: try only this candidate, silently ignore if file not found (unless required)
         return match load_single_include(&abs_path, opts) {
             Ok(obj) => Ok(obj),
-            Err(e) if !abs_path.exists() => {
+            Err(_) if !abs_path.exists() => {
                 if required {
                     return Err(ResolveError {
                         message: format!("required include file not found: {}", abs_path.display()),
@@ -280,7 +280,6 @@ fn load_include(
                         col: 0,
                     });
                 }
-                let _ = e;
                 Ok(ResObj::new())
             }
             Err(e) => Err(e),

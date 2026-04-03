@@ -309,31 +309,60 @@ impl<'a> Parser<'a> {
     fn parse_include(&mut self) -> Result<AstField, ParseError> {
         let p = self.current_pos();
         self.skip(&[TokenKind::Newline]);
-        let kind = self.peek_kind();
 
-        // Check for `required(...)` wrapper
-        let required = kind == TokenKind::Unquoted
-            && (self.peek_value() == "required(" || self.peek_value() == "required");
+        // Determine whether `required(...)` is present.
+        //
+        // The lexer produces unquoted tokens by consuming everything that is not
+        // a stop character.  Parentheses are NOT stop characters, so the lexer
+        // can produce tokens like:
+        //   "required("          — from `required(`
+        //   "required(file("     — from `required(file(`
+        //   "required"           — from `required` (space before `(`)
+        //
+        // We normalise all of these into: required=true, cursor pointing at the
+        // inner content after the `(` of `required(`.
+        let kind = self.peek_kind();
+        let raw = if kind == TokenKind::Unquoted {
+            self.peek_value().to_string()
+        } else {
+            String::new()
+        };
+
+        let required = raw == "required" || raw.starts_with("required(");
+
+        // Tracks whether `file(` has already been consumed as part of the
+        // `required(file(` mega-token.
+        let mut file_prefix_consumed = false;
+
         if required {
-            self.advance(); // consume "required(" or "required"
-                            // If the token was "required" (without paren), consume the opening "("
-                            // The lexer may split "required" and "(" as separate tokens when there is no
-                            // space, but actually "(" is not an unquoted-stop char... However "(" IS
-                            // included in is_unquoted_start/continue since it's not in the stop set.
-                            // The lexer will actually produce "required(" as one token (paren is unquoted).
-                            // But to be safe, also handle "required" + "(" as separate tokens:
-            if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with('(') {
-                // e.g. token was "required" and next is "(" or "(\"..."
-                let val = self.peek_value().to_string();
-                if val == "(" {
-                    self.advance(); // consume standalone "("
+            if raw == "required" {
+                // Separate tokens: consume "required", then expect "(" next
+                self.advance();
+                if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with('(') {
+                    let val = self.peek_value().to_string();
+                    if val == "(" {
+                        self.advance(); // standalone "("
+                    }
+                    // else inner content starts immediately; handled below
                 }
-                // else: paren is embedded in next unquoted token — handled below
+            } else {
+                // raw starts with "required(" — consume this token.
+                // Check if `file(` is also embedded (e.g. "required(file(").
+                let after_req = &raw["required(".len()..];
+                if after_req == "file(" || after_req.starts_with("file(") {
+                    file_prefix_consumed = true;
+                }
+                // Also handle "required(file" (split at space — unlikely but safe)
+                if after_req == "file" {
+                    file_prefix_consumed = true; // next token will be "("
+                }
+                self.advance(); // consume "required(..." token
             }
         }
 
         let path;
         if self.peek_kind() == TokenKind::QuotedString {
+            // Simple: include required("path") or include "path"
             path = self.peek_value().to_string();
             self.advance();
             if required {
@@ -343,12 +372,21 @@ impl<'a> Parser<'a> {
                 }
             }
         } else if self.peek_kind() == TokenKind::Unquoted
-            && (self.peek_value() == "file(" || self.peek_value() == "file")
+            && (self.peek_value() == "file("
+                || self.peek_value() == "file"
+                || self.peek_value().starts_with("file("))
+            || file_prefix_consumed
         {
+            // file("path") form — possibly with required( already consumed.
             let err_line = self.peek_line();
             let err_col = self.peek_col();
-            self.advance();
-            // Skip tokens until we find the quoted path string
+
+            if !file_prefix_consumed {
+                // Consume the "file(" (or "file") token
+                self.advance();
+            }
+
+            // Skip any remaining unquoted junk between file( and the quoted path
             while self.peek_kind() != TokenKind::QuotedString && self.peek_kind() != TokenKind::Eof
             {
                 self.advance();

@@ -285,6 +285,19 @@ fn test_unterminated_quoted_path_fallback() {
     assert!(cfg.get_i64(r#""unterminated"#).is_err());
 }
 
+// Fix 1: include required(file("...")) form
+#[test]
+fn test_include_required_file_form() {
+    // Create a temp file to include
+    let dir = tempfile::tempdir().unwrap();
+    let conf = dir.path().join("base.conf");
+    std::fs::write(&conf, "x = 1").unwrap();
+
+    let input = format!(r#"include required(file("{}"))"#, conf.display());
+    let cfg = hocon::parse(&input).unwrap();
+    assert_eq!(cfg.get_i64("x").unwrap(), 1);
+}
+
 // Task 1c/2c: include required() support
 #[test]
 fn test_include_required_missing_file_errors() {
@@ -297,14 +310,9 @@ fn test_include_required_missing_file_errors() {
 
 #[test]
 fn test_include_required_existing_file_ok() {
-    // base.conf lives in tests/testdata/; parse_file sets the base_dir correctly
-    use std::path::PathBuf;
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let conf = manifest.join("tests/testdata/required_base.conf");
-    // Write a tiny fixture if it doesn't exist yet
-    if !conf.exists() {
-        std::fs::write(&conf, "req_key = 42\n").unwrap();
-    }
+    let dir = tempfile::tempdir().unwrap();
+    let conf = dir.path().join("required_base.conf");
+    std::fs::write(&conf, "req_key = 42\n").unwrap();
     let content = format!("include required({:?})\nextra = 1", conf.to_str().unwrap());
     let result = hocon::parse(&content);
     assert!(
