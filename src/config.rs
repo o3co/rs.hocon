@@ -323,13 +323,14 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
     let num: f64 = num_str.parse().ok()?;
 
     let nanos_per_unit: f64 = match unit_str.as_str() {
-        "ns" | "nanosecond" | "nanoseconds" => 1.0,
-        "us" | "microsecond" | "microseconds" => 1_000.0,
-        "ms" | "millisecond" | "milliseconds" => 1_000_000.0,
+        "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
+        "us" | "micro" | "micros" | "microsecond" | "microseconds" => 1_000.0,
+        "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
         "s" | "second" | "seconds" => 1_000_000_000.0,
         "m" | "minute" | "minutes" => 60_000_000_000.0,
         "h" | "hour" | "hours" => 3_600_000_000_000.0,
         "d" | "day" | "days" => 86_400_000_000_000.0,
+        "w" | "week" | "weeks" => 604_800_000_000_000.0,
         _ => return None,
     };
 

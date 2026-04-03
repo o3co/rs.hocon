@@ -170,6 +170,27 @@ fn test_trailing_comments_after_braced_root_ok() {
     assert!(result2.is_ok(), "trailing # comments should be accepted");
 }
 
+// Task 12: duration parsing missing units
+#[test]
+fn test_duration_missing_units() {
+    let tests = vec![
+        ("dur = 1 milli", "dur", 1_000_000u128),
+        ("dur = 2000 micros", "dur", 2_000_000u128),
+        ("dur = 500 nano", "dur", 500u128),
+        ("dur = 500 nanos", "dur", 500u128),
+        ("dur = 1 nanosecond", "dur", 1u128),
+        ("dur = 1 microsecond", "dur", 1_000u128),
+        ("dur = 1 millis", "dur", 1_000_000u128),
+        ("dur = 1 millisecond", "dur", 1_000_000u128),
+        ("dur = 1w", "dur", 604_800_000_000_000u128),
+    ];
+    for (input, path, expected_nanos) in tests {
+        let cfg = hocon::parse(input).unwrap();
+        let dur = cfg.get_duration(path).unwrap();
+        assert_eq!(dur.as_nanos(), expected_nanos, "failed for input: {}", input);
+    }
+}
+
 // Task 11: get_string coercion for non-string scalars
 #[test]
 fn test_get_string_coerces_int() {
