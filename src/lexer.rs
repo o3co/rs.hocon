@@ -308,7 +308,16 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                             pos += 4;
                             col += 4;
                         }
-                        _ => value.push(esc),
+                        _ => {
+                            return Err(ParseError {
+                                message: format!(
+                                    "unknown escape sequence: \\{}",
+                                    esc.escape_debug()
+                                ),
+                                line: sl,
+                                col: col.saturating_sub(1),
+                            });
+                        }
                     }
                 } else {
                     value.push(chars[pos]);
