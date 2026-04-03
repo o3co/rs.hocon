@@ -415,3 +415,18 @@ fn test_unknown_escape_a_error() {
     let result = hocon::parse(r#"key = "\a""#);
     assert!(result.is_err(), "unknown escape \\a should error");
 }
+
+// Task 4: Debug and Clone derives for Config
+#[test]
+fn test_config_debug() {
+    let cfg = hocon::parse("a = 1").unwrap();
+    let debug_str = format!("{:?}", cfg);
+    assert!(!debug_str.is_empty(), "Debug output should not be empty");
+}
+
+#[test]
+fn test_config_clone() {
+    let cfg = hocon::parse("a = 1").unwrap();
+    let cloned = cfg.clone();
+    assert_eq!(cloned.get_i64("a").unwrap(), 1);
+}
