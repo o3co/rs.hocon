@@ -402,3 +402,16 @@ fn test_include_classpath_not_supported() {
         "include classpath(...) should return an error"
     );
 }
+
+// Task 2c: unknown escape sequences should error
+#[test]
+fn test_unknown_escape_sequence_error() {
+    let result = hocon::parse(r#"key = "hello\qworld""#);
+    assert!(result.is_err(), "unknown escape \\q should error");
+}
+
+#[test]
+fn test_unknown_escape_a_error() {
+    let result = hocon::parse(r#"key = "\a""#);
+    assert!(result.is_err(), "unknown escape \\a should error");
+}
