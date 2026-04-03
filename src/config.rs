@@ -19,19 +19,8 @@ impl Config {
 
     // Walk the dot-separated path through nested objects.
     fn lookup_node(&self, path: &str) -> Option<&HoconValue> {
-        let mut parts = path.splitn(2, '.');
-        let key = parts.next()?;
-        let rest = parts.next();
-
-        let value = self.root.get(key)?;
-
-        match rest {
-            None => Some(value),
-            Some(remaining) => match value {
-                HoconValue::Object(map) => lookup_in_map(map, remaining),
-                _ => None,
-            },
-        }
+        let segments = split_config_path(path);
+        lookup_in_map_by_segments(&self.root, &segments)
     }
 
     /// Return the raw [`HoconValue`] at the given dot-separated path,
@@ -42,11 +31,17 @@ impl Config {
 
     /// Return the value at `path` as a `String`.
     ///
-    /// Returns [`ConfigError`] if the path is missing or the value is not a string.
+    /// Scalar values (Int, Float, Bool, Null) are coerced to their string
+    /// representation. Returns [`ConfigError`] if the path is missing or
+    /// the value is an Object or Array.
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Scalar(ScalarValue::String(s))) => Ok(s.clone()),
+            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(n.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(f.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Bool(b))) => Ok(b.to_string()),
+            Some(HoconValue::Scalar(ScalarValue::Null)) => Ok("null".to_string()),
             _ => Err(type_mismatch(path, "String")),
         }
     }
@@ -168,8 +163,11 @@ impl Config {
     /// Accepts HOCON duration strings (e.g., `"30 seconds"`, `"100ms"`,
     /// `"2 hours"`). Bare integers are interpreted as milliseconds.
     ///
-    /// Supported units: `ns`, `us`, `ms`, `s`/`second`/`seconds`,
-    /// `m`/`minute`/`minutes`, `h`/`hour`/`hours`, `d`/`day`/`days`.
+    /// Supported units: `ns`/`nano`/`nanos`/`nanosecond`/`nanoseconds`,
+    /// `us`/`micro`/`micros`/`microsecond`/`microseconds`,
+    /// `ms`/`milli`/`millis`/`millisecond`/`milliseconds`,
+    /// `s`/`second`/`seconds`, `m`/`minute`/`minutes`,
+    /// `h`/`hour`/`hours`, `d`/`day`/`days`, `w`/`week`/`weeks`.
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -202,8 +200,11 @@ impl Config {
     /// Accepts HOCON byte-size strings (e.g., `"512 MB"`, `"1 GiB"`).
     /// Bare integers are returned as-is (assumed bytes).
     ///
-    /// Supported units: `B`, `KB`/`KiB`, `MB`/`MiB`, `GB`/`GiB`, `TB`/`TiB`
-    /// (and long forms like `megabytes`, `mebibytes`).
+    /// Supported units: `B`/`byte`/`bytes`, `K`/`KB`/`kilobyte`/`kilobytes`,
+    /// `KiB`/`kibibyte`/`kibibytes`, `M`/`MB`/`megabyte`/`megabytes`,
+    /// `MiB`/`mebibyte`/`mebibytes`, `G`/`GB`/`gigabyte`/`gigabytes`,
+    /// `GiB`/`gibibyte`/`gibibytes`, `T`/`TB`/`terabyte`/`terabytes`,
+    /// `TiB`/`tebibyte`/`tebibytes`. Fractional numbers (e.g. `0.5M`) are supported.
     pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
         let v = self.lookup_node(path).ok_or_else(|| ConfigError {
             message: format!("path not found: {}", path),
@@ -276,21 +277,80 @@ impl Config {
     }
 }
 
-// Free function that walks a map recursively using a dot path, avoiding lifetime issues
-// in methods that would need to return references into temporary Config values.
-fn lookup_in_map<'a>(map: &'a IndexMap<String, HoconValue>, path: &str) -> Option<&'a HoconValue> {
-    let mut parts = path.splitn(2, '.');
-    let key = parts.next()?;
-    let rest = parts.next();
+/// Split a HOCON config path into segments, respecting quoted keys.
+/// e.g. `server."web.api".port` → `["server", "web.api", "port"]`
+/// Empty segments are preserved: `a..b` → `["a", "", "b"]`.
+/// Quoted segments process escape sequences (e.g. `\"` → `"`).
+fn split_config_path(path: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let chars: Vec<char> = path.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            // Quoted segment — collect until closing quote, processing escapes
+            i += 1; // skip opening quote
+            let mut seg = String::new();
+            let mut closed = false;
+            while i < chars.len() {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    seg.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == '"' {
+                    closed = true;
+                    i += 1;
+                    break;
+                }
+                seg.push(chars[i]);
+                i += 1;
+            }
+            if !closed {
+                return vec![path.to_string()]; // treat as literal if unterminated
+            }
+            segments.push(seg);
+            // skip optional '.' separator
+            if i < chars.len() && chars[i] == '.' {
+                i += 1;
+            }
+        } else {
+            // Unquoted segment — collect until '.' or '"'
+            // Always push the segment (even empty) to preserve consecutive-dot semantics.
+            let start = i;
+            while i < chars.len() && chars[i] != '.' && chars[i] != '"' {
+                i += 1;
+            }
+            segments.push(chars[start..i].iter().collect());
+            // skip optional '.' separator
+            if i < chars.len() && chars[i] == '.' {
+                i += 1;
+            }
+        }
+    }
+    // A trailing dot means there is a final empty segment
+    if path.ends_with('.') {
+        segments.push(String::new());
+    }
+    segments
+}
 
+fn lookup_in_map_by_segments<'a>(
+    map: &'a IndexMap<String, HoconValue>,
+    segments: &[String],
+) -> Option<&'a HoconValue> {
+    if segments.is_empty() {
+        return None;
+    }
+    let key = &segments[0];
+    let rest = &segments[1..];
     let value = map.get(key)?;
-
-    match rest {
-        None => Some(value),
-        Some(remaining) => match value {
-            HoconValue::Object(inner) => lookup_in_map(inner, remaining),
+    if rest.is_empty() {
+        Some(value)
+    } else {
+        match value {
+            HoconValue::Object(inner) => lookup_in_map_by_segments(inner, rest),
             _ => None,
-        },
+        }
     }
 }
 
@@ -319,13 +379,14 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
     let num: f64 = num_str.parse().ok()?;
 
     let nanos_per_unit: f64 = match unit_str.as_str() {
-        "ns" | "nanosecond" | "nanoseconds" => 1.0,
-        "us" | "microsecond" | "microseconds" => 1_000.0,
-        "ms" | "millisecond" | "milliseconds" => 1_000_000.0,
+        "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
+        "us" | "micro" | "micros" | "microsecond" | "microseconds" => 1_000.0,
+        "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
         "s" | "second" | "seconds" => 1_000_000_000.0,
         "m" | "minute" | "minutes" => 60_000_000_000.0,
         "h" | "hour" | "hours" => 3_600_000_000_000.0,
         "d" | "day" | "days" => 86_400_000_000_000.0,
+        "w" | "week" | "weeks" => 604_800_000_000_000.0,
         _ => return None,
     };
 
@@ -336,27 +397,38 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
 
 fn parse_bytes(s: &str) -> Option<i64> {
     let s = s.trim();
-    let num_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
     let unit_str = s[num_end..].trim();
 
-    let num: i64 = num_str.parse().ok()?;
-
-    // Case-sensitive matching: KB vs KiB matters
+    // Case-sensitive matching: KB vs KiB matters. Short forms (K, M, G, T) are
+    // treated as SI decimal units (KB, MB, GB, TB).
     let multiplier: i64 = match unit_str {
-        "B" | "byte" | "bytes" => 1,
-        "KB" | "kilobyte" | "kilobytes" => 1_000,
+        "" | "B" | "byte" | "bytes" => 1,
+        "K" | "KB" | "kilobyte" | "kilobytes" => 1_000,
         "KiB" | "kibibyte" | "kibibytes" => 1_024,
-        "MB" | "megabyte" | "megabytes" => 1_000_000,
+        "M" | "MB" | "megabyte" | "megabytes" => 1_000_000,
         "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
-        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
+        "G" | "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
         "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
-        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
+        "T" | "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
         "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
         _ => return None,
     };
 
-    Some(num * multiplier)
+    // Try lossless integer path first, fall back to f64 for fractional values
+    if let Ok(n) = num_str.parse::<i64>() {
+        n.checked_mul(multiplier)
+    } else {
+        let num: f64 = num_str.parse().ok()?;
+        let result = (num * multiplier as f64).round();
+        if !result.is_finite() || result > i64::MAX as f64 || result < i64::MIN as f64 {
+            return None;
+        }
+        Some(result as i64)
+    }
 }
 
 fn missing(path: &str) -> ConfigError {
@@ -419,9 +491,38 @@ mod tests {
     }
 
     #[test]
-    fn get_string_error_on_non_string() {
+    fn get_string_coerces_int() {
         let c = make_config(vec![("port", iv(8080))]);
-        assert!(c.get_string("port").is_err());
+        assert_eq!(c.get_string("port").unwrap(), "8080");
+    }
+
+    #[test]
+    fn get_string_coerces_float() {
+        let c = make_config(vec![("ratio", fv(3.14))]);
+        // f64::to_string may produce "3.14" or similar; just check it parses back
+        let s = c.get_string("ratio").unwrap();
+        let v: f64 = s.parse().unwrap();
+        assert!((v - 3.14).abs() < 1e-10);
+    }
+
+    #[test]
+    fn get_string_coerces_bool() {
+        let c = make_config(vec![("flag", bv(true))]);
+        assert_eq!(c.get_string("flag").unwrap(), "true");
+    }
+
+    #[test]
+    fn get_string_coerces_null() {
+        let c = make_config(vec![("v", HoconValue::Scalar(ScalarValue::Null))]);
+        assert_eq!(c.get_string("v").unwrap(), "null");
+    }
+
+    #[test]
+    fn get_string_error_on_object() {
+        let mut inner = IndexMap::new();
+        inner.insert("x".into(), iv(1));
+        let c = make_config(vec![("obj", HoconValue::Object(inner))]);
+        assert!(c.get_string("obj").is_err());
     }
 
     #[test]
@@ -728,5 +829,37 @@ mod tests {
     fn get_bytes_option_missing() {
         let c = make_config(vec![]);
         assert!(c.get_bytes_option("s").is_none());
+    }
+
+    #[test]
+    fn get_bytes_fractional_rounds() {
+        // 1.5 KiB = 1536 bytes exactly; rounding should not change it
+        let c = make_config(vec![("s", sv("1.5 KiB"))]);
+        assert_eq!(c.get_bytes("s").unwrap(), 1536);
+    }
+
+    #[test]
+    fn split_config_path_consecutive_dots_preserve_empty() {
+        let segs = split_config_path("a..b");
+        assert_eq!(segs, vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn split_config_path_trailing_dot_empty_segment() {
+        let segs = split_config_path("a.b.");
+        assert_eq!(segs, vec!["a", "b", ""]);
+    }
+
+    #[test]
+    fn split_config_path_quoted_escape() {
+        // "a\"b" as a path key should produce the key: a"b
+        let segs = split_config_path(r#""a\"b""#);
+        assert_eq!(segs, vec!["a\"b"]);
+    }
+
+    #[test]
+    fn split_config_path_quoted_with_dot() {
+        let segs = split_config_path(r#"server."web.api".port"#);
+        assert_eq!(segs, vec!["server", "web.api", "port"]);
     }
 }
