@@ -342,6 +342,15 @@ struct AppConfig {
 let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
 
+## Known Limitations
+
+- **`include url(...)` and `include classpath(...)`** are not supported. These are JVM-specific include forms from the Lightbend spec. Only `include "file"`, `include file("file")`, and `include required(...)` are supported.
+- **No watch/reload** — the library parses config at load time. For live-reloading, re-call `parse()` or `parse_file()` on change.
+- **No streaming parser** — the entire input is loaded into memory.
+- **`.properties` include** — supports basic `key=value` syntax. Does not support multiline values (backslash continuation), unicode escapes, or key escaping from the full Java .properties specification.
+
+For full API documentation, see [docs.rs](https://docs.rs/hocon-parser) (available after crate publication).
+
 ## Security Considerations
 
 When parsing untrusted HOCON input, be aware of:

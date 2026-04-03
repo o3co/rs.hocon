@@ -283,6 +283,15 @@ struct AppConfig {
 let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
 ```
 
+## 既知の制約
+
+- **`include url(...)` と `include classpath(...)`** は未対応です。Lightbend 仕様の JVM 固有形式です。`include "file"`、`include file("file")`、`include required(...)` のみ対応しています。
+- **監視/リロード機能なし** — 設定はロード時に解析されます。ライブリロードには、変更時に `parse()` や `parse_file()` を再呼び出ししてください。
+- **ストリーミングパーサーなし** — 入力全体がメモリに読み込まれます。
+- **`.properties` include** — 基本的な `key=value` 形式のみ対応。複数行値（バックスラッシュ継続）、Unicode エスケープ、キーエスケープには対応していません。
+
+API の詳細ドキュメントは [docs.rs](https://docs.rs/hocon-parser)（クレート公開後に利用可能）を参照してください。
+
 ## セキュリティに関する注意
 
 信頼できない HOCON 入力を解析する場合、以下に注意してください：
