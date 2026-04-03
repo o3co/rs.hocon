@@ -463,7 +463,7 @@ fn parse_error_is_hocon_error_parse_variant() {
                 "should have position info (line and col)"
             );
         }
-        _ => panic!("expected HoconError::Parse, got {:?}", err),
+        other => panic!("expected HoconError::Parse, got {:?}", other),
     }
 }
 
@@ -476,7 +476,7 @@ fn resolve_error_is_hocon_error_resolve_variant() {
         hocon::HoconError::Resolve(re) => {
             assert!(!re.path.is_empty(), "should have substitution path");
         }
-        _ => panic!("expected HoconError::Resolve, got {:?}", err),
+        other => panic!("expected HoconError::Resolve, got {:?}", other),
     }
 }
 
@@ -494,6 +494,6 @@ fn io_error_is_hocon_error_io_variant() {
         hocon::HoconError::Io(io_err) => {
             assert_eq!(io_err.kind(), std::io::ErrorKind::NotFound);
         }
-        _ => panic!("expected HoconError::Io, got {:?}", err),
+        other => panic!("expected HoconError::Io, got {:?}", other),
     }
 }
