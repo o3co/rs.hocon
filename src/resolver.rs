@@ -571,14 +571,20 @@ fn resolve_subst(
 
             // Delayed merge: if the resolved value is an Object and there is a prior
             // value for the root segment, resolve the prior and deep merge underneath.
-            if let Some(HoconValue::Object(ref current_fields)) = result {
-                let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
-                if let Some(prior) = root.prior_values.get(root_seg) {
-                    if let Some(HoconValue::Object(prior_fields)) =
-                        resolve_val(prior, scope, root, resolving, cache, env)?
-                    {
-                        let merged = deep_merge_hocon_objects(prior_fields, current_fields.clone());
-                        result = Some(merged);
+            // Only apply for single-segment paths; for multi-segment paths (e.g. foo.bar),
+            // the prior value of the root segment (foo) is a different object and must not
+            // be merged into the resolved value of the full path.
+            if segments.len() == 1 {
+                if let Some(HoconValue::Object(ref current_fields)) = result {
+                    let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
+                    if let Some(prior) = root.prior_values.get(root_seg) {
+                        if let Some(HoconValue::Object(prior_fields)) =
+                            resolve_val(prior, scope, root, resolving, cache, env)?
+                        {
+                            let merged =
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                            result = Some(merged);
+                        }
                     }
                 }
             }
