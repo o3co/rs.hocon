@@ -412,7 +412,7 @@ fn relativize_subst_paths(val: &mut ResolverValue, prefix: &str, prefix_segment_
     match val {
         ResolverValue::Subst(s) => {
             s.path = format!("{}.{}", prefix, s.path);
-            s.prefix_len = prefix_segment_count;
+            s.prefix_len += prefix_segment_count;
         }
         ResolverValue::Concat(c) => {
             for node in &mut c.nodes {
