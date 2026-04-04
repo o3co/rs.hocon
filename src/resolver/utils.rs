@@ -173,3 +173,52 @@ pub(crate) fn relativize_res_obj(obj: &mut ResObj, prefix: &str, prefix_segment_
         relativize_subst_paths(val, prefix, prefix_segment_count);
     }
 }
+
+pub(crate) fn segments_to_key(segments: &[String]) -> String {
+    segments
+        .iter()
+        .map(|s| {
+            if s.is_empty() || s.contains('.') || s.contains('"') {
+                format!("\"{}\"", s)
+            } else {
+                s.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segments_to_key_simple() {
+        assert_eq!(segments_to_key(&["a".into(), "b".into(), "c".into()]), "a.b.c");
+    }
+
+    #[test]
+    fn segments_to_key_quoted_dot() {
+        assert_eq!(segments_to_key(&["a.b".into(), "c".into()]), r#""a.b".c"#);
+    }
+
+    #[test]
+    fn segments_to_key_empty_string() {
+        assert_eq!(segments_to_key(&["".into(), "foo".into()]), r#""".foo"#);
+    }
+
+    #[test]
+    fn segments_to_key_roundtrip() {
+        let cases: Vec<Vec<String>> = vec![
+            vec!["a".into(), "b".into()],
+            vec!["a.b".into(), "c".into()],
+            vec!["".into(), "x".into(), "".into()],
+            vec!["a.b.c".into(), "d.e".into()],
+        ];
+        for segs in &cases {
+            let key = segments_to_key(segs);
+            let parsed = parse_subst_path(&key);
+            assert_eq!(&parsed, segs, "roundtrip failed for {:?} → {:?} → {:?}", segs, key, parsed);
+        }
+    }
+}
