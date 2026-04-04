@@ -45,6 +45,7 @@ struct SubstPlaceholder {
     optional: bool,
     line: usize,
     col: usize,
+    prefix_len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +79,7 @@ impl ResObj {
 // ---- Public entry point ----
 
 pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, ResolveError> {
-    let root = build_res_obj(ast, opts)?;
+    let root = build_res_obj(ast, opts, &[])?;
     let mut resolving = HashSet::new();
     let mut cache = HashMap::new();
     resolve_res_obj(&root, &root, &mut resolving, &mut cache, &opts.env)
@@ -86,12 +87,16 @@ pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, Resolv
 
 // ---- Pass 1: structure building ----
 
-fn build_res_obj(ast: AstNode, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
+fn build_res_obj(
+    ast: AstNode,
+    opts: &ResolveOptions,
+    path_prefix: &[String],
+) -> Result<ResObj, ResolveError> {
     match ast {
         AstNode::Object { fields, .. } => {
             let mut obj = ResObj::new();
             for field in fields {
-                apply_field(&mut obj, field, opts)?;
+                apply_field(&mut obj, field, opts, path_prefix)?;
             }
             Ok(obj)
         }
@@ -108,6 +113,7 @@ fn apply_field(
     obj: &mut ResObj,
     field: AstField,
     opts: &ResolveOptions,
+    path_prefix: &[String],
 ) -> Result<(), ResolveError> {
     // Include directive
     if field.key.is_empty() {
@@ -117,7 +123,18 @@ fn apply_field(
             pos,
         } = &field.value
         {
-            let included = load_include(include_path, *required, pos.line, pos.col, opts)?;
+            let mut included = load_include(
+                include_path,
+                *required,
+                pos.line,
+                pos.col,
+                opts,
+                path_prefix,
+            )?;
+            if !path_prefix.is_empty() {
+                let prefix_str = path_prefix.join(".");
+                relativize_res_obj(&mut included, &prefix_str, path_prefix.len());
+            }
             deep_merge_res_obj_into(obj, included);
         }
         return Ok(());
@@ -146,6 +163,7 @@ fn apply_field(
                 pos: field.pos,
             },
             opts,
+            path_prefix,
         );
     }
 
@@ -156,7 +174,9 @@ fn apply_field(
             .cloned()
             .unwrap_or_else(|| ResolverValue::Resolved(HoconValue::Array(vec![])));
         obj.prior_values.insert(head.clone(), existing.clone());
-        let elem = ast_to_resolver_value(field.value, opts)?;
+        let mut child_prefix = path_prefix.to_vec();
+        child_prefix.push(head.clone());
+        let elem = ast_to_resolver_value(field.value, opts, &child_prefix)?;
         obj.fields.insert(
             head,
             ResolverValue::Append(AppendPlaceholder {
@@ -169,7 +189,9 @@ fn apply_field(
 
     // Normal assignment
     let existing = obj.fields.get(&head).cloned();
-    let new_val = ast_to_resolver_value(field.value, opts)?;
+    let mut child_prefix = path_prefix.to_vec();
+    child_prefix.push(head.clone());
+    let new_val = ast_to_resolver_value(field.value, opts, &child_prefix)?;
 
     if let Some(ref ex) = existing {
         obj.prior_values.insert(head.clone(), ex.clone());
@@ -190,13 +212,14 @@ fn apply_field(
 fn ast_to_resolver_value(
     ast: AstNode,
     opts: &ResolveOptions,
+    path_prefix: &[String],
 ) -> Result<ResolverValue, ResolveError> {
     match ast {
         AstNode::Scalar { value, .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(value))),
         AstNode::Array { items, .. } => {
             let rv_items: Vec<ResolverValue> = items
                 .into_iter()
-                .map(|item| ast_to_resolver_value(item, opts))
+                .map(|item| ast_to_resolver_value(item, opts, path_prefix))
                 .collect::<Result<_, _>>()?;
             let all_resolved = rv_items
                 .iter()
@@ -215,7 +238,7 @@ fn ast_to_resolver_value(
             }
         }
         AstNode::Object { .. } => {
-            let inner = build_res_obj(ast, opts)?;
+            let inner = build_res_obj(ast, opts, path_prefix)?;
             Ok(ResolverValue::Obj(inner))
         }
         AstNode::Substitution {
@@ -227,6 +250,7 @@ fn ast_to_resolver_value(
             optional,
             line: pos.line,
             col: pos.col,
+            prefix_len: 0,
         })),
         AstNode::Concat { nodes, .. } => {
             let mut separator_flags = Vec::with_capacity(nodes.len());
@@ -239,7 +263,7 @@ fn ast_to_resolver_value(
                         ..
                     }
                 );
-                rv_nodes.push(ast_to_resolver_value(node, opts)?);
+                rv_nodes.push(ast_to_resolver_value(node, opts, path_prefix)?);
                 separator_flags.push(is_sep);
             }
             Ok(ResolverValue::Concat(ConcatPlaceholder {
@@ -259,6 +283,7 @@ fn load_include(
     line: usize,
     col: usize,
     opts: &ResolveOptions,
+    _path_prefix: &[String],
 ) -> Result<ResObj, ResolveError> {
     let base = match &opts.base_dir {
         Some(dir) => dir.clone(),
@@ -378,7 +403,45 @@ fn load_single_include(
     child_opts.include_stack = opts.include_stack.clone();
     child_opts.include_stack.push(candidate.to_path_buf());
 
-    build_res_obj(ast, &child_opts)
+    build_res_obj(ast, &child_opts, &[])
+}
+
+/// Relativize all substitution paths in a ResolverValue tree by prepending the given prefix.
+/// Called when including a file into a nested scope so `${y}` becomes `${prefix.y}`.
+fn relativize_subst_paths(val: &mut ResolverValue, prefix: &str, prefix_segment_count: usize) {
+    match val {
+        ResolverValue::Subst(s) => {
+            s.path = format!("{}.{}", prefix, s.path);
+            s.prefix_len += prefix_segment_count;
+        }
+        ResolverValue::Concat(c) => {
+            for node in &mut c.nodes {
+                relativize_subst_paths(node, prefix, prefix_segment_count);
+            }
+        }
+        ResolverValue::Append(a) => {
+            relativize_subst_paths(&mut a.existing, prefix, prefix_segment_count);
+            relativize_subst_paths(&mut a.elem, prefix, prefix_segment_count);
+        }
+        ResolverValue::Obj(o) => {
+            relativize_res_obj(o, prefix, prefix_segment_count);
+        }
+        ResolverValue::UnresolvedArray(items) => {
+            for item in items {
+                relativize_subst_paths(item, prefix, prefix_segment_count);
+            }
+        }
+        ResolverValue::Resolved(_) => {}
+    }
+}
+
+fn relativize_res_obj(obj: &mut ResObj, prefix: &str, prefix_segment_count: usize) {
+    for val in obj.fields.values_mut() {
+        relativize_subst_paths(val, prefix, prefix_segment_count);
+    }
+    for val in obj.prior_values.values_mut() {
+        relativize_subst_paths(val, prefix, prefix_segment_count);
+    }
 }
 
 /// Convert a Resolved(Object) into a ResObj so we can deep-merge it.
@@ -418,6 +481,13 @@ fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
             dst.prior_values.insert(k.clone(), old.clone());
         }
         dst.fields.insert(k, src_val);
+    }
+    // Carry over prior_values from src that aren't already set in dst.
+    // This preserves delayed-merge chains from included files.
+    for (k, src_prior) in src.prior_values {
+        if !dst.prior_values.contains_key(&k) {
+            dst.prior_values.insert(k, src_prior);
+        }
     }
 }
 
@@ -595,9 +665,22 @@ fn resolve_subst(
             return Ok(result);
         }
 
-        // Env var fallback
-        if let Some(env_val) = env.get(&s.path) {
-            let result = HoconValue::Scalar(ScalarValue::String(env_val.clone()));
+        // Env var fallback — also try the original (non-relativized) path
+        let env_result = env.get(&s.path).cloned().or_else(|| {
+            if s.prefix_len > 0 {
+                let segments = parse_subst_path(&s.path);
+                if segments.len() > s.prefix_len {
+                    let original_path = segments[s.prefix_len..].join(".");
+                    env.get(&original_path).cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        if let Some(env_val) = env_result {
+            let result = HoconValue::Scalar(ScalarValue::String(env_val));
             cache.insert(s.path.clone(), result.clone());
             return Ok(Some(result));
         }
