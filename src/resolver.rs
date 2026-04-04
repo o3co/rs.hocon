@@ -437,15 +437,13 @@ fn resolve_res_obj(
                 // Delayed merge: if both current and prior resolve to objects, deep merge
                 if let HoconValue::Object(ref current_fields) = resolved {
                     if let Some(prior) = obj.prior_values.get(key) {
-                        if let Some(prior_resolved) =
+                        if let Some(HoconValue::Object(prior_fields)) =
                             resolve_val(prior, obj, root, resolving, cache, env)?
                         {
-                            if let HoconValue::Object(prior_fields) = prior_resolved {
-                                let merged =
-                                    deep_merge_hocon_objects(prior_fields, current_fields.clone());
-                                result.insert(key.clone(), merged);
-                                continue;
-                            }
+                            let merged =
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                            result.insert(key.clone(), merged);
+                            continue;
                         }
                     }
                 }
@@ -576,14 +574,12 @@ fn resolve_subst(
             if let Some(HoconValue::Object(ref current_fields)) = result {
                 let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
                 if let Some(prior) = root.prior_values.get(root_seg) {
-                    if let Some(prior_resolved) =
+                    if let Some(HoconValue::Object(prior_fields)) =
                         resolve_val(prior, scope, root, resolving, cache, env)?
                     {
-                        if let HoconValue::Object(prior_fields) = prior_resolved {
-                            let merged =
-                                deep_merge_hocon_objects(prior_fields, current_fields.clone());
-                            result = Some(merged);
-                        }
+                        let merged =
+                            deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                        result = Some(merged);
                     }
                 }
             }
