@@ -146,10 +146,9 @@ impl<'a> SubstitutionResolver<'a> {
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
                 let is_self_ref = match &found {
                     ResolverValue::Subst(sub) => sub.segments == s.segments,
-                    ResolverValue::Concat(c) => c
-                        .nodes
-                        .iter()
-                        .any(|n| matches!(n, ResolverValue::Subst(sub) if sub.segments == s.segments)),
+                    ResolverValue::Concat(c) => c.nodes.iter().any(
+                        |n| matches!(n, ResolverValue::Subst(sub) if sub.segments == s.segments),
+                    ),
                     _ => false,
                 };
                 if is_self_ref {
