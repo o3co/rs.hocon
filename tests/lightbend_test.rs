@@ -369,3 +369,104 @@ fn lightbend_test13_bad_substitution() {
         "Expected error for unresolved substitution in test13-reference-bad-substitutions.conf"
     );
 }
+
+// --- Auto-discovery tests using expected JSON from xx.hocon ---
+
+/// Auto-discover test*.conf files that have matching *-expected.json
+/// in the expected directory and compare parsed output.
+#[test]
+fn lightbend_suite_expected_json() {
+    let testdata = testdata_dir();
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected");
+
+    assert!(
+        expected_dir.exists(),
+        "Missing expected JSON fixtures at {}. Run `make testdata` before `cargo test`.",
+        expected_dir.display()
+    );
+
+    // Known failures — skip these (linked to open issues)
+    let skip: std::collections::HashSet<&str> = [
+        "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
+        "test02-expected.json", // empty-key ("".""."") and quoted-key ("a.b.c") bugs
+        "test09-expected.json", // delayed merge: object merge with substitution incomplete
+        "test10-expected.json", // rs.hocon#36: nested include substitution scope
+        "file-include-expected.json", // file() include semantics differ from JVM classpath
+    ]
+    .into_iter()
+    .collect();
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if !name.ends_with("-expected.json") {
+            continue;
+        }
+        if skip.contains(name.as_str()) {
+            eprintln!("SKIP (known failure): {}", name);
+            continue;
+        }
+
+        let conf_name = name.replace("-expected.json", ".conf");
+        let conf_path = testdata.join(&conf_name);
+        let expected_path = expected_dir.join(&name);
+
+        if !conf_path.exists() {
+            eprintln!("SKIP (conf not found): {}", conf_name);
+            continue;
+        }
+
+        eprintln!("TEST: {} vs {}", conf_name, name);
+        parse_and_compare(&conf_path, &expected_path);
+        tested += 1;
+    }
+    assert!(
+        tested > 0,
+        "No expected JSON tests were run. Check tests/testdata/expected/"
+    );
+}
+
+#[test]
+fn lightbend_suite_expected_errors() {
+    let testdata = testdata_dir();
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected");
+
+    assert!(
+        expected_dir.exists(),
+        "Missing expected JSON fixtures at {}. Run `make testdata` before `cargo test`.",
+        expected_dir.display()
+    );
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if !name.ends_with("-expected-error.json") {
+            continue;
+        }
+
+        let conf_name = name.replace("-expected-error.json", ".conf");
+        let conf_path = testdata.join(&conf_name);
+
+        if !conf_path.exists() {
+            eprintln!("SKIP (conf not found): {}", conf_name);
+            continue;
+        }
+
+        eprintln!("TEST (expect error): {}", conf_name);
+        let result = hocon::parse_file(&conf_path);
+        assert!(
+            result.is_err(),
+            "Expected error for {} but got success",
+            conf_path.display()
+        );
+        tested += 1;
+    }
+    assert!(
+        tested > 0,
+        "No expected error tests were run. Check tests/testdata/expected/"
+    );
+}
