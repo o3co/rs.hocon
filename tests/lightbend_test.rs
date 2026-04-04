@@ -287,12 +287,19 @@ fn lightbend_test09_delayed_merge_object() {
 #[test]
 fn lightbend_test10_nested_include() {
     let path = testdata_dir().join("test10.conf");
-    let result = hocon::parse_file(&path);
-    assert!(
-        result.is_err(),
-        "ParseFile({}) unexpectedly succeeded; update test to assert resolved values",
-        path.display()
-    );
+    let config = hocon::parse_file(&path)
+        .unwrap_or_else(|e| panic!("ParseFile({}) failed: {}", path.display(), e));
+
+    // foo scope: single-level nested include of test09.conf
+    assert_eq!(config.get_i64("foo.y").unwrap(), 5);
+    assert_eq!(config.get_i64("foo.a.c").unwrap(), 3);
+    assert_eq!(config.get_i64("foo.a.q").unwrap(), 10);
+
+    // bar.nested scope: two-level nested include of test09.conf
+    assert_eq!(config.get_i64("bar.nested.y").unwrap(), 5);
+    assert_eq!(config.get_i64("bar.nested.b").unwrap(), 5);
+    assert_eq!(config.get_i64("bar.nested.a.c").unwrap(), 3);
+    assert_eq!(config.get_i64("bar.nested.a.q").unwrap(), 10);
 }
 
 #[test]

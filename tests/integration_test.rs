@@ -506,3 +506,21 @@ fn test_unterminated_triple_quoted_string_errors() {
         "expected error for unterminated triple-quoted string"
     );
 }
+
+#[test]
+fn nested_include_resolves_substitutions_in_scope() {
+    // test10.conf includes test09.conf inside foo{} and bar{nested{}}
+    // Substitutions like ${y} inside the included file must resolve
+    // within the include scope (bar.nested.y, not root y).
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/testdata/hocon/test10.conf");
+    let config = hocon::parse_file(&path).unwrap_or_else(|e| panic!("parse_file failed: {}", e));
+
+    // bar.nested.y should be 5
+    assert_eq!(config.get_i64("bar.nested.y").unwrap(), 5);
+    // bar.nested.b should be 5 (resolved from ${y} -> bar.nested.y)
+    assert_eq!(config.get_i64("bar.nested.b").unwrap(), 5);
+    // bar.nested.a should be an object with c:3 and q:10 (delayed merge)
+    assert_eq!(config.get_i64("bar.nested.a.c").unwrap(), 3);
+    assert_eq!(config.get_i64("bar.nested.a.q").unwrap(), 10);
+}

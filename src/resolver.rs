@@ -87,7 +87,11 @@ pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, Resolv
 
 // ---- Pass 1: structure building ----
 
-fn build_res_obj(ast: AstNode, opts: &ResolveOptions, path_prefix: &[String]) -> Result<ResObj, ResolveError> {
+fn build_res_obj(
+    ast: AstNode,
+    opts: &ResolveOptions,
+    path_prefix: &[String],
+) -> Result<ResObj, ResolveError> {
     match ast {
         AstNode::Object { fields, .. } => {
             let mut obj = ResObj::new();
@@ -119,7 +123,18 @@ fn apply_field(
             pos,
         } = &field.value
         {
-            let included = load_include(include_path, *required, pos.line, pos.col, opts, path_prefix)?;
+            let mut included = load_include(
+                include_path,
+                *required,
+                pos.line,
+                pos.col,
+                opts,
+                path_prefix,
+            )?;
+            if !path_prefix.is_empty() {
+                let prefix_str = path_prefix.join(".");
+                relativize_res_obj(&mut included, &prefix_str, path_prefix.len());
+            }
             deep_merge_res_obj_into(obj, included);
         }
         return Ok(());
@@ -391,6 +406,44 @@ fn load_single_include(
     build_res_obj(ast, &child_opts, &[])
 }
 
+/// Relativize all substitution paths in a ResolverValue tree by prepending the given prefix.
+/// Called when including a file into a nested scope so `${y}` becomes `${prefix.y}`.
+fn relativize_subst_paths(val: &mut ResolverValue, prefix: &str, prefix_segment_count: usize) {
+    match val {
+        ResolverValue::Subst(s) => {
+            s.path = format!("{}.{}", prefix, s.path);
+            s.prefix_len = prefix_segment_count;
+        }
+        ResolverValue::Concat(c) => {
+            for node in &mut c.nodes {
+                relativize_subst_paths(node, prefix, prefix_segment_count);
+            }
+        }
+        ResolverValue::Append(a) => {
+            relativize_subst_paths(&mut a.existing, prefix, prefix_segment_count);
+            relativize_subst_paths(&mut a.elem, prefix, prefix_segment_count);
+        }
+        ResolverValue::Obj(o) => {
+            relativize_res_obj(o, prefix, prefix_segment_count);
+        }
+        ResolverValue::UnresolvedArray(items) => {
+            for item in items {
+                relativize_subst_paths(item, prefix, prefix_segment_count);
+            }
+        }
+        ResolverValue::Resolved(_) => {}
+    }
+}
+
+fn relativize_res_obj(obj: &mut ResObj, prefix: &str, prefix_segment_count: usize) {
+    for val in obj.fields.values_mut() {
+        relativize_subst_paths(val, prefix, prefix_segment_count);
+    }
+    for val in obj.prior_values.values_mut() {
+        relativize_subst_paths(val, prefix, prefix_segment_count);
+    }
+}
+
 /// Convert a Resolved(Object) into a ResObj so we can deep-merge it.
 fn resolved_obj_to_res_obj(fields: &IndexMap<String, HoconValue>) -> ResObj {
     let mut obj = ResObj::new();
@@ -428,6 +481,13 @@ fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
             dst.prior_values.insert(k.clone(), old.clone());
         }
         dst.fields.insert(k, src_val);
+    }
+    // Carry over prior_values from src that aren't already set in dst.
+    // This preserves delayed-merge chains from included files.
+    for (k, src_prior) in src.prior_values {
+        if !dst.prior_values.contains_key(&k) {
+            dst.prior_values.insert(k, src_prior);
+        }
     }
 }
 
