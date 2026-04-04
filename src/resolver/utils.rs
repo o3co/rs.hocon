@@ -20,7 +20,7 @@ pub(crate) fn parse_subst_path(raw: &str) -> Vec<String> {
             i += 1;
             let mut seg = String::new();
             while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\' && i + 1 < chars.len() {
+                if chars[i] == '\\' && i + 1 < chars.len() && (chars[i + 1] == '"' || chars[i + 1] == '\\') {
                     seg.push(chars[i + 1]);
                     i += 2;
                 } else {
@@ -184,7 +184,7 @@ pub(crate) fn segments_to_key(segments: &[String]) -> String {
     segments
         .iter()
         .map(|s| {
-            if s.is_empty() || s.contains('.') || s.contains('"') || s.contains('\\') {
+            if s.is_empty() || s.contains('.') || s.contains('"') || s.contains('\\') || s != s.trim() || s.contains(' ') || s.contains('\t') {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{}\"", escaped)
             } else {
@@ -241,6 +241,21 @@ mod tests {
             let parsed = parse_subst_path(&key);
             assert_eq!(&parsed, segs, "roundtrip failed for {:?} → {:?} → {:?}", segs, key, parsed);
         }
+    }
+
+    #[test]
+    fn parse_subst_path_preserves_unknown_escapes() {
+        // \n inside quotes should be kept as literal \n, not stripped to n
+        assert_eq!(parse_subst_path(r#""a\nb""#), vec!["a\\nb".to_string()]);
+    }
+
+    #[test]
+    fn segments_to_key_quotes_whitespace() {
+        assert_eq!(segments_to_key(&[" a ".into(), "b".into()]), r#"" a ".b"#);
+        // roundtrip
+        let segs = vec![" a ".into(), "b".into()];
+        let key = segments_to_key(&segs);
+        assert_eq!(parse_subst_path(&key), segs);
     }
 
     #[test]
