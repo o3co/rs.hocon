@@ -45,6 +45,7 @@ struct SubstPlaceholder {
     optional: bool,
     line: usize,
     col: usize,
+    prefix_len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +79,7 @@ impl ResObj {
 // ---- Public entry point ----
 
 pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, ResolveError> {
-    let root = build_res_obj(ast, opts)?;
+    let root = build_res_obj(ast, opts, &[])?;
     let mut resolving = HashSet::new();
     let mut cache = HashMap::new();
     resolve_res_obj(&root, &root, &mut resolving, &mut cache, &opts.env)
@@ -86,12 +87,12 @@ pub fn resolve(ast: AstNode, opts: &ResolveOptions) -> Result<HoconValue, Resolv
 
 // ---- Pass 1: structure building ----
 
-fn build_res_obj(ast: AstNode, opts: &ResolveOptions) -> Result<ResObj, ResolveError> {
+fn build_res_obj(ast: AstNode, opts: &ResolveOptions, path_prefix: &[String]) -> Result<ResObj, ResolveError> {
     match ast {
         AstNode::Object { fields, .. } => {
             let mut obj = ResObj::new();
             for field in fields {
-                apply_field(&mut obj, field, opts)?;
+                apply_field(&mut obj, field, opts, path_prefix)?;
             }
             Ok(obj)
         }
@@ -108,6 +109,7 @@ fn apply_field(
     obj: &mut ResObj,
     field: AstField,
     opts: &ResolveOptions,
+    path_prefix: &[String],
 ) -> Result<(), ResolveError> {
     // Include directive
     if field.key.is_empty() {
@@ -117,7 +119,7 @@ fn apply_field(
             pos,
         } = &field.value
         {
-            let included = load_include(include_path, *required, pos.line, pos.col, opts)?;
+            let included = load_include(include_path, *required, pos.line, pos.col, opts, path_prefix)?;
             deep_merge_res_obj_into(obj, included);
         }
         return Ok(());
@@ -146,6 +148,7 @@ fn apply_field(
                 pos: field.pos,
             },
             opts,
+            path_prefix,
         );
     }
 
@@ -156,7 +159,9 @@ fn apply_field(
             .cloned()
             .unwrap_or_else(|| ResolverValue::Resolved(HoconValue::Array(vec![])));
         obj.prior_values.insert(head.clone(), existing.clone());
-        let elem = ast_to_resolver_value(field.value, opts)?;
+        let mut child_prefix = path_prefix.to_vec();
+        child_prefix.push(head.clone());
+        let elem = ast_to_resolver_value(field.value, opts, &child_prefix)?;
         obj.fields.insert(
             head,
             ResolverValue::Append(AppendPlaceholder {
@@ -169,7 +174,9 @@ fn apply_field(
 
     // Normal assignment
     let existing = obj.fields.get(&head).cloned();
-    let new_val = ast_to_resolver_value(field.value, opts)?;
+    let mut child_prefix = path_prefix.to_vec();
+    child_prefix.push(head.clone());
+    let new_val = ast_to_resolver_value(field.value, opts, &child_prefix)?;
 
     if let Some(ref ex) = existing {
         obj.prior_values.insert(head.clone(), ex.clone());
@@ -190,13 +197,14 @@ fn apply_field(
 fn ast_to_resolver_value(
     ast: AstNode,
     opts: &ResolveOptions,
+    path_prefix: &[String],
 ) -> Result<ResolverValue, ResolveError> {
     match ast {
         AstNode::Scalar { value, .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(value))),
         AstNode::Array { items, .. } => {
             let rv_items: Vec<ResolverValue> = items
                 .into_iter()
-                .map(|item| ast_to_resolver_value(item, opts))
+                .map(|item| ast_to_resolver_value(item, opts, path_prefix))
                 .collect::<Result<_, _>>()?;
             let all_resolved = rv_items
                 .iter()
@@ -215,7 +223,7 @@ fn ast_to_resolver_value(
             }
         }
         AstNode::Object { .. } => {
-            let inner = build_res_obj(ast, opts)?;
+            let inner = build_res_obj(ast, opts, path_prefix)?;
             Ok(ResolverValue::Obj(inner))
         }
         AstNode::Substitution {
@@ -227,6 +235,7 @@ fn ast_to_resolver_value(
             optional,
             line: pos.line,
             col: pos.col,
+            prefix_len: 0,
         })),
         AstNode::Concat { nodes, .. } => {
             let mut separator_flags = Vec::with_capacity(nodes.len());
@@ -239,7 +248,7 @@ fn ast_to_resolver_value(
                         ..
                     }
                 );
-                rv_nodes.push(ast_to_resolver_value(node, opts)?);
+                rv_nodes.push(ast_to_resolver_value(node, opts, path_prefix)?);
                 separator_flags.push(is_sep);
             }
             Ok(ResolverValue::Concat(ConcatPlaceholder {
@@ -259,6 +268,7 @@ fn load_include(
     line: usize,
     col: usize,
     opts: &ResolveOptions,
+    _path_prefix: &[String],
 ) -> Result<ResObj, ResolveError> {
     let base = match &opts.base_dir {
         Some(dir) => dir.clone(),
@@ -378,7 +388,7 @@ fn load_single_include(
     child_opts.include_stack = opts.include_stack.clone();
     child_opts.include_stack.push(candidate.to_path_buf());
 
-    build_res_obj(ast, &child_opts)
+    build_res_obj(ast, &child_opts, &[])
 }
 
 /// Convert a Resolved(Object) into a ResObj so we can deep-merge it.
