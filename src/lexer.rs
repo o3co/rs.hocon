@@ -207,6 +207,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             pos += 3;
             col += 3;
             let mut value = String::new();
+            let mut found_closing = false;
             loop {
                 if pos >= chars.len() {
                     break;
@@ -222,6 +223,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                         for _ in 0..(quote_count - 3) {
                             value.push('"');
                         }
+                        found_closing = true;
                         break;
                     }
                     for _ in 0..quote_count {
@@ -237,6 +239,13 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 }
                 value.push(chars[pos]);
                 pos += 1;
+            }
+            if !found_closing {
+                return Err(ParseError {
+                    message: "unterminated triple-quoted string".into(),
+                    line: sl,
+                    col: sc,
+                });
             }
             if value.starts_with('\n') {
                 value = value[1..].to_string();
@@ -633,5 +642,10 @@ mod tests {
     #[test]
     fn throws_on_unterminated_substitution() {
         assert!(tokenize("${foo").is_err());
+    }
+
+    #[test]
+    fn throws_on_unterminated_triple_quoted_string() {
+        assert!(tokenize(r#""""unterminated"#).is_err());
     }
 }
