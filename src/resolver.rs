@@ -577,8 +577,7 @@ fn resolve_subst(
                     if let Some(HoconValue::Object(prior_fields)) =
                         resolve_val(prior, scope, root, resolving, cache, env)?
                     {
-                        let merged =
-                            deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                        let merged = deep_merge_hocon_objects(prior_fields, current_fields.clone());
                         result = Some(merged);
                     }
                 }
