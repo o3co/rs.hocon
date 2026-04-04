@@ -434,6 +434,19 @@ fn resolve_res_obj(
     for (key, val) in &obj.fields {
         match resolve_val(val, obj, root, resolving, cache, env)? {
             Some(resolved) => {
+                // Delayed merge: if both current and prior resolve to objects, deep merge
+                if let HoconValue::Object(ref current_fields) = resolved {
+                    if let Some(prior) = obj.prior_values.get(key) {
+                        if let Some(HoconValue::Object(prior_fields)) =
+                            resolve_val(prior, obj, root, resolving, cache, env)?
+                        {
+                            let merged =
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                            result.insert(key.clone(), merged);
+                            continue;
+                        }
+                    }
+                }
                 result.insert(key.clone(), resolved);
             }
             None => {
@@ -528,22 +541,54 @@ fn resolve_subst(
         let found = lookup_path(root, &segments);
 
         if let Some(found) = found {
-            // If found value is a subst/concat pointing at itself, use prior value
+            // Self-referential substitution: only use prior value when the substitution
+            // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
-                let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
-                let prior = scope
-                    .prior_values
-                    .get(root_seg)
-                    .or_else(|| root.prior_values.get(root_seg));
-                if let Some(prior) = prior {
-                    let result = resolve_val(prior, scope, root, resolving, cache, env)?;
-                    if let Some(ref r) = result {
-                        cache.insert(s.path.clone(), r.clone());
+                let is_self_ref = match found {
+                    ResolverValue::Subst(sub) => sub.path == s.path,
+                    ResolverValue::Concat(c) => c
+                        .nodes
+                        .iter()
+                        .any(|n| matches!(n, ResolverValue::Subst(sub) if sub.path == s.path)),
+                    _ => false,
+                };
+                if is_self_ref {
+                    let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
+                    let prior = scope
+                        .prior_values
+                        .get(root_seg)
+                        .or_else(|| root.prior_values.get(root_seg));
+                    if let Some(prior) = prior {
+                        let result = resolve_val(prior, scope, root, resolving, cache, env)?;
+                        if let Some(ref r) = result {
+                            cache.insert(s.path.clone(), r.clone());
+                        }
+                        return Ok(result);
                     }
-                    return Ok(result);
                 }
             }
-            let result = resolve_val(found, scope, root, resolving, cache, env)?;
+            let mut result = resolve_val(found, scope, root, resolving, cache, env)?;
+
+            // Delayed merge: if the resolved value is an Object and there is a prior
+            // value for the root segment, resolve the prior and deep merge underneath.
+            // Only apply for single-segment paths; for multi-segment paths (e.g. foo.bar),
+            // the prior value of the root segment (foo) is a different object and must not
+            // be merged into the resolved value of the full path.
+            if segments.len() == 1 {
+                if let Some(HoconValue::Object(ref current_fields)) = result {
+                    let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
+                    if let Some(prior) = root.prior_values.get(root_seg) {
+                        if let Some(HoconValue::Object(prior_fields)) =
+                            resolve_val(prior, scope, root, resolving, cache, env)?
+                        {
+                            let merged =
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                            result = Some(merged);
+                        }
+                    }
+                }
+            }
+
             if let Some(ref r) = result {
                 cache.insert(s.path.clone(), r.clone());
             }
@@ -950,6 +995,16 @@ mod tests {
     }
 
     #[test]
+    fn resolves_last_assignment_wins_for_substitution() {
+        // b=${x} then b=${y} — ${b} should resolve to y's value (5), not x's ({q:10})
+        let v = resolve_str("x={q:10}\ny=5\nb=${x}\nb=${y}");
+        assert_eq!(
+            obj(&v).get("b"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(5)))
+        );
+    }
+
+    #[test]
     fn resolves_string_concat_with_substitution() {
         let v = resolve_str("host = \"localhost\"\nurl = \"http://\"${host}");
         assert_eq!(
@@ -974,5 +1029,22 @@ mod tests {
             obj(&v).get("url"),
             Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
         );
+    }
+
+    #[test]
+    fn delayed_merge_object_with_substitution() {
+        // a=${x} then a={c:3} should deep merge: {q:10, c:3}
+        let v = resolve_str("x={q:10}\na=${x}\na={c:3}");
+        let a = obj(&v).get("a").cloned().unwrap();
+        match a {
+            HoconValue::Object(map) => {
+                assert_eq!(map.get("c"), Some(&HoconValue::Scalar(ScalarValue::Int(3))));
+                assert_eq!(
+                    map.get("q"),
+                    Some(&HoconValue::Scalar(ScalarValue::Int(10)))
+                );
+            }
+            other => panic!("expected object, got {:?}", other),
+        }
     }
 }
