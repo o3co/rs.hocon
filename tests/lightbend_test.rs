@@ -396,7 +396,7 @@ fn lightbend_suite_expected_json() {
     let skip: std::collections::HashSet<&str> = [
         "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
         "test02-expected.json", // empty-key ("".""."") and quoted-key ("a.b.c") bugs
-        "test10-expected.json", // rs.hocon#36: nested include substitution scope
+        "test10-expected.json", // ConfigDelayedMerge: c.e missing q field from ${a} merge
         "file-include-expected.json", // file() include semantics differ from JVM classpath
     ]
     .into_iter()

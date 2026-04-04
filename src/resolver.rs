@@ -665,9 +665,22 @@ fn resolve_subst(
             return Ok(result);
         }
 
-        // Env var fallback
-        if let Some(env_val) = env.get(&s.path) {
-            let result = HoconValue::Scalar(ScalarValue::String(env_val.clone()));
+        // Env var fallback — also try the original (non-relativized) path
+        let env_result = env.get(&s.path).cloned().or_else(|| {
+            if s.prefix_len > 0 {
+                let segments = parse_subst_path(&s.path);
+                if segments.len() > s.prefix_len {
+                    let original_path = segments[s.prefix_len..].join(".");
+                    env.get(&original_path).cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        if let Some(env_val) = env_result {
+            let result = HoconValue::Scalar(ScalarValue::String(env_val));
             cache.insert(s.path.clone(), result.clone());
             return Ok(Some(result));
         }
