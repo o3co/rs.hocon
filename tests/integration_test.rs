@@ -501,5 +501,8 @@ fn io_error_is_hocon_error_io_variant() {
 #[test]
 fn test_unterminated_triple_quoted_string_errors() {
     let result = hocon::parse(r#"a = """unterminated"#);
-    assert!(result.is_err(), "expected error for unterminated triple-quoted string");
+    assert!(
+        result.is_err(),
+        "expected error for unterminated triple-quoted string"
+    );
 }
