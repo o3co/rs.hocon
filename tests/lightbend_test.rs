@@ -377,8 +377,7 @@ fn lightbend_test13_bad_substitution() {
 #[test]
 fn lightbend_suite_expected_json() {
     let testdata = testdata_dir();
-    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected");
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected");
 
     assert!(
         expected_dir.exists(),
@@ -388,12 +387,14 @@ fn lightbend_suite_expected_json() {
 
     // Known failures — skip these (linked to open issues)
     let skip: std::collections::HashSet<&str> = [
-        "test01-expected.json",  // system.* contains env-specific values (HOME, PATH, etc.)
-        "test02-expected.json",  // empty-key ("".""."") and quoted-key ("a.b.c") bugs
-        "test09-expected.json",  // delayed merge: object merge with substitution incomplete
-        "test10-expected.json",  // rs.hocon#36: nested include substitution scope
-        "file-include-expected.json",  // file() include semantics differ from JVM classpath
-    ].into_iter().collect();
+        "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
+        "test02-expected.json", // empty-key ("".""."") and quoted-key ("a.b.c") bugs
+        "test09-expected.json", // delayed merge: object merge with substitution incomplete
+        "test10-expected.json", // rs.hocon#36: nested include substitution scope
+        "file-include-expected.json", // file() include semantics differ from JVM classpath
+    ]
+    .into_iter()
+    .collect();
 
     let mut tested = 0;
     for entry in fs::read_dir(&expected_dir).unwrap() {
@@ -421,14 +422,16 @@ fn lightbend_suite_expected_json() {
         parse_and_compare(&conf_path, &expected_path);
         tested += 1;
     }
-    assert!(tested > 0, "No expected JSON tests were run. Check tests/testdata/expected/");
+    assert!(
+        tested > 0,
+        "No expected JSON tests were run. Check tests/testdata/expected/"
+    );
 }
 
 #[test]
 fn lightbend_suite_expected_errors() {
     let testdata = testdata_dir();
-    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected");
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected");
 
     assert!(
         expected_dir.exists(),
