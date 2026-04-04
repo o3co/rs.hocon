@@ -439,6 +439,7 @@ fn lightbend_suite_expected_errors() {
         expected_dir.display()
     );
 
+    let mut tested = 0;
     for entry in fs::read_dir(&expected_dir).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name().to_string_lossy().to_string();
@@ -462,5 +463,10 @@ fn lightbend_suite_expected_errors() {
             "Expected error for {} but got success",
             conf_path.display()
         );
+        tested += 1;
     }
+    assert!(
+        tested > 0,
+        "No expected error tests were run. Check tests/testdata/expected/"
+    );
 }
