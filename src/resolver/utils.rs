@@ -20,8 +20,13 @@ pub(crate) fn parse_subst_path(raw: &str) -> Vec<String> {
             i += 1;
             let mut seg = String::new();
             while i < chars.len() && chars[i] != '"' {
-                seg.push(chars[i]);
-                i += 1;
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    seg.push(chars[i + 1]);
+                    i += 2;
+                } else {
+                    seg.push(chars[i]);
+                    i += 1;
+                }
             }
             if i < chars.len() {
                 i += 1;
@@ -179,8 +184,9 @@ pub(crate) fn segments_to_key(segments: &[String]) -> String {
     segments
         .iter()
         .map(|s| {
-            if s.is_empty() || s.contains('.') || s.contains('"') {
-                format!("\"{}\"", s)
+            if s.is_empty() || s.contains('.') || s.contains('"') || s.contains('\\') {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{}\"", escaped)
             } else {
                 s.clone()
             }
@@ -206,6 +212,35 @@ mod tests {
     #[test]
     fn segments_to_key_empty_string() {
         assert_eq!(segments_to_key(&["".into(), "foo".into()]), r#""".foo"#);
+    }
+
+    #[test]
+    fn segments_to_key_escaped_quotes() {
+        assert_eq!(
+            segments_to_key(&["a\"b".into(), "c".into()]),
+            r#""a\"b".c"#
+        );
+    }
+
+    #[test]
+    fn segments_to_key_escaped_backslash() {
+        assert_eq!(
+            segments_to_key(&["a\\b".into(), "c".into()]),
+            r#""a\\b".c"#
+        );
+    }
+
+    #[test]
+    fn segments_to_key_roundtrip_with_special_chars() {
+        let cases: Vec<Vec<String>> = vec![
+            vec!["a\"b".into(), "c".into()],
+            vec!["a\\b".into(), "c".into()],
+        ];
+        for segs in &cases {
+            let key = segments_to_key(segs);
+            let parsed = parse_subst_path(&key);
+            assert_eq!(&parsed, segs, "roundtrip failed for {:?} → {:?} → {:?}", segs, key, parsed);
+        }
     }
 
     #[test]
