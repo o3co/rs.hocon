@@ -22,6 +22,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+      - name: Cache expected JSON
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/testdata/expected
+            .xx-hocon-version
+          key: xx-hocon-expected-${{ github.run_id }}
+          restore-keys: xx-hocon-expected-
+      - name: Fetch expected JSON
+        run: make testdata
       - run: cargo test
         if: matrix.rust == 'stable'
       # MSRV: remove criterion dev-dependency before testing because
@@ -41,6 +51,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Cache expected JSON
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/testdata/expected
+            .xx-hocon-version
+          key: xx-hocon-expected-${{ github.run_id }}
+          restore-keys: xx-hocon-expected-
+      - name: Fetch expected JSON
+        run: make testdata
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: cargo llvm-cov --features serde --lcov --output-path lcov.info
       - uses: codecov/codecov-action@v4

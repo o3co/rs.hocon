@@ -13,3 +13,7 @@ Cargo.lock
 
 # Superpowers (development process artifacts)
 docs/superpowers/
+
+# Fetched testdata from xx.hocon (run `make testdata` to populate)
+tests/testdata/expected/
+.xx-hocon-version
