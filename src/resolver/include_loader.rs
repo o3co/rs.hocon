@@ -83,7 +83,7 @@ fn load_single_include(
     opts: &ResolveOptions,
 ) -> Result<ResObj, ResolveError> {
     // Circular include detection
-    if opts.include_stack.contains(&candidate.to_path_buf()) {
+    if opts.include_stack.iter().any(|p| p.as_path() == candidate) {
         return Err(ResolveError {
             message: format!("circular include: {}", candidate.display()),
             path: candidate.display().to_string(),
