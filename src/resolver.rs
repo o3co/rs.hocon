@@ -528,19 +528,29 @@ fn resolve_subst(
         let found = lookup_path(root, &segments);
 
         if let Some(found) = found {
-            // If found value is a subst/concat pointing at itself, use prior value
+            // Self-referential substitution: only use prior value when the substitution
+            // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
-                let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
-                let prior = scope
-                    .prior_values
-                    .get(root_seg)
-                    .or_else(|| root.prior_values.get(root_seg));
-                if let Some(prior) = prior {
-                    let result = resolve_val(prior, scope, root, resolving, cache, env)?;
-                    if let Some(ref r) = result {
-                        cache.insert(s.path.clone(), r.clone());
+                let is_self_ref = match found {
+                    ResolverValue::Subst(sub) => sub.path == s.path,
+                    ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
+                        matches!(n, ResolverValue::Subst(sub) if sub.path == s.path)
+                    }),
+                    _ => false,
+                };
+                if is_self_ref {
+                    let root_seg = segments.first().map(|s| s.as_str()).unwrap_or("");
+                    let prior = scope
+                        .prior_values
+                        .get(root_seg)
+                        .or_else(|| root.prior_values.get(root_seg));
+                    if let Some(prior) = prior {
+                        let result = resolve_val(prior, scope, root, resolving, cache, env)?;
+                        if let Some(ref r) = result {
+                            cache.insert(s.path.clone(), r.clone());
+                        }
+                        return Ok(result);
                     }
-                    return Ok(result);
                 }
             }
             let result = resolve_val(found, scope, root, resolving, cache, env)?;
@@ -947,6 +957,16 @@ mod tests {
         } else {
             panic!("expected string");
         }
+    }
+
+    #[test]
+    fn resolves_last_assignment_wins_for_substitution() {
+        // b=${x} then b=${y} — ${b} should resolve to y's value (5), not x's ({q:10})
+        let v = resolve_str("x={q:10}\ny=5\nb=${x}\nb=${y}");
+        assert_eq!(
+            obj(&v).get("b"),
+            Some(&HoconValue::Scalar(ScalarValue::Int(5)))
+        );
     }
 
     #[test]
