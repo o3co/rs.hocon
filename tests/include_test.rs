@@ -101,3 +101,45 @@ fn include_env_fallback_quoted_key_prefix() {
     assert_eq!(config.get_string(r#""a.b".val"#).unwrap(), "ok");
     // _guard drops here, removing the env var
 }
+
+#[test]
+fn file_include_resolves_from_cwd_not_including_dir() {
+    // Create a temp directory with a parent conf that uses `include file(...)`.
+    // The file() path is relative to CWD, so a file that exists in the parent's
+    // directory but NOT in CWD should NOT be found.
+    let dir = tempdir().unwrap();
+    let subdir = dir.path().join("sub");
+    std::fs::create_dir(&subdir).unwrap();
+
+    // child.conf exists only in sub/
+    std::fs::write(subdir.join("child.conf"), "child_key = 1").unwrap();
+
+    // parent.conf in sub/ does:
+    //   - bare include "child.conf"  -> resolves relative to sub/ -> found
+    //   - file("child.conf")         -> resolves relative to CWD -> NOT found (silently skipped)
+    //   - file() with absolute path  -> should work
+    let abs_child = subdir
+        .join("child.conf")
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    let parent_content = format!(
+        concat!(
+            "bare_ok = true\n",
+            "include \"child.conf\"\n",
+            "include file(\"nonexistent-from-cwd.conf\")\n",
+            "include file(\"{}\")\n",
+        ),
+        abs_child
+    );
+    std::fs::write(subdir.join("parent.conf"), &parent_content).unwrap();
+
+    let config = hocon::parse_file(subdir.join("parent.conf")).unwrap();
+
+    // bare include found the child
+    assert_eq!(config.get_i64("child_key").unwrap(), 1);
+    // bare_ok is set
+    assert!(config.get_bool("bare_ok").unwrap());
+    // file("nonexistent-from-cwd.conf") was silently skipped (no error)
+    // file() with absolute path also found the child (child_key still 1)
+}

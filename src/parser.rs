@@ -38,6 +38,7 @@ pub enum AstNode {
     Include {
         path: String,
         required: bool,
+        is_file: bool,
         pos: Pos,
     },
 }
@@ -373,6 +374,7 @@ impl<'a> Parser<'a> {
         }
 
         let path;
+        let mut is_file = false;
         if self.peek_kind() == TokenKind::QuotedString {
             // Simple: include required("path") or include "path"
             path = self.peek_value().to_string();
@@ -388,6 +390,7 @@ impl<'a> Parser<'a> {
             || file_prefix_consumed
         {
             // file("path") form — possibly with required( already consumed.
+            is_file = true;
             let err_line = self.peek_line();
             let err_col = self.peek_col();
 
@@ -432,6 +435,7 @@ impl<'a> Parser<'a> {
             value: AstNode::Include {
                 path,
                 required,
+                is_file,
                 pos: p.clone(),
             },
             append: false,
@@ -749,12 +753,20 @@ mod tests {
         let node = parse("include \"other.conf\"");
         let f = &fields(&node)[0];
         assert!(f.key.is_empty());
-        assert!(matches!(f.value, AstNode::Include { .. }));
+        if let AstNode::Include { is_file, .. } = &f.value {
+            assert!(!is_file, "bare include should have is_file=false");
+        } else {
+            panic!("expected Include");
+        }
     }
 
     #[test]
     fn parses_include_file_syntax() {
         let node = parse("include file(\"other.conf\")");
-        assert!(matches!(&fields(&node)[0].value, AstNode::Include { .. }));
+        if let AstNode::Include { is_file, .. } = &fields(&node)[0].value {
+            assert!(is_file, "file() include should have is_file=true");
+        } else {
+            panic!("expected Include");
+        }
     }
 }
