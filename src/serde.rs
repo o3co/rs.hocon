@@ -55,8 +55,7 @@ where
     }
     // Float truncation fallback for Number types — only for float-like literals
     if sv.value_type == ScalarType::Number {
-        let is_float_like =
-            sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E');
+        let is_float_like = sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E');
         if is_float_like {
             if let Ok(f) = sv.raw.parse::<f64>() {
                 if f.fract() == 0.0
