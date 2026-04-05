@@ -12,6 +12,10 @@ with optional Serde integration.
 
 [日本語](README.ja.md)
 
+**Library stance** — This library is a HOCON config loader. Its purpose is reading `.hocon` config files and providing typed access via the `Config` API (`get_string`, `get_i64`, `get_f64`, `get_bool`, `get_duration`, `get_bytes`). It is not a low-level parser API; internal types like `ScalarValue` may change between minor versions.
+
+**Cross-language conformance** — This implementation is tested against shared expected-JSON fixtures from [o3co/xx.hocon](https://github.com/o3co/xx.hocon) alongside [ts.hocon](https://github.com/o3co/ts.hocon) and [go.hocon](https://github.com/o3co/go.hocon), ensuring all three implementations meet the same Lightbend HOCON specification.
+
 ## Quick Start
 
 ### 1. Install
