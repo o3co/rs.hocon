@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Scalar internal representation**: `ScalarValue` changed from enum (`String`/`Int`/`Float`/`Bool`/`Null` variants) to struct `{raw: String, value_type: ScalarType}`. Scalars now store the original text and a type discriminant instead of converted Rust values. This eliminates type erasure (e.g., `0100` → `100`) and preserves original text.
+- `get_string()` now returns `raw` for **all** scalar types (number, boolean, null), matching Lightbend behavior.
+- Env var lookup uses raw dot-join instead of `segments_to_key` (no quoting), matching Lightbend behavior.
+
+### Fixed
+
+- `.33` (no leading zero) now correctly classified as string, not number — aligned with Lightbend reference implementation.
+- `get_i64()` f64 fallback restricted to float-like literals only — prevents silent saturation on overflow for integer-like strings (e.g., `"9223372036854775808"`).
+- `get_duration()` / `parse_duration()` reject negative values instead of wrapping via `as u64`.
+- `get_duration()` guards against `Duration::from_secs_f64` panic on very large values.
+- `get_bytes()` rejects bare float numbers that would silently round.
+- Serde `parse_int_from_scalar`: removed dead code path, restricted f64 fallback to float-like literals.
+- Quoted-key include relativization: `${"a.b".c}` inside included files now resolves correctly.
+- `tempfile` dev-dependency pinned to `<3.20` for MSRV 1.82 compatibility.
+
+### Added
+
+- `ScalarType` enum and `ScalarValue` struct exported from crate root.
+- `#[non_exhaustive]` on `ScalarType` and `ScalarValue`.
+- Substitution path segments: `SubstPlaceholder` uses `segments: Vec<String>` for correct quoted-key handling.
+
 ## [1.0.0] - 2026-04-04
 
 ### Added
