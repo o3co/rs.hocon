@@ -196,7 +196,7 @@ impl<'a> StructureBuilder<'a> {
                 }))
             }
             AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
-                ScalarValue::Null,
+                ScalarValue::null(),
             ))),
         }
     }

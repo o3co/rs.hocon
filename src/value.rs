@@ -17,18 +17,68 @@ pub enum HoconValue {
     Scalar(ScalarValue),
 }
 
-/// A scalar (leaf) value inside a HOCON document.
+/// The type tag for a scalar value.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
-pub enum ScalarValue {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarType {
     /// A string value.
-    String(String),
-    /// A 64-bit signed integer.
-    Int(i64),
-    /// A 64-bit floating-point number.
-    Float(f64),
+    String,
+    /// A numeric value (integer or floating-point).
+    Number,
     /// A boolean value.
-    Bool(bool),
+    Boolean,
     /// An explicit null.
     Null,
+}
+
+/// A scalar (leaf) value inside a HOCON document.
+///
+/// Stores the raw string representation alongside a type tag.
+/// Typed access (i64, f64, bool) is done by parsing `raw` on demand.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScalarValue {
+    /// The raw string as it appeared in the source (or was produced by resolution).
+    pub raw: String,
+    /// The semantic type of this scalar.
+    pub value_type: ScalarType,
+}
+
+impl ScalarValue {
+    /// Create a new scalar value with explicit type.
+    pub fn new(raw: String, value_type: ScalarType) -> Self {
+        Self { raw, value_type }
+    }
+
+    /// Create a string-typed scalar.
+    pub fn string(raw: String) -> Self {
+        Self {
+            raw,
+            value_type: ScalarType::String,
+        }
+    }
+
+    /// Create a null scalar.
+    pub fn null() -> Self {
+        Self {
+            raw: "null".to_string(),
+            value_type: ScalarType::Null,
+        }
+    }
+
+    /// Create a boolean scalar.
+    pub fn boolean(value: bool) -> Self {
+        Self {
+            raw: if value { "true" } else { "false" }.to_string(),
+            value_type: ScalarType::Boolean,
+        }
+    }
+
+    /// Create a number scalar from a raw string.
+    pub fn number(raw: String) -> Self {
+        Self {
+            raw,
+            value_type: ScalarType::Number,
+        }
+    }
 }

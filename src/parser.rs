@@ -1,6 +1,6 @@
 use crate::error::ParseError;
 use crate::lexer::{Token, TokenKind};
-use crate::value::ScalarValue;
+use crate::value::{ScalarType, ScalarValue};
 
 #[derive(Debug, Clone)]
 pub struct Pos {
@@ -479,7 +479,7 @@ impl<'a> Parser<'a> {
                 TokenKind::QuotedString | TokenKind::TripleQuotedString => {
                     let (_, val, line, col) = self.advance_get();
                     AstNode::Scalar {
-                        value: ScalarValue::String(val),
+                        value: ScalarValue::string(val),
                         pos: Pos { line, col },
                         separator: false,
                     }
@@ -495,7 +495,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Colon | TokenKind::Equals if !parts.is_empty() => {
                     let (_, val, line, col) = self.advance_get();
                     AstNode::Scalar {
-                        value: ScalarValue::String(val),
+                        value: ScalarValue::string(val),
                         pos: Pos { line, col },
                         separator: false,
                     }
@@ -505,7 +505,7 @@ impl<'a> Parser<'a> {
 
             if had_space {
                 parts.push(AstNode::Scalar {
-                    value: ScalarValue::String(" ".into()),
+                    value: ScalarValue::string(" ".into()),
                     pos: Pos {
                         line: t_line,
                         col: t_col,
@@ -570,27 +570,21 @@ impl<'a> Parser<'a> {
 
 fn parse_scalar_value(raw: &str) -> ScalarValue {
     match raw {
-        "true" => return ScalarValue::Bool(true),
-        "false" => return ScalarValue::Bool(false),
-        "null" => return ScalarValue::Null,
+        "true" | "false" => {
+            return ScalarValue::new(raw.to_string(), ScalarType::Boolean);
+        }
+        "null" => return ScalarValue::null(),
         _ => {}
     }
 
-    // Try integer first (no dot, no exponent)
-    if !raw.contains('.') && !raw.contains('e') && !raw.contains('E') {
-        if let Ok(n) = raw.parse::<i64>() {
-            return ScalarValue::Int(n);
+    // Number detection: first char must be 0-9 or - (Lightbend-aligned)
+    if let Some(first) = raw.bytes().next() {
+        if (first.is_ascii_digit() || first == b'-') && raw.parse::<f64>().is_ok() {
+            return ScalarValue::number(raw.to_string());
         }
     }
 
-    // Try float
-    if let Ok(f) = raw.parse::<f64>() {
-        if !raw.is_empty() {
-            return ScalarValue::Float(f);
-        }
-    }
-
-    ScalarValue::String(raw.to_string())
+    ScalarValue::string(raw.to_string())
 }
 
 #[cfg(test)]
@@ -665,52 +659,55 @@ mod tests {
     fn parses_boolean_and_null() {
         let node = parse("a = true\nb = false\nc = null");
         let fs = fields(&node);
-        assert!(matches!(
-            &fs[0].value,
-            AstNode::Scalar {
-                value: ScalarValue::Bool(true),
-                ..
-            }
-        ));
-        assert!(matches!(
-            &fs[1].value,
-            AstNode::Scalar {
-                value: ScalarValue::Bool(false),
-                ..
-            }
-        ));
-        assert!(matches!(
-            &fs[2].value,
-            AstNode::Scalar {
-                value: ScalarValue::Null,
-                ..
-            }
-        ));
+        if let AstNode::Scalar { value, .. } = &fs[0].value {
+            assert_eq!(value.value_type, ScalarType::Boolean);
+            assert_eq!(value.raw, "true");
+        } else {
+            panic!("expected scalar");
+        }
+        if let AstNode::Scalar { value, .. } = &fs[1].value {
+            assert_eq!(value.value_type, ScalarType::Boolean);
+            assert_eq!(value.raw, "false");
+        } else {
+            panic!("expected scalar");
+        }
+        if let AstNode::Scalar { value, .. } = &fs[2].value {
+            assert_eq!(value.value_type, ScalarType::Null);
+        } else {
+            panic!("expected scalar");
+        }
     }
 
     #[test]
     fn parses_integer_scalars() {
         let node = parse("port = 8080");
-        assert!(matches!(
-            &fields(&node)[0].value,
-            AstNode::Scalar {
-                value: ScalarValue::Int(8080),
-                ..
-            }
-        ));
+        if let AstNode::Scalar { value, .. } = &fields(&node)[0].value {
+            assert_eq!(value.value_type, ScalarType::Number);
+            assert_eq!(value.raw, "8080");
+        } else {
+            panic!("expected scalar");
+        }
     }
 
     #[test]
     fn parses_float_scalars() {
         let node = parse("ratio = 1.5");
-        if let AstNode::Scalar {
-            value: ScalarValue::Float(f),
-            ..
-        } = &fields(&node)[0].value
-        {
-            assert!((f - 1.5).abs() < f64::EPSILON);
+        if let AstNode::Scalar { value, .. } = &fields(&node)[0].value {
+            assert_eq!(value.value_type, ScalarType::Number);
+            assert_eq!(value.raw, "1.5");
         } else {
-            panic!("expected float");
+            panic!("expected scalar");
+        }
+    }
+
+    #[test]
+    fn dot_prefix_is_string_not_number() {
+        let node = parse("v = .33");
+        if let AstNode::Scalar { value, .. } = &fields(&node)[0].value {
+            assert_eq!(value.value_type, ScalarType::String);
+            assert_eq!(value.raw, ".33");
+        } else {
+            panic!("expected scalar");
         }
     }
 

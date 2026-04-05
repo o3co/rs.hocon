@@ -39,13 +39,23 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
         hocon::HoconValue::Array(arr) => {
             serde_json::Value::Array(arr.iter().map(hocon_to_json).collect())
         }
-        hocon::HoconValue::Scalar(s) => match s {
-            hocon::ScalarValue::String(s) => serde_json::Value::String(s.clone()),
-            hocon::ScalarValue::Int(n) => serde_json::json!(*n as f64),
-            hocon::ScalarValue::Float(f) => serde_json::json!(*f),
-            hocon::ScalarValue::Bool(b) => serde_json::Value::Bool(*b),
-            hocon::ScalarValue::Null => serde_json::Value::Null,
-            _ => unreachable!("unknown ScalarValue variant"),
+        hocon::HoconValue::Scalar(sv) => match sv.value_type {
+            hocon::ScalarType::Null => serde_json::Value::Null,
+            hocon::ScalarType::Boolean => serde_json::Value::Bool(sv.raw == "true"),
+            hocon::ScalarType::Number => {
+                // Try i64 first (no dot/exponent), then f64
+                if !sv.raw.contains('.') && !sv.raw.contains('e') && !sv.raw.contains('E') {
+                    if let Ok(n) = sv.raw.parse::<i64>() {
+                        return serde_json::json!(n as f64);
+                    }
+                }
+                if let Ok(f) = sv.raw.parse::<f64>() {
+                    return serde_json::json!(f);
+                }
+                serde_json::Value::String(sv.raw.clone())
+            }
+            hocon::ScalarType::String => serde_json::Value::String(sv.raw.clone()),
+            _ => serde_json::Value::String(sv.raw.clone()),
         },
         _ => unreachable!("unknown HoconValue variant"),
     }
