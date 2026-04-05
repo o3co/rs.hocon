@@ -46,12 +46,14 @@ impl<'a> StructureBuilder<'a> {
             if let AstNode::Include {
                 path: include_path,
                 required,
+                is_file,
                 pos,
             } = &field.value
             {
                 let mut included = load_include(
                     include_path,
                     *required,
+                    *is_file,
                     pos.line,
                     pos.col,
                     self.opts,

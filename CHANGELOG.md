@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_bytes()` rejects bare float numbers that would silently round.
 - Serde `parse_int_from_scalar`: removed dead code path, restricted f64 fallback to float-like literals.
 - Quoted-key include relativization: `${"a.b".c}` inside included files now resolves correctly.
+- `include file("path")` now resolves relative to the process working directory (or as absolute), not relative to the including file's directory, matching the HOCON spec.
 - `tempfile` dev-dependency pinned to `<3.20` for MSRV 1.82 compatibility.
 
 ### Added

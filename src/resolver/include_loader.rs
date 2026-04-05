@@ -9,14 +9,22 @@ use super::utils::deep_merge_res_obj_into;
 pub(crate) fn load_include(
     include_path: &str,
     required: bool,
+    is_file: bool,
     line: usize,
     col: usize,
     opts: &ResolveOptions,
     _path_prefix: &[String],
 ) -> Result<ResObj, ResolveError> {
-    let base = match &opts.base_dir {
-        Some(dir) => dir.clone(),
-        None => std::env::current_dir().unwrap_or_default(),
+    // file() includes resolve relative to CWD (or as absolute), NOT relative
+    // to the including file's directory.  Bare includes use the including
+    // file's base_dir (falling back to CWD when there is none).
+    let base = if is_file {
+        std::env::current_dir().unwrap_or_default()
+    } else {
+        match &opts.base_dir {
+            Some(dir) => dir.clone(),
+            None => std::env::current_dir().unwrap_or_default(),
+        }
     };
 
     let abs_path = base.join(include_path);

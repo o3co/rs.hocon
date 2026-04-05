@@ -1,5 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tempfile::tempdir;
+
+/// Global lock for tests that change the process-wide CWD.
+static CWD_LOCK: Mutex<()> = Mutex::new(());
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -100,4 +104,59 @@ fn include_env_fallback_quoted_key_prefix() {
     let config = hocon::parse(&input).unwrap();
     assert_eq!(config.get_string(r#""a.b".val"#).unwrap(), "ok");
     // _guard drops here, removing the env var
+}
+
+#[test]
+fn file_include_resolves_from_cwd_not_including_dir() {
+    // Prove that `include file("child.conf")` resolves relative to CWD,
+    // NOT relative to the including file's directory.
+    //
+    // Layout:
+    //   tmpdir/child.conf          -> cwd_key = 99   (CWD-level)
+    //   tmpdir/sub/parent.conf     -> includes child.conf via bare + file()
+    //   tmpdir/sub/child.conf      -> child_key = 1   (including-file-level)
+    //
+    // CWD is set to tmpdir.  Therefore:
+    //   bare include "child.conf"  -> resolves relative to sub/ -> child_key = 1
+    //   include file("child.conf") -> resolves relative to CWD  -> cwd_key = 99
+    let _lock = CWD_LOCK.lock().unwrap();
+    let prev_cwd = std::env::current_dir().unwrap();
+
+    let dir = tempdir().unwrap();
+    let subdir = dir.path().join("sub");
+    std::fs::create_dir(&subdir).unwrap();
+
+    // child.conf at CWD level (tmpdir/)
+    std::fs::write(dir.path().join("child.conf"), "cwd_key = 99").unwrap();
+    // child.conf in including file's directory (tmpdir/sub/)
+    std::fs::write(subdir.join("child.conf"), "child_key = 1").unwrap();
+
+    let abs_child = subdir
+        .join("child.conf")
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    let parent_content = format!(
+        concat!(
+            "bare_ok = true\n",
+            "include \"child.conf\"\n",
+            "include file(\"child.conf\")\n",
+            "include file(\"{}\")\n",
+        ),
+        abs_child
+    );
+    std::fs::write(subdir.join("parent.conf"), &parent_content).unwrap();
+
+    // Set CWD to tmpdir so file("child.conf") picks up the CWD-level file
+    std::env::set_current_dir(dir.path()).unwrap();
+    let config = hocon::parse_file(subdir.join("parent.conf")).unwrap();
+    std::env::set_current_dir(&prev_cwd).unwrap();
+
+    // bare include resolved relative to sub/ -> child_key = 1
+    assert_eq!(config.get_i64("child_key").unwrap(), 1);
+    // file("child.conf") resolved relative to CWD (tmpdir/) -> cwd_key = 99
+    assert_eq!(config.get_i64("cwd_key").unwrap(), 99);
+    // bare_ok is set
+    assert!(config.get_bool("bare_ok").unwrap());
+    // file() with absolute path also found the child (child_key still 1)
 }
