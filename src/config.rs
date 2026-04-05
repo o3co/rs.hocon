@@ -58,7 +58,11 @@ impl Config {
                 }
                 // Fallback: float-like strings that are whole numbers
                 if let Ok(f) = sv.raw.parse::<f64>() {
-                    if f.fract() == 0.0 && f.is_finite() {
+                    if f.fract() == 0.0
+                        && f.is_finite()
+                        && f >= i64::MIN as f64
+                        && f < (i64::MAX as f64)
+                    {
                         return Ok(f as i64);
                     }
                 }
@@ -553,6 +557,20 @@ mod tests {
     fn get_i64_error_on_non_numeric() {
         let c = make_config(vec![("host", sv("localhost"))]);
         assert!(c.get_i64("host").is_err());
+    }
+
+    #[test]
+    fn get_i64_error_on_overflow() {
+        // "1e20" parses as f64 but overflows i64 range
+        let c = make_config(vec![("big", sv("1e20"))]);
+        assert!(c.get_i64("big").is_err());
+    }
+
+    #[test]
+    fn get_i64_error_on_i64_max_plus_one() {
+        // 9223372036854775808 == i64::MAX + 1, parses as f64 but must not saturate
+        let c = make_config(vec![("big", sv("9223372036854775808"))]);
+        assert!(c.get_i64("big").is_err());
     }
 
     #[test]
