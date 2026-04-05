@@ -145,8 +145,9 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
 pub(crate) fn relativize_subst_paths(val: &mut ResolverValue, prefix_segments: &[String]) {
     match val {
         ResolverValue::Subst(s) => {
-            let mut new_segments = prefix_segments.to_vec();
-            new_segments.extend(s.segments.iter().cloned());
+            let mut new_segments = Vec::with_capacity(prefix_segments.len() + s.segments.len());
+            new_segments.extend_from_slice(prefix_segments);
+            new_segments.extend_from_slice(&s.segments);
             s.segments = new_segments;
             s.prefix_len += prefix_segments.len();
         }

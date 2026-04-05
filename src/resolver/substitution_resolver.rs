@@ -126,7 +126,7 @@ impl<'a> SubstitutionResolver<'a> {
 
         self.resolving.insert(key.clone());
 
-        let result = self.resolve_subst_inner(s, scope);
+        let result = self.resolve_subst_inner(s, scope, &key);
 
         self.resolving.remove(&key);
         result
@@ -136,8 +136,8 @@ impl<'a> SubstitutionResolver<'a> {
         &mut self,
         s: &SubstPlaceholder,
         scope: &ResObj,
+        key: &str,
     ) -> Result<Option<HoconValue>, ResolveError> {
-        let key = segments_to_key(&s.segments);
         let found = lookup_path(self.root, &s.segments).cloned();
 
         if let Some(found) = found {
@@ -161,7 +161,7 @@ impl<'a> SubstitutionResolver<'a> {
                     if let Some(prior) = prior {
                         let result = self.resolve_val(&prior, scope)?;
                         if let Some(ref r) = result {
-                            self.cache.insert(key.clone(), r.clone());
+                            self.cache.insert(key.to_string(), r.clone());
                         }
                         return Ok(result);
                     }
@@ -191,13 +191,13 @@ impl<'a> SubstitutionResolver<'a> {
             }
 
             if let Some(ref r) = result {
-                self.cache.insert(key.clone(), r.clone());
+                self.cache.insert(key.to_string(), r.clone());
             }
             return Ok(result);
         }
 
         // Env var fallback — also try the original (non-relativized) path
-        let env_result = self.env.get(&key).cloned().or_else(|| {
+        let env_result = self.env.get(key).cloned().or_else(|| {
             if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
                 let original_key = segments_to_key(&s.segments[s.prefix_len..]);
                 self.env.get(&original_key).cloned()
@@ -207,7 +207,7 @@ impl<'a> SubstitutionResolver<'a> {
         });
         if let Some(env_val) = env_result {
             let result = HoconValue::Scalar(ScalarValue::String(env_val));
-            self.cache.insert(key.clone(), result.clone());
+            self.cache.insert(key.to_string(), result.clone());
             return Ok(Some(result));
         }
 
@@ -217,7 +217,7 @@ impl<'a> SubstitutionResolver<'a> {
 
         Err(ResolveError {
             message: format!("could not resolve substitution: ${{{}}}", key),
-            path: key,
+            path: key.to_string(),
             line: s.line,
             col: s.col,
         })
