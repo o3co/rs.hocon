@@ -182,9 +182,21 @@ impl Config {
                 // Number types: bare integer = milliseconds, bare float = milliseconds
                 if sv.value_type == ScalarType::Number {
                     if let Ok(n) = sv.raw.parse::<i64>() {
+                        if n < 0 {
+                            return Err(ConfigError {
+                                message: format!("negative duration at {}: {}", path, sv.raw),
+                                path: path.to_string(),
+                            });
+                        }
                         return Ok(std::time::Duration::from_millis(n as u64));
                     }
                     if let Ok(f) = sv.raw.parse::<f64>() {
+                        if f < 0.0 || !f.is_finite() {
+                            return Err(ConfigError {
+                                message: format!("invalid duration at {}: {}", path, sv.raw),
+                                path: path.to_string(),
+                            });
+                        }
                         return Ok(std::time::Duration::from_secs_f64(f / 1000.0));
                     }
                 }
@@ -398,6 +410,9 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
     let unit_str = s[num_end..].trim().to_lowercase();
 
     let num: f64 = num_str.parse().ok()?;
+    if num < 0.0 || !num.is_finite() {
+        return None;
+    }
 
     let nanos_per_unit: f64 = match unit_str.as_str() {
         "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
