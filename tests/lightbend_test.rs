@@ -55,6 +55,7 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
                 serde_json::Value::String(sv.raw.clone())
             }
             hocon::ScalarType::String => serde_json::Value::String(sv.raw.clone()),
+            _ => serde_json::Value::String(sv.raw.clone()),
         },
         _ => unreachable!("unknown HoconValue variant"),
     }

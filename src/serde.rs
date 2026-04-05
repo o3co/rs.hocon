@@ -53,13 +53,21 @@ where
     if let Ok(n) = sv.raw.parse::<T>() {
         return Ok(n);
     }
-    // Float truncation fallback for Number types
+    // Float truncation fallback for Number types — only for float-like literals
     if sv.value_type == ScalarType::Number {
-        if let Ok(f) = sv.raw.parse::<f64>() {
-            if f.fract() == 0.0 && f.is_finite() && f >= i64::MIN as f64 && f < (i64::MAX as f64) {
-                let as_i64 = f as i64;
-                if let Ok(n) = T::try_from(as_i64) {
-                    return Ok(n);
+        let is_float_like =
+            sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E');
+        if is_float_like {
+            if let Ok(f) = sv.raw.parse::<f64>() {
+                if f.fract() == 0.0
+                    && f.is_finite()
+                    && f >= i64::MIN as f64
+                    && f < (i64::MAX as f64)
+                {
+                    let as_i64 = f as i64;
+                    if let Ok(n) = T::try_from(as_i64) {
+                        return Ok(n);
+                    }
                 }
             }
         }

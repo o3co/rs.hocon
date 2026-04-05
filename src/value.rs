@@ -18,6 +18,7 @@ pub enum HoconValue {
 }
 
 /// The type tag for a scalar value.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScalarType {
     /// A string value.
@@ -34,6 +35,7 @@ pub enum ScalarType {
 ///
 /// Stores the raw string representation alongside a type tag.
 /// Typed access (i64, f64, bool) is done by parsing `raw` on demand.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScalarValue {
     /// The raw string as it appeared in the source (or was produced by resolution).

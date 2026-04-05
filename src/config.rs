@@ -56,14 +56,18 @@ impl Config {
                 if let Ok(n) = sv.raw.parse::<i64>() {
                     return Ok(n);
                 }
-                // Fallback: float-like strings that are whole numbers
-                if let Ok(f) = sv.raw.parse::<f64>() {
-                    if f.fract() == 0.0
-                        && f.is_finite()
-                        && f >= i64::MIN as f64
-                        && f < (i64::MAX as f64)
-                    {
-                        return Ok(f as i64);
+                // Only use f64 fallback for float-like literals (contains '.' or exponent)
+                let is_float_like =
+                    sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E');
+                if is_float_like {
+                    if let Ok(f) = sv.raw.parse::<f64>() {
+                        if f.fract() == 0.0
+                            && f.is_finite()
+                            && f >= i64::MIN as f64
+                            && f < (i64::MAX as f64)
+                        {
+                            return Ok(f as i64);
+                        }
                     }
                 }
                 Err(type_mismatch(path, "i64"))
