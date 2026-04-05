@@ -19,7 +19,12 @@ jobs:
         run: cargo install cargo-set-version
 
       - name: Set version from tag
-        run: cargo set-version "${GITHUB_REF#refs/tags/v}"
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$TAG_VERSION" != "$CURRENT" ]; then
+            cargo set-version "$TAG_VERSION"
+          fi
 
       - run: cargo test
       - run: cargo test --features serde
