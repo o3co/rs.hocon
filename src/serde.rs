@@ -56,11 +56,7 @@ where
     // Float truncation fallback for Number types
     if sv.value_type == ScalarType::Number {
         if let Ok(f) = sv.raw.parse::<f64>() {
-            if f.fract() == 0.0
-                && f.is_finite()
-                && f >= i64::MIN as f64
-                && f < (i64::MAX as f64)
-            {
+            if f.fract() == 0.0 && f.is_finite() && f >= i64::MIN as f64 && f < (i64::MAX as f64) {
                 let as_i64 = f as i64;
                 if let Ok(n) = T::try_from(as_i64) {
                     return Ok(n);
@@ -335,9 +331,7 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(sv) => {
-                visitor.visit_enum(sv.raw.as_str().into_deserializer())
-            }
+            HoconValue::Scalar(sv) => visitor.visit_enum(sv.raw.as_str().into_deserializer()),
             other => Err(DeserializeError {
                 message: format!("expected string for enum variant, got {:?}", other),
             }),

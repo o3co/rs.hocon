@@ -80,9 +80,10 @@ impl Config {
     pub fn get_f64(&self, path: &str) -> Result<f64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(sv)) => {
-                sv.raw.parse::<f64>().map_err(|_| type_mismatch(path, "f64"))
-            }
+            Some(HoconValue::Scalar(sv)) => sv
+                .raw
+                .parse::<f64>()
+                .map_err(|_| type_mismatch(path, "f64")),
             _ => Err(type_mismatch(path, "f64")),
         }
     }

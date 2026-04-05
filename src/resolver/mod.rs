@@ -252,7 +252,10 @@ mod tests {
         let a = obj(&v).get("a").cloned().unwrap();
         match a {
             HoconValue::Object(map) => {
-                assert_eq!(map.get("c"), Some(&HoconValue::Scalar(ScalarValue::number("3".into()))));
+                assert_eq!(
+                    map.get("c"),
+                    Some(&HoconValue::Scalar(ScalarValue::number("3".into())))
+                );
                 assert_eq!(
                     map.get("q"),
                     Some(&HoconValue::Scalar(ScalarValue::number("10".into())))
