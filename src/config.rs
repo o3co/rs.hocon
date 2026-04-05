@@ -213,17 +213,19 @@ impl Config {
         })?;
         match v {
             HoconValue::Scalar(sv) => {
-                // Try byte-size string first
-                if let Some(b) = parse_bytes(&sv.raw) {
-                    return Ok(b);
-                }
-                // Bare number: return as-is (assumed bytes)
+                // Bare integer number: return as-is (assumed bytes)
                 if sv.value_type == ScalarType::Number {
                     if let Ok(n) = sv.raw.parse::<i64>() {
                         return Ok(n);
                     }
+                    // Bare float without unit (e.g. "1.5") is not valid for bytes
+                    return Err(ConfigError {
+                        message: format!("expected byte size at {}", path),
+                        path: path.to_string(),
+                    });
                 }
-                Err(ConfigError {
+                // String type: try byte-size string (e.g. "512 MB", "1.5 KiB")
+                parse_bytes(&sv.raw).ok_or_else(|| ConfigError {
                     message: format!("invalid byte size at {}: {}", path, sv.raw),
                     path: path.to_string(),
                 })
