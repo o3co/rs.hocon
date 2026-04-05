@@ -6,7 +6,7 @@ use super::include_loader::load_include;
 use super::types::{
     AppendPlaceholder, ConcatPlaceholder, ResObj, ResolveOptions, ResolverValue, SubstPlaceholder,
 };
-use super::utils::{deep_merge_res_obj_into, relativize_res_obj};
+use super::utils::{deep_merge_res_obj_into, parse_subst_path, relativize_res_obj};
 
 pub(crate) struct StructureBuilder<'a> {
     opts: &'a ResolveOptions,
@@ -58,8 +58,7 @@ impl<'a> StructureBuilder<'a> {
                     path_prefix,
                 )?;
                 if !path_prefix.is_empty() {
-                    let prefix_str = path_prefix.join(".");
-                    relativize_res_obj(&mut included, &prefix_str, path_prefix.len());
+                    relativize_res_obj(&mut included, path_prefix);
                 }
                 deep_merge_res_obj_into(obj, included);
             }
@@ -171,7 +170,7 @@ impl<'a> StructureBuilder<'a> {
                 optional,
                 pos,
             } => Ok(ResolverValue::Subst(SubstPlaceholder {
-                path,
+                segments: parse_subst_path(&path),
                 optional,
                 line: pos.line,
                 col: pos.col,

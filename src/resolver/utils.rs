@@ -20,8 +20,16 @@ pub(crate) fn parse_subst_path(raw: &str) -> Vec<String> {
             i += 1;
             let mut seg = String::new();
             while i < chars.len() && chars[i] != '"' {
-                seg.push(chars[i]);
-                i += 1;
+                if chars[i] == '\\'
+                    && i + 1 < chars.len()
+                    && (chars[i + 1] == '"' || chars[i + 1] == '\\')
+                {
+                    seg.push(chars[i + 1]);
+                    i += 2;
+                } else {
+                    seg.push(chars[i]);
+                    i += 1;
+                }
             }
             if i < chars.len() {
                 i += 1;
@@ -134,42 +142,147 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
 
 /// Relativize all substitution paths in a ResolverValue tree by prepending the given prefix.
 /// Called when including a file into a nested scope so `${y}` becomes `${prefix.y}`.
-pub(crate) fn relativize_subst_paths(
-    val: &mut ResolverValue,
-    prefix: &str,
-    prefix_segment_count: usize,
-) {
+pub(crate) fn relativize_subst_paths(val: &mut ResolverValue, prefix_segments: &[String]) {
     match val {
         ResolverValue::Subst(s) => {
-            s.path = format!("{}.{}", prefix, s.path);
-            s.prefix_len += prefix_segment_count;
+            let mut new_segments = Vec::with_capacity(prefix_segments.len() + s.segments.len());
+            new_segments.extend_from_slice(prefix_segments);
+            new_segments.extend_from_slice(&s.segments);
+            s.segments = new_segments;
+            s.prefix_len += prefix_segments.len();
         }
         ResolverValue::Concat(c) => {
             for node in &mut c.nodes {
-                relativize_subst_paths(node, prefix, prefix_segment_count);
+                relativize_subst_paths(node, prefix_segments);
             }
         }
         ResolverValue::Append(a) => {
-            relativize_subst_paths(&mut a.existing, prefix, prefix_segment_count);
-            relativize_subst_paths(&mut a.elem, prefix, prefix_segment_count);
+            relativize_subst_paths(&mut a.existing, prefix_segments);
+            relativize_subst_paths(&mut a.elem, prefix_segments);
         }
         ResolverValue::Obj(o) => {
-            relativize_res_obj(o, prefix, prefix_segment_count);
+            relativize_res_obj(o, prefix_segments);
         }
         ResolverValue::UnresolvedArray(items) => {
             for item in items {
-                relativize_subst_paths(item, prefix, prefix_segment_count);
+                relativize_subst_paths(item, prefix_segments);
             }
         }
         ResolverValue::Resolved(_) => {}
     }
 }
 
-pub(crate) fn relativize_res_obj(obj: &mut ResObj, prefix: &str, prefix_segment_count: usize) {
+pub(crate) fn relativize_res_obj(obj: &mut ResObj, prefix_segments: &[String]) {
     for val in obj.fields.values_mut() {
-        relativize_subst_paths(val, prefix, prefix_segment_count);
+        relativize_subst_paths(val, prefix_segments);
     }
     for val in obj.prior_values.values_mut() {
-        relativize_subst_paths(val, prefix, prefix_segment_count);
+        relativize_subst_paths(val, prefix_segments);
+    }
+}
+
+pub(crate) fn segments_to_key(segments: &[String]) -> String {
+    segments
+        .iter()
+        .map(|s| {
+            if s.is_empty()
+                || s.contains('.')
+                || s.contains('"')
+                || s.contains('\\')
+                || s != s.trim()
+                || s.contains(' ')
+                || s.contains('\t')
+            {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{}\"", escaped)
+            } else {
+                s.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segments_to_key_simple() {
+        assert_eq!(
+            segments_to_key(&["a".into(), "b".into(), "c".into()]),
+            "a.b.c"
+        );
+    }
+
+    #[test]
+    fn segments_to_key_quoted_dot() {
+        assert_eq!(segments_to_key(&["a.b".into(), "c".into()]), r#""a.b".c"#);
+    }
+
+    #[test]
+    fn segments_to_key_empty_string() {
+        assert_eq!(segments_to_key(&["".into(), "foo".into()]), r#""".foo"#);
+    }
+
+    #[test]
+    fn segments_to_key_escaped_quotes() {
+        assert_eq!(segments_to_key(&["a\"b".into(), "c".into()]), r#""a\"b".c"#);
+    }
+
+    #[test]
+    fn segments_to_key_escaped_backslash() {
+        assert_eq!(segments_to_key(&["a\\b".into(), "c".into()]), r#""a\\b".c"#);
+    }
+
+    #[test]
+    fn segments_to_key_roundtrip_with_special_chars() {
+        let cases: Vec<Vec<String>> = vec![
+            vec!["a\"b".into(), "c".into()],
+            vec!["a\\b".into(), "c".into()],
+        ];
+        for segs in &cases {
+            let key = segments_to_key(segs);
+            let parsed = parse_subst_path(&key);
+            assert_eq!(
+                &parsed, segs,
+                "roundtrip failed for {:?} → {:?} → {:?}",
+                segs, key, parsed
+            );
+        }
+    }
+
+    #[test]
+    fn parse_subst_path_preserves_unknown_escapes() {
+        // \n inside quotes should be kept as literal \n, not stripped to n
+        assert_eq!(parse_subst_path(r#""a\nb""#), vec!["a\\nb".to_string()]);
+    }
+
+    #[test]
+    fn segments_to_key_quotes_whitespace() {
+        assert_eq!(segments_to_key(&[" a ".into(), "b".into()]), r#"" a ".b"#);
+        // roundtrip
+        let segs = vec![" a ".into(), "b".into()];
+        let key = segments_to_key(&segs);
+        assert_eq!(parse_subst_path(&key), segs);
+    }
+
+    #[test]
+    fn segments_to_key_roundtrip() {
+        let cases: Vec<Vec<String>> = vec![
+            vec!["a".into(), "b".into()],
+            vec!["a.b".into(), "c".into()],
+            vec!["".into(), "x".into(), "".into()],
+            vec!["a.b.c".into(), "d.e".into()],
+        ];
+        for segs in &cases {
+            let key = segments_to_key(segs);
+            let parsed = parse_subst_path(&key);
+            assert_eq!(
+                &parsed, segs,
+                "roundtrip failed for {:?} → {:?} → {:?}",
+                segs, key, parsed
+            );
+        }
     }
 }

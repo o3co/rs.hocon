@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -64,4 +65,39 @@ fallback = true"#,
     )
     .unwrap();
     assert!(config.get_bool("fallback").unwrap());
+}
+
+#[test]
+fn include_relativize_quoted_key_with_dots() {
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("child.conf"), "x = 1\ny = ${x}").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(r#""a.b" {{ include "{}/child.conf" }}"#, dir_str);
+    let config = hocon::parse(&input).unwrap();
+    assert_eq!(config.get_i64(r#""a.b".x"#).unwrap(), 1);
+    assert_eq!(config.get_i64(r#""a.b".y"#).unwrap(), 1);
+}
+
+#[test]
+fn include_env_fallback_quoted_key_prefix() {
+    struct EnvGuard {
+        key: &'static str,
+    }
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(self.key);
+        }
+    }
+
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("child.conf"), "val = ${MY_TEST_VAR_QK}").unwrap();
+    std::env::set_var("MY_TEST_VAR_QK", "ok");
+    let _guard = EnvGuard {
+        key: "MY_TEST_VAR_QK",
+    };
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(r#""a.b" {{ include "{}/child.conf" }}"#, dir_str);
+    let config = hocon::parse(&input).unwrap();
+    assert_eq!(config.get_string(r#""a.b".val"#).unwrap(), "ok");
+    // _guard drops here, removing the env var
 }

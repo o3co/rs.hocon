@@ -40,7 +40,7 @@ pub(crate) enum ResolverValue {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SubstPlaceholder {
-    pub path: String,
+    pub segments: Vec<String>,
     pub optional: bool,
     pub line: usize,
     pub col: usize,
