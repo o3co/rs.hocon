@@ -32,9 +32,9 @@ impl Config {
 
     /// Return the value at `path` as a `String`.
     ///
-    /// Scalar values (Int, Float, Bool, Null) are coerced to their string
-    /// representation. Returns [`ConfigError`] if the path is missing or
-    /// the value is an Object or Array.
+    /// Returns the raw string for any scalar value (string, number, boolean,
+    /// or null). Returns [`ConfigError`] if the path is missing or the value
+    /// is an Object or Array.
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -197,7 +197,14 @@ impl Config {
                                 path: path.to_string(),
                             });
                         }
-                        return Ok(std::time::Duration::from_secs_f64(f / 1000.0));
+                        let secs = f / 1000.0;
+                        if secs > u64::MAX as f64 {
+                            return Err(ConfigError {
+                                message: format!("duration too large at {}: {}", path, sv.raw),
+                                path: path.to_string(),
+                            });
+                        }
+                        return Ok(std::time::Duration::from_secs_f64(secs));
                     }
                 }
                 Err(ConfigError {
