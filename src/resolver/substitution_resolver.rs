@@ -196,10 +196,11 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
-        // Env var fallback — also try the original (non-relativized) path
-        let env_result = self.env.get(key).cloned().or_else(|| {
+        // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior
+        let env_key = s.segments.join(".");
+        let env_result = self.env.get(&env_key).cloned().or_else(|| {
             if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
-                let original_key = segments_to_key(&s.segments[s.prefix_len..]);
+                let original_key = s.segments[s.prefix_len..].join(".");
                 self.env.get(&original_key).cloned()
             } else {
                 None
