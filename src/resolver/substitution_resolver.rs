@@ -78,7 +78,7 @@ impl<'a> SubstitutionResolver<'a> {
                 for item in items {
                     let resolved = self
                         .resolve_val(item, scope)?
-                        .unwrap_or(HoconValue::Scalar(ScalarValue::Null));
+                        .unwrap_or(HoconValue::Scalar(ScalarValue::null()));
                     resolved_items.push(resolved);
                 }
                 Ok(Some(HoconValue::Array(resolved_items)))
@@ -207,7 +207,7 @@ impl<'a> SubstitutionResolver<'a> {
             }
         });
         if let Some(env_val) = env_result {
-            let result = HoconValue::Scalar(ScalarValue::String(env_val));
+            let result = HoconValue::Scalar(ScalarValue::string(env_val));
             self.cache.insert(key.to_string(), result.clone());
             return Ok(Some(result));
         }
@@ -239,7 +239,7 @@ impl<'a> SubstitutionResolver<'a> {
         }
 
         if resolved.is_empty() {
-            return Ok(HoconValue::Scalar(ScalarValue::Null));
+            return Ok(HoconValue::Scalar(ScalarValue::null()));
         }
         if resolved.len() == 1 {
             return Ok(resolved.into_iter().next().unwrap().0);
@@ -293,7 +293,7 @@ impl<'a> SubstitutionResolver<'a> {
 
         // String concatenation
         let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
-        Ok(HoconValue::Scalar(ScalarValue::String(s)))
+        Ok(HoconValue::Scalar(ScalarValue::string(s)))
     }
 
     fn resolve_append(
@@ -319,13 +319,7 @@ impl<'a> SubstitutionResolver<'a> {
 
 fn stringify_value(v: &HoconValue) -> String {
     match v {
-        HoconValue::Scalar(s) => match s {
-            ScalarValue::String(s) => s.clone(),
-            ScalarValue::Int(n) => n.to_string(),
-            ScalarValue::Float(f) => f.to_string(),
-            ScalarValue::Bool(b) => b.to_string(),
-            ScalarValue::Null => "null".to_string(),
-        },
+        HoconValue::Scalar(sv) => sv.raw.clone(),
         HoconValue::Array(_) => format!("{:?}", v),
         HoconValue::Object(_) => format!("{:?}", v),
     }

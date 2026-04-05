@@ -33,7 +33,7 @@ pub fn properties_to_hocon(input: &str) -> HoconValue {
         set_nested(
             &mut root,
             &segments,
-            HoconValue::Scalar(ScalarValue::String(value)),
+            HoconValue::Scalar(ScalarValue::string(value)),
         );
     }
 
@@ -120,14 +120,14 @@ mod tests {
             if let Some(HoconValue::Object(a)) = map.get("a") {
                 assert_eq!(
                     a.get("b"),
-                    Some(&HoconValue::Scalar(ScalarValue::String("1".into())))
+                    Some(&HoconValue::Scalar(ScalarValue::string("1".into())))
                 );
             } else {
                 panic!("expected nested object for 'a'");
             }
             assert_eq!(
                 map.get("c"),
-                Some(&HoconValue::Scalar(ScalarValue::String("hello".into())))
+                Some(&HoconValue::Scalar(ScalarValue::string("hello".into())))
             );
         } else {
             panic!("expected object");

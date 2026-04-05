@@ -1,5 +1,5 @@
 use crate::error::ConfigError;
-use crate::value::{HoconValue, ScalarValue};
+use crate::value::{HoconValue, ScalarType};
 use indexmap::IndexMap;
 
 /// A parsed HOCON configuration object.
@@ -38,11 +38,7 @@ impl Config {
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => Ok(s.clone()),
-            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(n.to_string()),
-            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(f.to_string()),
-            Some(HoconValue::Scalar(ScalarValue::Bool(b))) => Ok(b.to_string()),
-            Some(HoconValue::Scalar(ScalarValue::Null)) => Ok("null".to_string()),
+            Some(HoconValue::Scalar(sv)) => Ok(sv.raw.clone()),
             _ => Err(type_mismatch(path, "String")),
         }
     }
@@ -55,18 +51,18 @@ impl Config {
     pub fn get_i64(&self, path: &str) -> Result<i64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(*n),
-            Some(HoconValue::Scalar(ScalarValue::Float(f))) => {
-                // Only accept whole numbers
-                if f.fract() == 0.0 && f.is_finite() {
-                    Ok(*f as i64)
-                } else {
-                    Err(type_mismatch(path, "i64"))
+            Some(HoconValue::Scalar(sv)) => {
+                // Try direct i64 parse first
+                if let Ok(n) = sv.raw.parse::<i64>() {
+                    return Ok(n);
                 }
-            }
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => {
-                // Strict parse: no hex, no leading/trailing whitespace
-                s.parse::<i64>().map_err(|_| type_mismatch(path, "i64"))
+                // Fallback: float-like strings that are whole numbers
+                if let Ok(f) = sv.raw.parse::<f64>() {
+                    if f.fract() == 0.0 && f.is_finite() {
+                        return Ok(f as i64);
+                    }
+                }
+                Err(type_mismatch(path, "i64"))
             }
             _ => Err(type_mismatch(path, "i64")),
         }
@@ -80,10 +76,8 @@ impl Config {
     pub fn get_f64(&self, path: &str) -> Result<f64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(ScalarValue::Float(f))) => Ok(*f),
-            Some(HoconValue::Scalar(ScalarValue::Int(n))) => Ok(*n as f64),
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => {
-                s.parse::<f64>().map_err(|_| type_mismatch(path, "f64"))
+            Some(HoconValue::Scalar(sv)) => {
+                sv.raw.parse::<f64>().map_err(|_| type_mismatch(path, "f64"))
             }
             _ => Err(type_mismatch(path, "f64")),
         }
@@ -97,8 +91,7 @@ impl Config {
     pub fn get_bool(&self, path: &str) -> Result<bool, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(ScalarValue::Bool(b))) => Ok(*b),
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => match s.to_lowercase().as_str() {
+            Some(HoconValue::Scalar(sv)) => match sv.raw.to_lowercase().as_str() {
                 "true" | "yes" | "on" => Ok(true),
                 "false" | "no" | "off" => Ok(false),
                 _ => Err(type_mismatch(path, "bool")),
@@ -172,17 +165,24 @@ impl Config {
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
-            Some(HoconValue::Scalar(ScalarValue::String(s))) => {
-                parse_duration(s).ok_or_else(|| ConfigError {
-                    message: format!("invalid duration at {}: {}", path, s),
+            Some(HoconValue::Scalar(sv)) => {
+                // Try as duration string first
+                if let Some(d) = parse_duration(&sv.raw) {
+                    return Ok(d);
+                }
+                // Number types: bare integer = milliseconds, bare float = milliseconds
+                if sv.value_type == ScalarType::Number {
+                    if let Ok(n) = sv.raw.parse::<i64>() {
+                        return Ok(std::time::Duration::from_millis(n as u64));
+                    }
+                    if let Ok(f) = sv.raw.parse::<f64>() {
+                        return Ok(std::time::Duration::from_secs_f64(f / 1000.0));
+                    }
+                }
+                Err(ConfigError {
+                    message: format!("invalid duration at {}: {}", path, sv.raw),
                     path: path.to_string(),
                 })
-            }
-            Some(HoconValue::Scalar(ScalarValue::Int(n))) => {
-                Ok(std::time::Duration::from_millis(*n as u64))
-            }
-            Some(HoconValue::Scalar(ScalarValue::Float(f))) => {
-                Ok(std::time::Duration::from_secs_f64(*f / 1000.0))
             }
             _ => Err(ConfigError {
                 message: format!("expected duration at {}", path),
@@ -212,13 +212,22 @@ impl Config {
             path: path.to_string(),
         })?;
         match v {
-            HoconValue::Scalar(ScalarValue::String(s)) => {
-                parse_bytes(s).ok_or_else(|| ConfigError {
-                    message: format!("invalid byte size at {}: {}", path, s),
+            HoconValue::Scalar(sv) => {
+                // Try byte-size string first
+                if let Some(b) = parse_bytes(&sv.raw) {
+                    return Ok(b);
+                }
+                // Bare number: return as-is (assumed bytes)
+                if sv.value_type == ScalarType::Number {
+                    if let Ok(n) = sv.raw.parse::<i64>() {
+                        return Ok(n);
+                    }
+                }
+                Err(ConfigError {
+                    message: format!("invalid byte size at {}: {}", path, sv.raw),
                     path: path.to_string(),
                 })
             }
-            HoconValue::Scalar(ScalarValue::Int(n)) => Ok(*n),
             _ => Err(ConfigError {
                 message: format!("expected byte size at {}", path),
                 path: path.to_string(),
@@ -461,16 +470,16 @@ mod tests {
     }
 
     fn sv(s: &str) -> HoconValue {
-        HoconValue::Scalar(ScalarValue::String(s.into()))
+        HoconValue::Scalar(ScalarValue::string(s.into()))
     }
     fn iv(n: i64) -> HoconValue {
-        HoconValue::Scalar(ScalarValue::Int(n))
+        HoconValue::Scalar(ScalarValue::number(n.to_string()))
     }
     fn fv(n: f64) -> HoconValue {
-        HoconValue::Scalar(ScalarValue::Float(n))
+        HoconValue::Scalar(ScalarValue::number(n.to_string()))
     }
     fn bv(b: bool) -> HoconValue {
-        HoconValue::Scalar(ScalarValue::Bool(b))
+        HoconValue::Scalar(ScalarValue::boolean(b))
     }
 
     #[test]
@@ -514,7 +523,7 @@ mod tests {
 
     #[test]
     fn get_string_coerces_null() {
-        let c = make_config(vec![("v", HoconValue::Scalar(ScalarValue::Null))]);
+        let c = make_config(vec![("v", HoconValue::Scalar(ScalarValue::null()))]);
         assert_eq!(c.get_string("v").unwrap(), "null");
     }
 

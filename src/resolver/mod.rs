@@ -51,7 +51,7 @@ mod tests {
         let v = resolve_str("host = \"localhost\"");
         assert_eq!(
             obj(&v).get("host"),
-            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("localhost".into())))
         );
     }
 
@@ -60,7 +60,7 @@ mod tests {
         let v = resolve_str("port = 8080");
         assert_eq!(
             obj(&v).get("port"),
-            Some(&HoconValue::Scalar(ScalarValue::Int(8080)))
+            Some(&HoconValue::Scalar(ScalarValue::number("8080".into())))
         );
     }
 
@@ -86,7 +86,7 @@ mod tests {
         let v = resolve_str("x = 1\nx = 2");
         assert_eq!(
             obj(&v).get("x"),
-            Some(&HoconValue::Scalar(ScalarValue::Int(2)))
+            Some(&HoconValue::Scalar(ScalarValue::number("2".into())))
         );
     }
 
@@ -132,7 +132,7 @@ mod tests {
         let v = resolve_str("host = \"localhost\"\nurl = ${host}");
         assert_eq!(
             obj(&v).get("url"),
-            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("localhost".into())))
         );
     }
 
@@ -141,7 +141,7 @@ mod tests {
         let v = resolve_str("server { host = \"x\" }\nhost = ${server.host}");
         assert_eq!(
             obj(&v).get("host"),
-            Some(&HoconValue::Scalar(ScalarValue::String("x".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("x".into())))
         );
     }
 
@@ -150,7 +150,7 @@ mod tests {
         let v = resolve_str("a = 1\nb = ${?a}");
         assert_eq!(
             obj(&v).get("b"),
-            Some(&HoconValue::Scalar(ScalarValue::Int(1)))
+            Some(&HoconValue::Scalar(ScalarValue::number("1".into())))
         );
     }
 
@@ -165,7 +165,7 @@ mod tests {
         let v = resolve_str("port = 50051\nport = ${?GRPC_PORT}");
         assert_eq!(
             obj(&v).get("port"),
-            Some(&HoconValue::Scalar(ScalarValue::Int(50051)))
+            Some(&HoconValue::Scalar(ScalarValue::number("50051".into())))
         );
     }
 
@@ -176,7 +176,7 @@ mod tests {
         let v = resolve_str_with_env("port = 50051\nport = ${?GRPC_PORT}", &env);
         assert_eq!(
             obj(&v).get("port"),
-            Some(&HoconValue::Scalar(ScalarValue::String("9090".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("9090".into())))
         );
     }
 
@@ -194,15 +194,15 @@ mod tests {
         let v = resolve_str_with_env("b = ${MY_VAR}", &env);
         assert_eq!(
             obj(&v).get("b"),
-            Some(&HoconValue::Scalar(ScalarValue::String("hello".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("hello".into())))
         );
     }
 
     #[test]
     fn resolves_self_referential_substitution() {
         let v = resolve_str("path = \"/usr\"\npath = ${path}:/extra");
-        if let Some(HoconValue::Scalar(ScalarValue::String(s))) = obj(&v).get("path") {
-            assert!(s.contains("/usr"));
+        if let Some(HoconValue::Scalar(sv)) = obj(&v).get("path") {
+            assert!(sv.raw.contains("/usr"));
         } else {
             panic!("expected string");
         }
@@ -214,7 +214,7 @@ mod tests {
         let v = resolve_str("x={q:10}\ny=5\nb=${x}\nb=${y}");
         assert_eq!(
             obj(&v).get("b"),
-            Some(&HoconValue::Scalar(ScalarValue::Int(5)))
+            Some(&HoconValue::Scalar(ScalarValue::number("5".into())))
         );
     }
 
@@ -223,7 +223,7 @@ mod tests {
         let v = resolve_str("host = \"localhost\"\nurl = \"http://\"${host}");
         assert_eq!(
             obj(&v).get("url"),
-            Some(&HoconValue::Scalar(ScalarValue::String(
+            Some(&HoconValue::Scalar(ScalarValue::string(
                 "http://localhost".into()
             )))
         );
@@ -241,7 +241,7 @@ mod tests {
         let v = resolve_str("url = ${host}\nhost = \"localhost\"");
         assert_eq!(
             obj(&v).get("url"),
-            Some(&HoconValue::Scalar(ScalarValue::String("localhost".into())))
+            Some(&HoconValue::Scalar(ScalarValue::string("localhost".into())))
         );
     }
 
@@ -252,10 +252,10 @@ mod tests {
         let a = obj(&v).get("a").cloned().unwrap();
         match a {
             HoconValue::Object(map) => {
-                assert_eq!(map.get("c"), Some(&HoconValue::Scalar(ScalarValue::Int(3))));
+                assert_eq!(map.get("c"), Some(&HoconValue::Scalar(ScalarValue::number("3".into()))));
                 assert_eq!(
                     map.get("q"),
-                    Some(&HoconValue::Scalar(ScalarValue::Int(10)))
+                    Some(&HoconValue::Scalar(ScalarValue::number("10".into())))
                 );
             }
             other => panic!("expected object, got {:?}", other),

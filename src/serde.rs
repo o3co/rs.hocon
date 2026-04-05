@@ -1,4 +1,4 @@
-use crate::value::{HoconValue, ScalarValue};
+use crate::value::{HoconValue, ScalarType, ScalarValue};
 use indexmap::IndexMap;
 use std::fmt;
 
@@ -42,6 +42,39 @@ impl<'de> HoconDeserializer<'de> {
     }
 }
 
+/// Helper: parse raw string as integer type with float truncation fallback.
+fn parse_int_from_scalar<T>(sv: &ScalarValue, type_name: &str) -> Result<T, DeserializeError>
+where
+    T: std::str::FromStr + TryFrom<i64>,
+    <T as std::str::FromStr>::Err: fmt::Display,
+    <T as TryFrom<i64>>::Error: fmt::Display,
+{
+    // Try direct parse
+    if let Ok(n) = sv.raw.parse::<T>() {
+        return Ok(n);
+    }
+    // Float truncation fallback for Number types
+    if sv.value_type == ScalarType::Number {
+        if let Ok(f) = sv.raw.parse::<f64>() {
+            if f.fract() == 0.0 && f.is_finite() {
+                let as_i64 = f as i64;
+                if let Ok(n) = T::try_from(as_i64) {
+                    return Ok(n);
+                }
+            }
+        }
+    }
+    // String type: try parsing as number
+    if sv.value_type == ScalarType::String {
+        if let Ok(n) = sv.raw.parse::<T>() {
+            return Ok(n);
+        }
+    }
+    Err(DeserializeError {
+        message: format!("cannot parse \"{}\" as {}", sv.raw, type_name),
+    })
+}
+
 macro_rules! deserialize_int {
     ($method:ident, $visit:ident, $ty:ty) => {
         fn $method<V: ::serde::de::Visitor<'de>>(
@@ -49,23 +82,8 @@ macro_rules! deserialize_int {
             visitor: V,
         ) -> Result<V::Value, Self::Error> {
             match self.value {
-                HoconValue::Scalar(ScalarValue::Int(n)) => visitor.$visit(*n as $ty),
-                HoconValue::Scalar(ScalarValue::Float(f)) => {
-                    if f.fract() == 0.0 && f.is_finite() {
-                        visitor.$visit(*f as $ty)
-                    } else {
-                        Err(DeserializeError {
-                            message: format!(
-                                "expected {}, got float with fractional part",
-                                stringify!($ty)
-                            ),
-                        })
-                    }
-                }
-                HoconValue::Scalar(ScalarValue::String(s)) => {
-                    let n: $ty = s.parse().map_err(|_| DeserializeError {
-                        message: format!("cannot parse \"{}\" as {}", s, stringify!($ty)),
-                    })?;
+                HoconValue::Scalar(sv) => {
+                    let n: $ty = parse_int_from_scalar(sv, stringify!($ty))?;
                     visitor.$visit(n)
                 }
                 other => Err(DeserializeError {
@@ -84,11 +102,23 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::String(s)) => visitor.visit_string(s.clone()),
-            HoconValue::Scalar(ScalarValue::Int(n)) => visitor.visit_i64(*n),
-            HoconValue::Scalar(ScalarValue::Float(f)) => visitor.visit_f64(*f),
-            HoconValue::Scalar(ScalarValue::Bool(b)) => visitor.visit_bool(*b),
-            HoconValue::Scalar(ScalarValue::Null) => visitor.visit_unit(),
+            HoconValue::Scalar(sv) => match sv.value_type {
+                ScalarType::Null => visitor.visit_unit(),
+                ScalarType::Boolean => visitor.visit_bool(sv.raw == "true"),
+                ScalarType::Number => {
+                    // Try i64 first (no dot/exponent), then f64
+                    if !sv.raw.contains('.') && !sv.raw.contains('e') && !sv.raw.contains('E') {
+                        if let Ok(n) = sv.raw.parse::<i64>() {
+                            return visitor.visit_i64(n);
+                        }
+                    }
+                    if let Ok(f) = sv.raw.parse::<f64>() {
+                        return visitor.visit_f64(f);
+                    }
+                    visitor.visit_string(sv.raw.clone())
+                }
+                ScalarType::String => visitor.visit_string(sv.raw.clone()),
+            },
             HoconValue::Object(map) => visitor.visit_map(HoconMapAccess::new(map)),
             HoconValue::Array(items) => visitor.visit_seq(HoconSeqAccess::new(items)),
         }
@@ -99,12 +129,11 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::Bool(b)) => visitor.visit_bool(*b),
-            HoconValue::Scalar(ScalarValue::String(s)) => match s.to_lowercase().as_str() {
+            HoconValue::Scalar(sv) => match sv.raw.to_lowercase().as_str() {
                 "true" | "yes" | "on" => visitor.visit_bool(true),
                 "false" | "no" | "off" => visitor.visit_bool(false),
                 _ => Err(DeserializeError {
-                    message: format!("cannot coerce \"{}\" to bool", s),
+                    message: format!("cannot coerce \"{}\" to bool", sv.raw),
                 }),
             },
             other => Err(DeserializeError {
@@ -127,11 +156,9 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::Float(f)) => visitor.visit_f32(*f as f32),
-            HoconValue::Scalar(ScalarValue::Int(n)) => visitor.visit_f32(*n as f32),
-            HoconValue::Scalar(ScalarValue::String(s)) => {
-                let f: f32 = s.parse().map_err(|_| DeserializeError {
-                    message: format!("cannot parse \"{}\" as f32", s),
+            HoconValue::Scalar(sv) => {
+                let f: f32 = sv.raw.parse().map_err(|_| DeserializeError {
+                    message: format!("cannot parse \"{}\" as f32", sv.raw),
                 })?;
                 visitor.visit_f32(f)
             }
@@ -146,11 +173,9 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::Float(f)) => visitor.visit_f64(*f),
-            HoconValue::Scalar(ScalarValue::Int(n)) => visitor.visit_f64(*n as f64),
-            HoconValue::Scalar(ScalarValue::String(s)) => {
-                let f: f64 = s.parse().map_err(|_| DeserializeError {
-                    message: format!("cannot parse \"{}\" as f64", s),
+            HoconValue::Scalar(sv) => {
+                let f: f64 = sv.raw.parse().map_err(|_| DeserializeError {
+                    message: format!("cannot parse \"{}\" as f64", sv.raw),
                 })?;
                 visitor.visit_f64(f)
             }
@@ -165,12 +190,12 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::String(s)) => {
-                let mut chars = s.chars();
+            HoconValue::Scalar(sv) => {
+                let mut chars = sv.raw.chars();
                 match (chars.next(), chars.next()) {
                     (Some(c), None) => visitor.visit_char(c),
                     _ => Err(DeserializeError {
-                        message: format!("expected single char, got \"{}\"", s),
+                        message: format!("expected single char, got \"{}\"", sv.raw),
                     }),
                 }
             }
@@ -192,11 +217,7 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::String(s)) => visitor.visit_string(s.clone()),
-            HoconValue::Scalar(ScalarValue::Int(n)) => visitor.visit_string(n.to_string()),
-            HoconValue::Scalar(ScalarValue::Float(f)) => visitor.visit_string(f.to_string()),
-            HoconValue::Scalar(ScalarValue::Bool(b)) => visitor.visit_string(b.to_string()),
-            HoconValue::Scalar(ScalarValue::Null) => visitor.visit_string("null".to_string()),
+            HoconValue::Scalar(sv) => visitor.visit_string(sv.raw.clone()),
             other => Err(DeserializeError {
                 message: format!("expected string, got {:?}", other),
             }),
@@ -226,7 +247,7 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::Null) => visitor.visit_none(),
+            HoconValue::Scalar(sv) if sv.value_type == ScalarType::Null => visitor.visit_none(),
             _ => visitor.visit_some(self),
         }
     }
@@ -236,7 +257,7 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::Null) => visitor.visit_unit(),
+            HoconValue::Scalar(sv) if sv.value_type == ScalarType::Null => visitor.visit_unit(),
             other => Err(DeserializeError {
                 message: format!("expected null/unit, got {:?}", other),
             }),
@@ -316,8 +337,8 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.value {
-            HoconValue::Scalar(ScalarValue::String(s)) => {
-                visitor.visit_enum(s.as_str().into_deserializer())
+            HoconValue::Scalar(sv) => {
+                visitor.visit_enum(sv.raw.as_str().into_deserializer())
             }
             other => Err(DeserializeError {
                 message: format!("expected string for enum variant, got {:?}", other),
