@@ -63,6 +63,9 @@ jobs:
         run: make testdata
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: cargo llvm-cov --features serde --lcov --output-path lcov.info
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: o3co/rs.hocon
+          fail_ci_if_error: false
