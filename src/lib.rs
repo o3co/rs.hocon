@@ -111,7 +111,7 @@
 
 pub mod config;
 pub mod error;
-pub(crate) mod lexer;
+pub mod lexer;
 pub(crate) mod parser;
 pub(crate) mod properties;
 pub(crate) mod resolver;

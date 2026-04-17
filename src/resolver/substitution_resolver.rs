@@ -100,7 +100,7 @@ impl<'a> SubstitutionResolver<'a> {
 
         if self.resolving.contains(&key) {
             // Cycle detected: try prior value for self-referential substitutions
-            let root_seg = s.segments.first().map(|s| s.as_str()).unwrap_or("");
+            let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
             let prior = scope
                 .prior_values
                 .get(root_seg)
@@ -145,14 +145,19 @@ impl<'a> SubstitutionResolver<'a> {
             // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
                 let is_self_ref = match &found {
-                    ResolverValue::Subst(sub) => sub.segments == s.segments,
-                    ResolverValue::Concat(c) => c.nodes.iter().any(
-                        |n| matches!(n, ResolverValue::Subst(sub) if sub.segments == s.segments),
-                    ),
+                    ResolverValue::Subst(sub) => {
+                        sub.segments.len() == s.segments.len()
+                            && sub.segments.iter().zip(s.segments.iter()).all(|(a, b)| a.text == b.text)
+                    }
+                    ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
+                        matches!(n, ResolverValue::Subst(sub)
+                            if sub.segments.len() == s.segments.len()
+                                && sub.segments.iter().zip(s.segments.iter()).all(|(a, b)| a.text == b.text))
+                    }),
                     _ => false,
                 };
                 if is_self_ref {
-                    let root_seg = s.segments.first().map(|s| s.as_str()).unwrap_or("");
+                    let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior = scope
                         .prior_values
                         .get(root_seg)
@@ -176,7 +181,7 @@ impl<'a> SubstitutionResolver<'a> {
             // be merged into the resolved value of the full path.
             if s.segments.len() == 1 {
                 if let Some(HoconValue::Object(ref current_fields)) = result {
-                    let root_seg = s.segments.first().map(|s| s.as_str()).unwrap_or("");
+                    let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior = self.root.prior_values.get(root_seg).cloned();
                     if let Some(prior) = prior {
                         if let Some(HoconValue::Object(prior_fields)) =
@@ -197,10 +202,14 @@ impl<'a> SubstitutionResolver<'a> {
         }
 
         // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior
-        let env_key = s.segments.join(".");
+        let env_key = s.segments.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(".");
         let env_result = self.env.get(&env_key).cloned().or_else(|| {
             if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
-                let original_key = s.segments[s.prefix_len..].join(".");
+                let original_key = s.segments[s.prefix_len..]
+                    .iter()
+                    .map(|s| s.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(".");
                 self.env.get(&original_key).cloned()
             } else {
                 None

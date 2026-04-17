@@ -1,5 +1,5 @@
 use crate::error::ParseError;
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::{Segment, Token, TokenKind};
 use crate::value::{ScalarType, ScalarValue};
 
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub enum AstNode {
     },
     Substitution {
         path: String,
-        segments: Vec<String>,
+        segments: Vec<Segment>,
         optional: bool,
         pos: Pos,
     },
@@ -484,11 +484,7 @@ impl<'a> Parser<'a> {
                         .tokens
                         .get(self.pos)
                         .and_then(|t| t.subst.as_ref())
-                        .map(|p| {
-                            let segs: Vec<String> =
-                                p.segments.iter().map(|s| s.text.clone()).collect();
-                            (p.optional, segs)
-                        })
+                        .map(|p| (p.optional, p.segments.clone()))
                         .unwrap_or((false, Vec::new()));
                     let (_, path, line, col) = self.advance_get();
                     AstNode::Substitution {

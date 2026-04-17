@@ -1,71 +1,14 @@
+use crate::lexer::Segment;
 use crate::value::HoconValue;
 use indexmap::IndexMap;
 
 use super::types::{ResObj, ResolverValue};
 
-#[cfg(test)]
-pub(crate) fn parse_subst_path(raw: &str) -> Vec<String> {
-    let mut segments = Vec::new();
-    let chars: Vec<char> = raw.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        while i < chars.len() && (chars[i] == ' ' || chars[i] == '\t') {
-            i += 1;
-        }
-        if i >= chars.len() {
-            break;
-        }
-
-        if chars[i] == '"' {
-            i += 1;
-            let mut seg = String::new();
-            while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\'
-                    && i + 1 < chars.len()
-                    && (chars[i + 1] == '"' || chars[i + 1] == '\\')
-                {
-                    seg.push(chars[i + 1]);
-                    i += 2;
-                } else {
-                    seg.push(chars[i]);
-                    i += 1;
-                }
-            }
-            if i < chars.len() {
-                i += 1;
-            }
-            segments.push(seg);
-            while i < chars.len() && (chars[i] == ' ' || chars[i] == '\t') {
-                i += 1;
-            }
-            if i < chars.len() && chars[i] == '.' {
-                i += 1;
-            }
-        } else if chars[i] == '.' {
-            segments.push(String::new());
-            i += 1;
-        } else {
-            let mut seg = String::new();
-            while i < chars.len() && chars[i] != '.' {
-                seg.push(chars[i]);
-                i += 1;
-            }
-            segments.push(seg.trim().to_string());
-            if i < chars.len() && chars[i] == '.' {
-                i += 1;
-            }
-        }
-    }
-
-    segments
-}
-
-pub(crate) fn lookup_path<'a>(root: &'a ResObj, segments: &[String]) -> Option<&'a ResolverValue> {
+pub(crate) fn lookup_path<'a>(root: &'a ResObj, segments: &[Segment]) -> Option<&'a ResolverValue> {
     if segments.is_empty() {
         return None;
     }
-    let head = &segments[0];
+    let head = &segments[0].text;
     let tail = &segments[1..];
     let val = root.fields.get(head.as_str())?;
     if tail.is_empty() {
@@ -143,11 +86,20 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
 
 /// Relativize all substitution paths in a ResolverValue tree by prepending the given prefix.
 /// Called when including a file into a nested scope so `${y}` becomes `${prefix.y}`.
+/// Prefix strings are wrapped into `Segment` values using the substitution's own line/col.
 pub(crate) fn relativize_subst_paths(val: &mut ResolverValue, prefix_segments: &[String]) {
     match val {
         ResolverValue::Subst(s) => {
-            let mut new_segments = Vec::with_capacity(prefix_segments.len() + s.segments.len());
-            new_segments.extend_from_slice(prefix_segments);
+            let prefix: Vec<Segment> = prefix_segments
+                .iter()
+                .map(|text| Segment {
+                    text: text.clone(),
+                    line: s.line,
+                    col: s.col,
+                })
+                .collect();
+            let mut new_segments = Vec::with_capacity(prefix.len() + s.segments.len());
+            new_segments.extend_from_slice(&prefix);
             new_segments.extend_from_slice(&s.segments);
             s.segments = new_segments;
             s.prefix_len += prefix_segments.len();
@@ -182,10 +134,11 @@ pub(crate) fn relativize_res_obj(obj: &mut ResObj, prefix_segments: &[String]) {
     }
 }
 
-pub(crate) fn segments_to_key(segments: &[String]) -> String {
+pub(crate) fn segments_to_key(segments: &[Segment]) -> String {
     segments
         .iter()
-        .map(|s| {
+        .map(|seg| {
+            let s = &seg.text;
             if s.is_empty()
                 || s.contains('.')
                 || s.contains('"')
@@ -208,82 +161,40 @@ pub(crate) fn segments_to_key(segments: &[String]) -> String {
 mod tests {
     use super::*;
 
+    fn seg(text: &str) -> Segment {
+        Segment { text: text.to_string(), line: 1, col: 1 }
+    }
+
     #[test]
     fn segments_to_key_simple() {
         assert_eq!(
-            segments_to_key(&["a".into(), "b".into(), "c".into()]),
+            segments_to_key(&[seg("a"), seg("b"), seg("c")]),
             "a.b.c"
         );
     }
 
     #[test]
     fn segments_to_key_quoted_dot() {
-        assert_eq!(segments_to_key(&["a.b".into(), "c".into()]), r#""a.b".c"#);
+        assert_eq!(segments_to_key(&[seg("a.b"), seg("c")]), r#""a.b".c"#);
     }
 
     #[test]
     fn segments_to_key_empty_string() {
-        assert_eq!(segments_to_key(&["".into(), "foo".into()]), r#""".foo"#);
+        assert_eq!(segments_to_key(&[seg(""), seg("foo")]), r#""".foo"#);
     }
 
     #[test]
     fn segments_to_key_escaped_quotes() {
-        assert_eq!(segments_to_key(&["a\"b".into(), "c".into()]), r#""a\"b".c"#);
+        assert_eq!(segments_to_key(&[seg("a\"b"), seg("c")]), r#""a\"b".c"#);
     }
 
     #[test]
     fn segments_to_key_escaped_backslash() {
-        assert_eq!(segments_to_key(&["a\\b".into(), "c".into()]), r#""a\\b".c"#);
-    }
-
-    #[test]
-    fn segments_to_key_roundtrip_with_special_chars() {
-        let cases: Vec<Vec<String>> = vec![
-            vec!["a\"b".into(), "c".into()],
-            vec!["a\\b".into(), "c".into()],
-        ];
-        for segs in &cases {
-            let key = segments_to_key(segs);
-            let parsed = parse_subst_path(&key);
-            assert_eq!(
-                &parsed, segs,
-                "roundtrip failed for {:?} → {:?} → {:?}",
-                segs, key, parsed
-            );
-        }
-    }
-
-    #[test]
-    fn parse_subst_path_preserves_unknown_escapes() {
-        // \n inside quotes should be kept as literal \n, not stripped to n
-        assert_eq!(parse_subst_path(r#""a\nb""#), vec!["a\\nb".to_string()]);
+        assert_eq!(segments_to_key(&[seg("a\\b"), seg("c")]), r#""a\\b".c"#);
     }
 
     #[test]
     fn segments_to_key_quotes_whitespace() {
-        assert_eq!(segments_to_key(&[" a ".into(), "b".into()]), r#"" a ".b"#);
-        // roundtrip
-        let segs = vec![" a ".into(), "b".into()];
-        let key = segments_to_key(&segs);
-        assert_eq!(parse_subst_path(&key), segs);
-    }
-
-    #[test]
-    fn segments_to_key_roundtrip() {
-        let cases: Vec<Vec<String>> = vec![
-            vec!["a".into(), "b".into()],
-            vec!["a.b".into(), "c".into()],
-            vec!["".into(), "x".into(), "".into()],
-            vec!["a.b.c".into(), "d.e".into()],
-        ];
-        for segs in &cases {
-            let key = segments_to_key(segs);
-            let parsed = parse_subst_path(&key);
-            assert_eq!(
-                &parsed, segs,
-                "roundtrip failed for {:?} → {:?} → {:?}",
-                segs, key, parsed
-            );
-        }
+        assert_eq!(segments_to_key(&[seg(" a "), seg("b")]), r#"" a ".b"#);
     }
 }

@@ -484,6 +484,8 @@ fn parse_subst_body(
 
     let mut pending_ws = String::new();
     let mut segments: Vec<Segment> = Vec::new();
+    // Track last-seen DOT position for trailing-dot error reporting.
+    let mut last_dot: Option<(usize, usize)> = None;
 
     loop {
         if *pos >= chars.len() {
@@ -559,6 +561,7 @@ fn parse_subst_body(
                 cur_started = false;
                 cur_line = 0;
                 cur_col = 0;
+                last_dot = Some((start_line, dot_col));
                 *pos += 1;
                 *col += 1;
             }
@@ -600,11 +603,12 @@ fn parse_subst_body(
             col: start_col,
         });
     } else {
-        // trailing dot: ${foo.}
+        // trailing dot: ${foo.} — report at the offending dot position
+        let (err_line, err_col) = last_dot.unwrap_or((start_line, start_col));
         return Err(ParseError {
             message: "empty segment in path".into(),
-            line: start_line,
-            col: start_col,
+            line: err_line,
+            col: err_col,
         });
     }
 
