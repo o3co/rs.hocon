@@ -15,8 +15,21 @@ pub enum TokenKind {
     TripleQuotedString,
     Unquoted,
     Substitution,
-    OptionalSubstitution,
     Eof,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment {
+    pub text: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubstPayload {
+    #[allow(dead_code)]
+    pub segments: Vec<Segment>,
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +41,7 @@ pub struct Token {
     #[allow(dead_code)]
     pub is_quoted: bool,
     pub preceding_space: bool,
+    pub subst: Option<SubstPayload>,
 }
 
 pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
@@ -75,6 +89,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                     col: sc,
                     is_quoted: false,
                     preceding_space: had_space,
+                    subst: None,
                 });
                 had_space = false;
             }
@@ -119,6 +134,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -135,6 +151,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -149,6 +166,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -185,18 +203,24 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             }
             pos += 1;
             col += 1;
-            let kind = if optional {
-                TokenKind::OptionalSubstitution
-            } else {
-                TokenKind::Substitution
-            };
+
+            // STUB: translate the raw path text into segments via a simple dot-split.
+            // Task 2.5 will replace this with proper in-lexer tokenization.
+            let raw = path.trim().to_string();
+            let raw_segments = stub_split_path(&raw);
+            let segments: Vec<Segment> = raw_segments
+                .into_iter()
+                .map(|text| Segment { text, line: sl, col: sc })
+                .collect();
+
             tokens.push(Token {
-                kind,
-                value: path.trim().to_string(),
+                kind: TokenKind::Substitution,
+                value: raw,
                 line: sl,
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
+                subst: Some(SubstPayload { segments, optional }),
             });
             had_space = false;
             continue;
@@ -257,6 +281,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: true,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -350,6 +375,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: true,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -371,6 +397,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
+                subst: None,
             });
             had_space = false;
             continue;
@@ -390,8 +417,42 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         col,
         is_quoted: false,
         preceding_space: false,
+        subst: None,
     });
     Ok(tokens)
+}
+
+/// TEMP: matches old parse_subst_path behavior closely enough for existing tests.
+/// Replaced by proper in-lexer tokenization in Task 2.5.
+#[allow(dead_code)]
+fn stub_split_path(raw: &str) -> Vec<String> {
+    let mut segs: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote = false;
+    let mut escape = false;
+    for ch in raw.chars() {
+        if escape {
+            cur.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quote => {
+                escape = true;
+            }
+            '"' => {
+                in_quote = !in_quote;
+            }
+            '.' if !in_quote => {
+                segs.push(std::mem::take(&mut cur));
+            }
+            _ => cur.push(ch),
+        }
+    }
+    if !cur.is_empty() {
+        segs.push(cur);
+    }
+    segs
 }
 
 fn is_unquoted_start(ch: char) -> bool {
@@ -582,8 +643,9 @@ mod tests {
     #[test]
     fn tokenizes_optional_substitutions() {
         let t = first("${?foo}");
-        assert_eq!(t.kind, TokenKind::OptionalSubstitution);
+        assert_eq!(t.kind, TokenKind::Substitution);
         assert_eq!(t.value, "foo");
+        assert!(t.subst.as_ref().unwrap().optional);
     }
 
     #[test]

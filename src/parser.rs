@@ -471,8 +471,12 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.parse_array()?
                 }
-                TokenKind::Substitution | TokenKind::OptionalSubstitution => {
-                    let optional = kind == TokenKind::OptionalSubstitution;
+                TokenKind::Substitution => {
+                    let optional = self
+                        .tokens
+                        .get(self.pos)
+                        .and_then(|t| t.subst.as_ref())
+                        .is_some_and(|p| p.optional);
                     let (_, path, line, col) = self.advance_get();
                     AstNode::Substitution {
                         path,
