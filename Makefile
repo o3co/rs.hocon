@@ -1,5 +1,6 @@
 TESTDATA_REPO  := o3co/xx.hocon
 TESTDATA_REF   := main
+TESTDATA_DIR   := tests/testdata/hocon
 EXPECTED_DIR   := tests/testdata/expected
 
 .PHONY: testdata test
@@ -14,9 +15,10 @@ testdata:
 	fi; \
 	tmpdir="$$(mktemp -d)" && \
 	trap 'rm -rf "$$tmpdir"' EXIT INT TERM && \
-	mkdir -p "$(EXPECTED_DIR)" && \
+	mkdir -p "$(TESTDATA_DIR)" "$(EXPECTED_DIR)" && \
 	curl -sfL "https://github.com/$(TESTDATA_REPO)/archive/$(TESTDATA_REF).tar.gz" -o "$$tmpdir/archive.tar.gz" && \
 	tar xzf "$$tmpdir/archive.tar.gz" -C "$$tmpdir" --strip-components=1 && \
+	cp -R "$$tmpdir/testdata/hocon/." "$(TESTDATA_DIR)/" && \
 	cp -R "$$tmpdir/expected/hocon/." "$(EXPECTED_DIR)/" && \
 	curl -sf "https://api.github.com/repos/$(TESTDATA_REPO)/commits/$(TESTDATA_REF)" | grep '"sha"' | head -1 | cut -d'"' -f4 > .xx-hocon-version && \
 	echo "Done. Fetched $$(cat .xx-hocon-version)"

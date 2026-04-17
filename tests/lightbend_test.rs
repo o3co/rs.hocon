@@ -489,3 +489,76 @@ fn lightbend_suite_expected_errors() {
         "No expected error tests were run. Check tests/testdata/expected/"
     );
 }
+
+/// Subst-body tokenization conformance: success cases (xx.hocon#2).
+#[test]
+fn subst_tokenize_success_suite() {
+    let testdata = testdata_dir();
+    let subst_dir = testdata.join("subst-tokenize");
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/testdata/expected/subst-tokenize");
+
+    if !subst_dir.exists() || !expected_dir.exists() {
+        panic!(
+            "subst-tokenize fixtures missing; run `make testdata` first. subst_dir={}, expected_dir={}",
+            subst_dir.display(),
+            expected_dir.display()
+        );
+    }
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("-expected.json") || name.contains("-expected-error") {
+            continue;
+        }
+        let conf_name = name.replace("-expected.json", ".conf");
+        let conf_path = subst_dir.join(&conf_name);
+        let expected_path = expected_dir.join(&name);
+
+        if !conf_path.exists() {
+            panic!("conf not found: {}", conf_path.display());
+        }
+
+        eprintln!("TEST: subst-tokenize/{} vs {}", conf_name, name);
+        parse_and_compare(&conf_path, &expected_path);
+        tested += 1;
+    }
+
+    assert!(tested >= 20, "expected >= 20 success fixtures, got {}", tested);
+}
+
+/// Subst-body tokenization conformance: error cases.
+#[test]
+fn subst_tokenize_error_suite() {
+    let subst_dir = testdata_dir().join("subst-tokenize");
+    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/testdata/expected/subst-tokenize");
+
+    if !subst_dir.exists() || !expected_dir.exists() {
+        panic!("subst-tokenize fixtures missing; run `make testdata` first");
+    }
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("-expected-error.json") {
+            continue;
+        }
+        let conf_name = name.replace("-expected-error.json", ".conf");
+        let conf_path = subst_dir.join(&conf_name);
+
+        if !conf_path.exists() {
+            panic!("conf not found: {}", conf_path.display());
+        }
+
+        eprintln!("TEST: subst-tokenize/{} (expect error)", conf_name);
+        let result = hocon::parse_file(&conf_path);
+        assert!(result.is_err(), "expected error for {}, got Ok", conf_path.display());
+        tested += 1;
+    }
+
+    assert!(tested >= 11, "expected >= 11 error fixtures, got {}", tested);
+}
