@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 
 use super::types::{ResObj, ResolverValue};
 
+#[cfg(test)]
 pub(crate) fn parse_subst_path(raw: &str) -> Vec<String> {
     let mut segments = Vec::new();
     let chars: Vec<char> = raw.chars().collect();

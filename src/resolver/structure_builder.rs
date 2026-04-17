@@ -6,7 +6,7 @@ use super::include_loader::load_include;
 use super::types::{
     AppendPlaceholder, ConcatPlaceholder, ResObj, ResolveOptions, ResolverValue, SubstPlaceholder,
 };
-use super::utils::{deep_merge_res_obj_into, parse_subst_path, relativize_res_obj};
+use super::utils::{deep_merge_res_obj_into, relativize_res_obj};
 
 pub(crate) struct StructureBuilder<'a> {
     opts: &'a ResolveOptions,
@@ -168,11 +168,12 @@ impl<'a> StructureBuilder<'a> {
                 Ok(ResolverValue::Obj(inner))
             }
             AstNode::Substitution {
-                path,
+                path: _,
+                segments,
                 optional,
                 pos,
             } => Ok(ResolverValue::Subst(SubstPlaceholder {
-                segments: parse_subst_path(&path),
+                segments,
                 optional,
                 line: pos.line,
                 col: pos.col,

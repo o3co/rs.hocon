@@ -61,10 +61,29 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
     }
 }
 
+/// Build a Config lookup path from a raw key string.
+/// Keys that need quoting (containing dot, quote, backslash, whitespace, or empty)
+/// are wrapped in double quotes so that `config.get` treats them as a single segment.
+fn key_to_lookup_path(key: &str) -> String {
+    if key.is_empty()
+        || key.contains('.')
+        || key.contains('"')
+        || key.contains('\\')
+        || key.contains(' ')
+        || key.contains('\t')
+    {
+        let escaped = key.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    } else {
+        key.to_string()
+    }
+}
+
 fn config_to_json(config: &hocon::Config) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     for key in config.keys() {
-        if let Some(val) = config.get(key) {
+        let path = key_to_lookup_path(key);
+        if let Some(val) = config.get(&path) {
             m.insert(key.to_string(), hocon_to_json(val));
         }
     }
@@ -407,7 +426,6 @@ fn lightbend_suite_expected_json() {
     // Known failures — skip these (linked to open issues)
     let skip: std::collections::HashSet<&str> = [
         "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
-        "test02-expected.json", // empty-key ("".""."") and quoted-key ("a.b.c") bugs
         "test10-expected.json", // ConfigDelayedMerge: c.e missing q field from ${a} merge
     ]
     .into_iter()

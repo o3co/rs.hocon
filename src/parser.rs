@@ -32,6 +32,7 @@ pub enum AstNode {
     },
     Substitution {
         path: String,
+        segments: Vec<String>,
         optional: bool,
         pos: Pos,
     },
@@ -292,12 +293,19 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            // Check for explicit dot separator between segments (e.g. "a"."b")
+            // Check for explicit dot separator between segments (e.g. "a"."b" or "a".b).
+            // A standalone "." token or an unquoted token starting with "." (e.g. ".d" from
+            // `"b.c".d`) both indicate a path separator; in the latter case the token is
+            // re-read in the next iteration and the leading dot is consumed via split('.').
             if self.peek_kind() == TokenKind::Unquoted
-                && self.peek_value() == "."
+                && self.peek_value().starts_with('.')
                 && !self.peek_preceding_space()
             {
-                self.advance(); // consume the dot separator
+                if self.peek_value() == "." {
+                    self.advance(); // consume the standalone dot separator
+                }
+                // For ".d"-style tokens, fall through to the next loop iteration
+                // which will split ".d" on '.' → ["", "d"] and push "d".
                 continue;
             }
 
@@ -472,14 +480,20 @@ impl<'a> Parser<'a> {
                     self.parse_array()?
                 }
                 TokenKind::Substitution => {
-                    let optional = self
+                    let (optional, segs) = self
                         .tokens
                         .get(self.pos)
                         .and_then(|t| t.subst.as_ref())
-                        .is_some_and(|p| p.optional);
+                        .map(|p| {
+                            let segs: Vec<String> =
+                                p.segments.iter().map(|s| s.text.clone()).collect();
+                            (p.optional, segs)
+                        })
+                        .unwrap_or((false, Vec::new()));
                     let (_, path, line, col) = self.advance_get();
                     AstNode::Substitution {
                         path,
+                        segments: segs,
                         optional,
                         pos: Pos { line, col },
                     }

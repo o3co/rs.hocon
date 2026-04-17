@@ -176,51 +176,38 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         if ch == '$' && peek(pos, 1) == '{' {
             pos += 2;
             col += 2;
-            let optional = peek(pos, 0) == '?';
-            if optional {
-                pos += 1;
-                col += 1;
-            }
-            let mut path = String::new();
-            while pos < chars.len() && chars[pos] != '}' {
-                if chars[pos] == '\n' {
-                    return Err(ParseError {
-                        message: "unterminated substitution".into(),
-                        line: sl,
-                        col: sc,
-                    });
-                }
-                path.push(chars[pos]);
-                pos += 1;
-                col += 1;
-            }
-            if pos >= chars.len() || chars[pos] != '}' {
-                return Err(ParseError {
-                    message: "unterminated substitution".into(),
-                    line: sl,
-                    col: sc,
-                });
-            }
-            pos += 1;
-            col += 1;
-
-            // STUB: translate the raw path text into segments via a simple dot-split.
-            // Task 2.5 will replace this with proper in-lexer tokenization.
-            let raw = path.trim().to_string();
-            let raw_segments = stub_split_path(&raw);
-            let segments: Vec<Segment> = raw_segments
-                .into_iter()
-                .map(|text| Segment { text, line: sl, col: sc })
-                .collect();
-
+            let payload = parse_subst_body(&chars, &mut pos, &mut line, &mut col, sl, sc)?;
+            // Reconstruct a canonical value string from segments.
+            // Segments that need quoting (contain dot, space, empty, etc.) are wrapped in "...".
+            let value = payload
+                .segments
+                .iter()
+                .map(|s| {
+                    let t = &s.text;
+                    if t.is_empty()
+                        || t.contains('.')
+                        || t.contains(' ')
+                        || t.contains('\t')
+                        || t.contains('"')
+                        || t.contains('\\')
+                        || t != t.trim()
+                    {
+                        let escaped = t.replace('\\', "\\\\").replace('"', "\\\"");
+                        format!("\"{}\"", escaped)
+                    } else {
+                        t.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(".");
             tokens.push(Token {
                 kind: TokenKind::Substitution,
-                value: raw,
+                value,
                 line: sl,
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                subst: Some(SubstPayload { segments, optional }),
+                subst: Some(payload),
             });
             had_space = false;
             continue;
@@ -291,83 +278,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         if ch == '"' {
             pos += 1;
             col += 1;
-            let mut value = String::new();
-            while pos < chars.len() && chars[pos] != '"' {
-                if chars[pos] == '\n' {
-                    return Err(ParseError {
-                        message: "unterminated string".into(),
-                        line: sl,
-                        col: sc,
-                    });
-                }
-                if chars[pos] == '\\' {
-                    pos += 1;
-                    col += 1;
-                    if pos >= chars.len() {
-                        return Err(ParseError {
-                            message: "unterminated string".into(),
-                            line: sl,
-                            col: sc,
-                        });
-                    }
-                    let esc = chars[pos];
-                    pos += 1;
-                    col += 1;
-                    match esc {
-                        'n' => value.push('\n'),
-                        't' => value.push('\t'),
-                        'r' => value.push('\r'),
-                        '"' => value.push('"'),
-                        '\\' => value.push('\\'),
-                        '/' => value.push('/'),
-                        'b' => value.push('\u{0008}'),
-                        'f' => value.push('\u{000C}'),
-                        'u' => {
-                            let hex: String = chars[pos..].iter().take(4).collect();
-                            if hex.len() < 4 {
-                                return Err(ParseError {
-                                    message: "invalid unicode escape".into(),
-                                    line: sl,
-                                    col: sc,
-                                });
-                            }
-                            let code = u32::from_str_radix(&hex, 16).map_err(|_| ParseError {
-                                message: "invalid unicode escape".into(),
-                                line: sl,
-                                col: sc,
-                            })?;
-                            if let Some(c) = char::from_u32(code) {
-                                value.push(c);
-                            }
-                            pos += 4;
-                            col += 4;
-                        }
-                        _ => {
-                            return Err(ParseError {
-                                message: format!(
-                                    "unknown escape sequence: \\{}",
-                                    esc.escape_debug()
-                                ),
-                                line: sl,
-                                col: col.saturating_sub(1),
-                            });
-                        }
-                    }
-                } else {
-                    value.push(chars[pos]);
-                    pos += 1;
-                    col += 1;
-                }
-            }
-            if pos >= chars.len() || chars[pos] != '"' {
-                return Err(ParseError {
-                    message: "unterminated string".into(),
-                    line: sl,
-                    col: sc,
-                });
-            }
-            pos += 1;
-            col += 1;
+            let value = read_quoted_body(&chars, &mut pos, &mut col, sl, sc)?;
             tokens.push(Token {
                 kind: TokenKind::QuotedString,
                 value,
@@ -422,37 +333,282 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
     Ok(tokens)
 }
 
-/// TEMP: matches old parse_subst_path behavior closely enough for existing tests.
-/// Replaced by proper in-lexer tokenization in Task 2.5.
-#[allow(dead_code)]
-fn stub_split_path(raw: &str) -> Vec<String> {
-    let mut segs: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    let mut in_quote = false;
-    let mut escape = false;
-    for ch in raw.chars() {
-        if escape {
-            cur.push(ch);
-            escape = false;
-            continue;
+/// Read the body of a quoted string (opening `"` already consumed).
+/// Returns the decoded string or a ParseError.
+/// `open_line`/`open_col` are the position of the opening `"` for error reporting.
+fn read_quoted_body(
+    chars: &[char],
+    pos: &mut usize,
+    col: &mut usize,
+    open_line: usize,
+    open_col: usize,
+) -> Result<String, ParseError> {
+    let mut value = String::new();
+    while *pos < chars.len() && chars[*pos] != '"' {
+        if chars[*pos] == '\n' {
+            return Err(ParseError {
+                message: "unterminated string".into(),
+                line: open_line,
+                col: open_col,
+            });
         }
+        if chars[*pos] == '\\' {
+            let esc_col = *col;
+            *pos += 1;
+            *col += 1;
+            if *pos >= chars.len() {
+                return Err(ParseError {
+                    message: "unterminated string".into(),
+                    line: open_line,
+                    col: open_col,
+                });
+            }
+            let esc = chars[*pos];
+            *pos += 1;
+            *col += 1;
+            match esc {
+                'n' => value.push('\n'),
+                't' => value.push('\t'),
+                'r' => value.push('\r'),
+                '"' => value.push('"'),
+                '\\' => value.push('\\'),
+                '/' => value.push('/'),
+                'b' => value.push('\u{0008}'),
+                'f' => value.push('\u{000C}'),
+                'u' => {
+                    let hex: String = chars[*pos..].iter().take(4).collect();
+                    if hex.len() < 4 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return Err(ParseError {
+                            message: "invalid unicode escape".into(),
+                            line: open_line,
+                            col: esc_col,
+                        });
+                    }
+                    let code =
+                        u32::from_str_radix(&hex, 16).map_err(|_| ParseError {
+                            message: "invalid unicode escape".into(),
+                            line: open_line,
+                            col: esc_col,
+                        })?;
+                    if let Some(c) = char::from_u32(code) {
+                        value.push(c);
+                    }
+                    *pos += 4;
+                    *col += 4;
+                }
+                _ => {
+                    return Err(ParseError {
+                        message: "invalid escape sequence".into(),
+                        line: open_line,
+                        col: esc_col,
+                    });
+                }
+            }
+        } else {
+            value.push(chars[*pos]);
+            *pos += 1;
+            *col += 1;
+        }
+    }
+    if *pos >= chars.len() || chars[*pos] != '"' {
+        return Err(ParseError {
+            message: "unterminated string".into(),
+            line: open_line,
+            col: open_col,
+        });
+    }
+    *pos += 1;
+    *col += 1;
+    Ok(value)
+}
+
+/// Returns true if `ch` is a valid unquoted character inside a `${...}` body.
+/// Forbidden: whitespace (space/tab), `"`, `\`, `{`, `}`, `[`, `]`, `:`, `=`, `,`,
+///            `+`, `#`, `` ` ``, `^`, `?`, `!`, `@`, `*`, `&`, `$`, `.`, newline, CR.
+fn is_unquoted_subst_char(ch: char) -> bool {
+    !matches!(
+        ch,
+        ' ' | '\t'
+            | '\n'
+            | '\r'
+            | '"'
+            | '\\'
+            | '{'
+            | '}'
+            | '['
+            | ']'
+            | ':'
+            | '='
+            | ','
+            | '+'
+            | '#'
+            | '`'
+            | '^'
+            | '?'
+            | '!'
+            | '@'
+            | '*'
+            | '&'
+            | '$'
+            | '.'
+    )
+}
+
+/// Parse the body of a `${...}` substitution (called after `${` has been consumed).
+/// Returns the `SubstPayload` or a `ParseError`.
+fn parse_subst_body(
+    chars: &[char],
+    pos: &mut usize,
+    _line: &mut usize,
+    col: &mut usize,
+    start_line: usize,
+    start_col: usize,
+) -> Result<SubstPayload, ParseError> {
+    // Assumes `${` already consumed. Position is at char after `{`.
+
+    // START: check for optional sigil
+    let optional = if *pos < chars.len() && chars[*pos] == '?' {
+        *pos += 1;
+        *col += 1;
+        true
+    } else {
+        false
+    };
+
+    // COLLECT
+    // current segment state
+    let mut cur_text = String::new();
+    let mut cur_started = false;
+    let mut cur_line = 0usize;
+    let mut cur_col = 0usize;
+
+    let mut pending_ws = String::new();
+    let mut segments: Vec<Segment> = Vec::new();
+
+    loop {
+        if *pos >= chars.len() {
+            return Err(ParseError {
+                message: "unterminated substitution".into(),
+                line: start_line,
+                col: start_col,
+            });
+        }
+        let ch = chars[*pos];
+
         match ch {
-            '\\' if in_quote => {
-                escape = true;
+            '}' => {
+                // END
+                *pos += 1;
+                *col += 1;
+                // Drop pending_ws (trailing whitespace)
+                pending_ws.clear();
+                break;
             }
             '"' => {
-                in_quote = !in_quote;
+                // QUOTED token
+                let q_line = start_line; // all on same conceptual line (no literal newlines allowed)
+                let q_col = *col;
+                if cur_started {
+                    cur_text.push_str(&pending_ws);
+                }
+                pending_ws.clear();
+                *pos += 1;
+                *col += 1;
+                let decoded = read_quoted_body(chars, pos, col, q_line, q_col)?;
+                cur_text.push_str(&decoded);
+                if !cur_started {
+                    cur_line = q_line;
+                    cur_col = q_col;
+                    cur_started = true;
+                }
             }
-            '.' if !in_quote => {
-                segs.push(std::mem::take(&mut cur));
+            ch if is_unquoted_subst_char(ch) => {
+                // UNQUOTED token: read a run of unquoted chars
+                let uq_col = *col;
+                if cur_started {
+                    cur_text.push_str(&pending_ws);
+                }
+                pending_ws.clear();
+                if !cur_started {
+                    cur_line = start_line;
+                    cur_col = uq_col;
+                    cur_started = true;
+                }
+                while *pos < chars.len() && is_unquoted_subst_char(chars[*pos]) {
+                    cur_text.push(chars[*pos]);
+                    *pos += 1;
+                    *col += 1;
+                }
             }
-            _ => cur.push(ch),
+            '.' => {
+                // DOT: flush current segment (or error if not started)
+                let dot_col = *col;
+                pending_ws.clear();
+                if !cur_started {
+                    return Err(ParseError {
+                        message: "empty segment in path".into(),
+                        line: start_line,
+                        col: dot_col,
+                    });
+                }
+                segments.push(Segment {
+                    text: std::mem::take(&mut cur_text),
+                    line: cur_line,
+                    col: cur_col,
+                });
+                cur_started = false;
+                cur_line = 0;
+                cur_col = 0;
+                *pos += 1;
+                *col += 1;
+            }
+            ' ' | '\t' => {
+                // WS: buffer into pending_ws
+                pending_ws.push(ch);
+                *pos += 1;
+                *col += 1;
+            }
+            '\n' | '\r' => {
+                return Err(ParseError {
+                    message: "unterminated substitution".into(),
+                    line: start_line,
+                    col: start_col,
+                });
+            }
+            _ => {
+                return Err(ParseError {
+                    message: "unexpected character in substitution path".into(),
+                    line: start_line,
+                    col: *col,
+                });
+            }
         }
     }
-    if !cur.is_empty() {
-        segs.push(cur);
+
+    // END validation
+    if cur_started {
+        segments.push(Segment {
+            text: cur_text,
+            line: cur_line,
+            col: cur_col,
+        });
+    } else if segments.is_empty() {
+        // ${}
+        return Err(ParseError {
+            message: "empty substitution path".into(),
+            line: start_line,
+            col: start_col,
+        });
+    } else {
+        // trailing dot: ${foo.}
+        return Err(ParseError {
+            message: "empty segment in path".into(),
+            line: start_line,
+            col: start_col,
+        });
     }
-    segs
+
+    Ok(SubstPayload { segments, optional })
 }
 
 fn is_unquoted_start(ch: char) -> bool {
