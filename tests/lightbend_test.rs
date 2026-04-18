@@ -61,10 +61,29 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
     }
 }
 
+/// Build a Config lookup path from a raw key string.
+/// Keys that need quoting (containing dot, quote, backslash, space, tab, or empty)
+/// are wrapped in double quotes so that `config.get` treats them as a single segment.
+fn key_to_lookup_path(key: &str) -> String {
+    if key.is_empty()
+        || key.contains('.')
+        || key.contains('"')
+        || key.contains('\\')
+        || key.contains(' ')
+        || key.contains('\t')
+    {
+        let escaped = key.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    } else {
+        key.to_string()
+    }
+}
+
 fn config_to_json(config: &hocon::Config) -> serde_json::Value {
     let mut m = serde_json::Map::new();
     for key in config.keys() {
-        if let Some(val) = config.get(key) {
+        let path = key_to_lookup_path(key);
+        if let Some(val) = config.get(&path) {
             m.insert(key.to_string(), hocon_to_json(val));
         }
     }
@@ -407,7 +426,6 @@ fn lightbend_suite_expected_json() {
     // Known failures — skip these (linked to open issues)
     let skip: std::collections::HashSet<&str> = [
         "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
-        "test02-expected.json", // empty-key ("".""."") and quoted-key ("a.b.c") bugs
         "test10-expected.json", // ConfigDelayedMerge: c.e missing q field from ${a} merge
     ]
     .into_iter()
@@ -487,5 +505,96 @@ fn lightbend_suite_expected_errors() {
     assert!(
         tested > 0,
         "No expected error tests were run. Check tests/testdata/expected/"
+    );
+}
+
+/// Subst-body tokenization conformance: success cases (xx.hocon#2).
+#[test]
+fn subst_tokenize_success_suite() {
+    let testdata = testdata_dir();
+    let subst_dir = testdata.join("subst-tokenize");
+    let expected_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/subst-tokenize");
+
+    if !subst_dir.exists() || !expected_dir.exists() {
+        eprintln!(
+            "Skipping subst_tokenize_success_suite: fixtures not found. \
+             Run `make testdata` to populate. subst_dir={}, expected_dir={}",
+            subst_dir.display(),
+            expected_dir.display()
+        );
+        return;
+    }
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("-expected.json") || name.contains("-expected-error") {
+            continue;
+        }
+        let conf_name = name.replace("-expected.json", ".conf");
+        let conf_path = subst_dir.join(&conf_name);
+        let expected_path = expected_dir.join(&name);
+
+        if !conf_path.exists() {
+            panic!("conf not found: {}", conf_path.display());
+        }
+
+        eprintln!("TEST: subst-tokenize/{} vs {}", conf_name, name);
+        parse_and_compare(&conf_path, &expected_path);
+        tested += 1;
+    }
+
+    assert!(
+        tested >= 20,
+        "expected >= 20 success fixtures, got {}",
+        tested
+    );
+}
+
+/// Subst-body tokenization conformance: error cases.
+#[test]
+fn subst_tokenize_error_suite() {
+    let subst_dir = testdata_dir().join("subst-tokenize");
+    let expected_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/subst-tokenize");
+
+    if !subst_dir.exists() || !expected_dir.exists() {
+        eprintln!(
+            "Skipping subst_tokenize_error_suite: fixtures not found. \
+             Run `make testdata` to populate."
+        );
+        return;
+    }
+
+    let mut tested = 0;
+    for entry in fs::read_dir(&expected_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("-expected-error.json") {
+            continue;
+        }
+        let conf_name = name.replace("-expected-error.json", ".conf");
+        let conf_path = subst_dir.join(&conf_name);
+
+        if !conf_path.exists() {
+            panic!("conf not found: {}", conf_path.display());
+        }
+
+        eprintln!("TEST: subst-tokenize/{} (expect error)", conf_name);
+        let result = hocon::parse_file(&conf_path);
+        assert!(
+            result.is_err(),
+            "expected error for {}, got Ok",
+            conf_path.display()
+        );
+        tested += 1;
+    }
+
+    assert!(
+        tested >= 11,
+        "expected >= 11 error fixtures, got {}",
+        tested
     );
 }

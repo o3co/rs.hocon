@@ -1,5 +1,5 @@
 use crate::error::ParseError;
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::{Segment, Token, TokenKind};
 use crate::value::{ScalarType, ScalarValue};
 
 #[derive(Debug, Clone)]
@@ -31,7 +31,7 @@ pub enum AstNode {
         pos: Pos,
     },
     Substitution {
-        path: String,
+        segments: Vec<Segment>,
         optional: bool,
         pos: Pos,
     },
@@ -292,12 +292,19 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            // Check for explicit dot separator between segments (e.g. "a"."b")
+            // Check for explicit dot separator between segments (e.g. "a"."b" or "a".b).
+            // A standalone "." token or an unquoted token starting with "." (e.g. ".d" from
+            // `"b.c".d`) both indicate a path separator; in the latter case the token is
+            // re-read in the next iteration and the leading dot is consumed via split('.').
             if self.peek_kind() == TokenKind::Unquoted
-                && self.peek_value() == "."
+                && self.peek_value().starts_with('.')
                 && !self.peek_preceding_space()
             {
-                self.advance(); // consume the dot separator
+                if self.peek_value() == "." {
+                    self.advance(); // consume the standalone dot separator
+                }
+                // For ".d"-style tokens, fall through to the next loop iteration
+                // which will split ".d" on '.' → ["", "d"] and push "d".
                 continue;
             }
 
@@ -471,11 +478,16 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.parse_array()?
                 }
-                TokenKind::Substitution | TokenKind::OptionalSubstitution => {
-                    let optional = kind == TokenKind::OptionalSubstitution;
-                    let (_, path, line, col) = self.advance_get();
+                TokenKind::Substitution => {
+                    let (optional, segs) = self
+                        .tokens
+                        .get(self.pos)
+                        .and_then(|t| t.subst.as_ref())
+                        .map(|p| (p.optional, p.segments.clone()))
+                        .unwrap_or((false, Vec::new()));
+                    let (_, _value, line, col) = self.advance_get();
                     AstNode::Substitution {
-                        path,
+                        segments: segs,
                         optional,
                         pos: Pos { line, col },
                     }
@@ -718,8 +730,12 @@ mod tests {
     #[test]
     fn parses_substitutions() {
         let node = parse("host = ${server.host}");
-        if let AstNode::Substitution { path, optional, .. } = &fields(&node)[0].value {
-            assert_eq!(path, "server.host");
+        if let AstNode::Substitution {
+            segments, optional, ..
+        } = &fields(&node)[0].value
+        {
+            let texts: Vec<&str> = segments.iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(texts, vec!["server", "host"]);
             assert!(!optional);
         } else {
             panic!("expected substitution");

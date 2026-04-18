@@ -1,3 +1,4 @@
+use crate::lexer::Segment;
 use crate::value::HoconValue;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -40,7 +41,7 @@ pub(crate) enum ResolverValue {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SubstPlaceholder {
-    pub segments: Vec<String>,
+    pub segments: Vec<Segment>,
     pub optional: bool,
     pub line: usize,
     pub col: usize,

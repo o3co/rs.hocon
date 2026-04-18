@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Substitution body tokenization: `${...}` internals are now tokenized
+  by a dedicated `parse_subst_body` in the lexer, matching Lightbend
+  `PathParser` + `WhitespaceSaver` semantics. Quoted segments receive
+  full JSON escape expansion; whitespace between two simple values is
+  preserved as part of the segment text; whitespace around `DOT` or at
+  the body edges is discarded.
+- `SubstPlaceholder.segments` is now `Vec<Segment>` (text + source
+  position) instead of `Vec<String>`. `AstNode::Substitution.segments`
+  follows suit.
+- Unified `TokenKind::Substitution` and `TokenKind::OptionalSubstitution`
+  into a single `Substitution` kind; optionality lives in
+  `SubstPayload.optional`.
+
+### Fixed
+
+- `${"a\nb"}` now decodes the `\n` escape to an actual newline in the
+  segment text (previously kept literal backslash-n).
+- Invalid escapes like `${"a\xb"}` are rejected at lex time with
+  `invalid escape sequence`.
+- `${"a" "b"}` produces a single segment `["a b"]` with whitespace
+  preserved between simple values (previously rejected / mis-split).
+- `${""}` resolves to the empty-string key correctly (closes #38).
+- Path errors (`${}`, `${.foo}`, `${foo.}`, `${foo..bar}`) are detected
+  at lex time with a specific error message.
+- `${foo.}` trailing-dot error now reports position at the offending dot
+  instead of at the `${` start.
+
 ## [1.1.0] - 2026-04-05
 
 ### Changed
