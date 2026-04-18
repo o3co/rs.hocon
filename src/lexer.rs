@@ -383,12 +383,11 @@ fn read_quoted_body(
                             col: esc_col,
                         });
                     }
-                    let code =
-                        u32::from_str_radix(&hex, 16).map_err(|_| ParseError {
-                            message: "invalid unicode escape".into(),
-                            line: open_line,
-                            col: esc_col,
-                        })?;
+                    let code = u32::from_str_radix(&hex, 16).map_err(|_| ParseError {
+                        message: "invalid unicode escape".into(),
+                        line: open_line,
+                        col: esc_col,
+                    })?;
                     let c = char::from_u32(code).ok_or_else(|| ParseError {
                         message: "invalid unicode escape".into(),
                         line: open_line,

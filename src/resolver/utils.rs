@@ -162,15 +162,16 @@ mod tests {
     use super::*;
 
     fn seg(text: &str) -> Segment {
-        Segment { text: text.to_string(), line: 1, col: 1 }
+        Segment {
+            text: text.to_string(),
+            line: 1,
+            col: 1,
+        }
     }
 
     #[test]
     fn segments_to_key_simple() {
-        assert_eq!(
-            segments_to_key(&[seg("a"), seg("b"), seg("c")]),
-            "a.b.c"
-        );
+        assert_eq!(segments_to_key(&[seg("a"), seg("b"), seg("c")]), "a.b.c");
     }
 
     #[test]

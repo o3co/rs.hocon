@@ -730,7 +730,10 @@ mod tests {
     #[test]
     fn parses_substitutions() {
         let node = parse("host = ${server.host}");
-        if let AstNode::Substitution { segments, optional, .. } = &fields(&node)[0].value {
+        if let AstNode::Substitution {
+            segments, optional, ..
+        } = &fields(&node)[0].value
+        {
             let texts: Vec<&str> = segments.iter().map(|s| s.text.as_str()).collect();
             assert_eq!(texts, vec!["server", "host"]);
             assert!(!optional);
