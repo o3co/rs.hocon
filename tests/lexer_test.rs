@@ -84,3 +84,20 @@ fn error_position_empty_path() {
     let msg = err.to_string();
     assert!(msg.contains("empty substitution path"), "msg = {}", msg);
 }
+
+#[test]
+fn surrogate_codepoint_rejected() {
+    // \uD800 is a high surrogate codepoint — invalid as a standalone scalar.
+    // Must be rejected with "invalid unicode escape", matching Lightbend.
+    let err = hocon::parse(r#"x="a\uD800b""#).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("invalid unicode escape"), "msg = {}", msg);
+}
+
+#[test]
+fn surrogate_codepoint_rejected_inside_subst() {
+    // Same check inside a substitution body's quoted segment.
+    let err = hocon::parse(r#"x=${"a\uD800b"}"#).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("invalid unicode escape"), "msg = {}", msg);
+}

@@ -27,7 +27,6 @@ pub struct Segment {
 
 #[derive(Debug, Clone)]
 pub struct SubstPayload {
-    #[allow(dead_code)]
     pub segments: Vec<Segment>,
     pub optional: bool,
 }
@@ -176,7 +175,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         if ch == '$' && peek(pos, 1) == '{' {
             pos += 2;
             col += 2;
-            let payload = parse_subst_body(&chars, &mut pos, &mut line, &mut col, sl, sc)?;
+            let payload = parse_subst_body(&chars, &mut pos, &mut col, sl, sc)?;
             // Reconstruct a canonical value string from segments.
             // Segments that need quoting (contain dot, space, empty, etc.) are wrapped in "...".
             let value = payload
@@ -390,9 +389,12 @@ fn read_quoted_body(
                             line: open_line,
                             col: esc_col,
                         })?;
-                    if let Some(c) = char::from_u32(code) {
-                        value.push(c);
-                    }
+                    let c = char::from_u32(code).ok_or_else(|| ParseError {
+                        message: "invalid unicode escape".into(),
+                        line: open_line,
+                        col: esc_col,
+                    })?;
+                    value.push(c);
                     *pos += 4;
                     *col += 4;
                 }
@@ -459,7 +461,6 @@ fn is_unquoted_subst_char(ch: char) -> bool {
 fn parse_subst_body(
     chars: &[char],
     pos: &mut usize,
-    _line: &mut usize,
     col: &mut usize,
     start_line: usize,
     start_col: usize,

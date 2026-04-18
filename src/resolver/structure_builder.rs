@@ -168,7 +168,6 @@ impl<'a> StructureBuilder<'a> {
                 Ok(ResolverValue::Obj(inner))
             }
             AstNode::Substitution {
-                path: _,
                 segments,
                 optional,
                 pos,
