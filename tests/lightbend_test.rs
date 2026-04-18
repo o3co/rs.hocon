@@ -62,7 +62,7 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
 }
 
 /// Build a Config lookup path from a raw key string.
-/// Keys that need quoting (containing dot, quote, backslash, whitespace, or empty)
+/// Keys that need quoting (containing dot, quote, backslash, space, tab, or empty)
 /// are wrapped in double quotes so that `config.get` treats them as a single segment.
 fn key_to_lookup_path(key: &str) -> String {
     if key.is_empty()

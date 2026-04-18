@@ -67,15 +67,37 @@ fn segment_position_empty_quoted_key() {
     assert_eq!(segs[0].2, 3);
 }
 
+/// Parse `ParseError at L:C: ...` / `ResolveError at L:C: ...` display and
+/// return (line, col). Panics if the format doesn't match.
+fn parse_err_pos(msg: &str) -> (usize, usize) {
+    // Look for the first "at L:C:" in the rendered message.
+    let at = msg.find(" at ").expect("no ' at ' in error msg");
+    let rest = &msg[at + 4..];
+    let colon = rest.find(':').expect("no first colon after line");
+    let line: usize = rest[..colon].parse().expect("line not a number");
+    let rest2 = &rest[colon + 1..];
+    let colon2 = rest2.find(':').expect("no second colon after col");
+    let col: usize = rest2[..colon2].parse().expect("col not a number");
+    (line, col)
+}
+
 #[test]
 fn error_position_invalid_escape_inside_body() {
-    // x=${"a\xb"}: the invalid '\x' escape must be reported at a position
-    // within the ${...} body (cols 3..10).
+    // x=${"a\xb"}
+    //  ^1234567890 1
+    // The '\' of the invalid escape is at col 7. We assert the reported
+    // position lies inside the ${...} body (cols 3..=11).
     let err = hocon::parse(r#"x=${"a\xb"}"#).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("invalid escape sequence"), "msg = {}", msg);
-    // Position should be within the subst body; i.e. the error mentions a col
-    // in [3, 11] inclusive. We don't insist on exact col — just that it's sane.
+    let (line, col) = parse_err_pos(&msg);
+    assert_eq!(line, 1, "line should be 1, got {} (msg = {})", line, msg);
+    assert!(
+        (3..=11).contains(&col),
+        "col {} not in subst body [3, 11] (msg = {})",
+        col,
+        msg
+    );
 }
 
 #[test]
@@ -87,8 +109,11 @@ fn error_position_empty_path() {
 
 #[test]
 fn surrogate_codepoint_rejected() {
-    // \uD800 is a high surrogate codepoint — invalid as a standalone scalar.
-    // Must be rejected with "invalid unicode escape", matching Lightbend.
+    // \uD800 is a high surrogate codepoint, which is not a Unicode scalar value.
+    // We intentionally reject it with "invalid unicode escape"; this differs
+    // from Lightbend (Java accepts it because java.lang.String is a sequence
+    // of 16-bit code units) and follows Rust `char` / Unicode scalar-value
+    // constraints. See spec §"QUOTED reading rules" and the surrogate note.
     let err = hocon::parse(r#"x="a\uD800b""#).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("invalid unicode escape"), "msg = {}", msg);
@@ -96,7 +121,8 @@ fn surrogate_codepoint_rejected() {
 
 #[test]
 fn surrogate_codepoint_rejected_inside_subst() {
-    // Same check inside a substitution body's quoted segment.
+    // Same intentional Rust-side rejection inside a substitution body.
+    // See surrogate_codepoint_rejected for the Lightbend-divergence rationale.
     let err = hocon::parse(r#"x=${"a\uD800b"}"#).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("invalid unicode escape"), "msg = {}", msg);
