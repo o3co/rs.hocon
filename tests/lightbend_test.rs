@@ -513,8 +513,8 @@ fn lightbend_suite_expected_errors() {
 fn subst_tokenize_success_suite() {
     let testdata = testdata_dir();
     let subst_dir = testdata.join("subst-tokenize");
-    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected/subst-tokenize");
+    let expected_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/subst-tokenize");
 
     if !subst_dir.exists() || !expected_dir.exists() {
         panic!(
@@ -544,15 +544,19 @@ fn subst_tokenize_success_suite() {
         tested += 1;
     }
 
-    assert!(tested >= 20, "expected >= 20 success fixtures, got {}", tested);
+    assert!(
+        tested >= 20,
+        "expected >= 20 success fixtures, got {}",
+        tested
+    );
 }
 
 /// Subst-body tokenization conformance: error cases.
 #[test]
 fn subst_tokenize_error_suite() {
     let subst_dir = testdata_dir().join("subst-tokenize");
-    let expected_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected/subst-tokenize");
+    let expected_dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/subst-tokenize");
 
     if !subst_dir.exists() || !expected_dir.exists() {
         panic!("subst-tokenize fixtures missing; run `make testdata` first");
@@ -574,9 +578,17 @@ fn subst_tokenize_error_suite() {
 
         eprintln!("TEST: subst-tokenize/{} (expect error)", conf_name);
         let result = hocon::parse_file(&conf_path);
-        assert!(result.is_err(), "expected error for {}, got Ok", conf_path.display());
+        assert!(
+            result.is_err(),
+            "expected error for {}, got Ok",
+            conf_path.display()
+        );
         tested += 1;
     }
 
-    assert!(tested >= 11, "expected >= 11 error fixtures, got {}", tested);
+    assert!(
+        tested >= 11,
+        "expected >= 11 error fixtures, got {}",
+        tested
+    );
 }
