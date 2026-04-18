@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
-use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key};
+use super::utils::{deep_merge_hocon_objects, lookup_path, segments_text_equal, segments_to_key};
 
 pub(crate) struct SubstitutionResolver<'a> {
     root: &'a ResObj,
@@ -145,14 +145,9 @@ impl<'a> SubstitutionResolver<'a> {
             // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
                 let is_self_ref = match &found {
-                    ResolverValue::Subst(sub) => {
-                        sub.segments.len() == s.segments.len()
-                            && sub.segments.iter().zip(s.segments.iter()).all(|(a, b)| a.text == b.text)
-                    }
+                    ResolverValue::Subst(sub) => segments_text_equal(&sub.segments, &s.segments),
                     ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
-                        matches!(n, ResolverValue::Subst(sub)
-                            if sub.segments.len() == s.segments.len()
-                                && sub.segments.iter().zip(s.segments.iter()).all(|(a, b)| a.text == b.text))
+                        matches!(n, ResolverValue::Subst(sub) if segments_text_equal(&sub.segments, &s.segments))
                     }),
                     _ => false,
                 };

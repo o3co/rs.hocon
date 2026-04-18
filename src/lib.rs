@@ -111,7 +111,7 @@
 
 pub mod config;
 pub mod error;
-pub mod lexer;
+pub(crate) mod lexer;
 pub(crate) mod parser;
 pub(crate) mod properties;
 pub(crate) mod resolver;
@@ -123,6 +123,11 @@ pub mod serde;
 pub use config::Config;
 pub use error::{ConfigError, HoconError, ParseError, ResolveError};
 pub use value::{HoconValue, ScalarType, ScalarValue};
+
+// Lexer surface intentionally narrow — only the items integration tests
+// and diagnostic tooling need. The full lexer module is not part of the
+// public API.
+pub use lexer::{tokenize, Segment, SubstPayload, Token, TokenKind};
 
 #[cfg(feature = "serde")]
 pub use serde::DeserializeError;

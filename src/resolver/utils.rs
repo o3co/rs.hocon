@@ -4,6 +4,13 @@ use indexmap::IndexMap;
 
 use super::types::{ResObj, ResolverValue};
 
+/// Compare two segment slices by `text` only, ignoring source positions.
+/// Used for self-reference detection in substitution resolution and for
+/// path equality where positions are immaterial.
+pub(crate) fn segments_text_equal(a: &[Segment], b: &[Segment]) -> bool {
+    a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.text == y.text)
+}
+
 pub(crate) fn lookup_path<'a>(root: &'a ResObj, segments: &[Segment]) -> Option<&'a ResolverValue> {
     if segments.is_empty() {
         return None;

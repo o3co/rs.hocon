@@ -578,9 +578,12 @@ fn parse_subst_body(
                     col: start_col,
                 });
             }
-            _ => {
+            other => {
                 return Err(ParseError {
-                    message: "unexpected character in substitution path".into(),
+                    message: format!(
+                        "unexpected character in substitution path: {}",
+                        other.escape_debug()
+                    ),
                     line: start_line,
                     col: *col,
                 });

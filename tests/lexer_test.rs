@@ -1,4 +1,4 @@
-use hocon::lexer::{tokenize, TokenKind};
+use hocon::{tokenize, HoconError, TokenKind};
 
 fn subst_segments(input: &str) -> Vec<(String, usize, usize)> {
     let tokens = tokenize(input).unwrap();
@@ -67,18 +67,13 @@ fn segment_position_empty_quoted_key() {
     assert_eq!(segs[0].2, 3);
 }
 
-/// Parse `ParseError at L:C: ...` / `ResolveError at L:C: ...` display and
-/// return (line, col). Panics if the format doesn't match.
-fn parse_err_pos(msg: &str) -> (usize, usize) {
-    // Look for the first "at L:C:" in the rendered message.
-    let at = msg.find(" at ").expect("no ' at ' in error msg");
-    let rest = &msg[at + 4..];
-    let colon = rest.find(':').expect("no first colon after line");
-    let line: usize = rest[..colon].parse().expect("line not a number");
-    let rest2 = &rest[colon + 1..];
-    let colon2 = rest2.find(':').expect("no second colon after col");
-    let col: usize = rest2[..colon2].parse().expect("col not a number");
-    (line, col)
+/// Extract `(line, col)` from a `HoconError::Parse` variant.
+/// Panics if the error is not a Parse variant.
+fn parse_err_pos(err: &HoconError) -> (usize, usize) {
+    match err {
+        HoconError::Parse(e) => (e.line, e.col),
+        other => panic!("expected HoconError::Parse, got {:?}", other),
+    }
 }
 
 #[test]
@@ -88,23 +83,31 @@ fn error_position_invalid_escape_inside_body() {
     // The '\' of the invalid escape is at col 7. We assert the reported
     // position lies inside the ${...} body (cols 3..=11).
     let err = hocon::parse(r#"x=${"a\xb"}"#).unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("invalid escape sequence"), "msg = {}", msg);
-    let (line, col) = parse_err_pos(&msg);
-    assert_eq!(line, 1, "line should be 1, got {} (msg = {})", line, msg);
+    assert!(
+        err.to_string().contains("invalid escape sequence"),
+        "msg = {}",
+        err
+    );
+    let (line, col) = parse_err_pos(&err);
+    assert_eq!(line, 1, "line should be 1, got {} (err = {})", line, err);
     assert!(
         (3..=11).contains(&col),
-        "col {} not in subst body [3, 11] (msg = {})",
+        "col {} not in subst body [3, 11] (err = {})",
         col,
-        msg
+        err
     );
 }
 
 #[test]
 fn error_position_empty_path() {
     let err = hocon::parse("x=${}").unwrap_err();
-    let msg = err.to_string();
-    assert!(msg.contains("empty substitution path"), "msg = {}", msg);
+    assert!(
+        err.to_string().contains("empty substitution path"),
+        "err = {}",
+        err
+    );
+    let (line, _col) = parse_err_pos(&err);
+    assert_eq!(line, 1, "line should be 1, got {} (err = {})", line, err);
 }
 
 #[test]
