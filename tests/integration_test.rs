@@ -1062,7 +1062,13 @@ fn s13_9_null_blocks_env_var_lookup_spec() {
 // --- S13.13: optional undefined in string concat → empty string (spec L636) -----
 #[test]
 fn s13_13_optional_undefined_in_string_concat_is_empty() {
-    let cfg = parse(r#"x = "pre"${?missing}"post""#).expect("parse failed");
+    // Use an explicitly empty env so an ambient `missing` env var cannot leak in
+    // and resolve the ${?missing} substitution to a real value.
+    let cfg = hocon::parse_with_env(
+        r#"x = "pre"${?missing}"post""#,
+        &std::collections::HashMap::new(),
+    )
+    .expect("parse failed");
     assert_eq!(
         cfg.get_string("x").unwrap(),
         "prepost",
@@ -1075,7 +1081,8 @@ fn s13_13_optional_undefined_in_string_concat_is_empty() {
 // BUG: rs.hocon currently produces [1, " ", " ", 2] (whitespace strings).
 #[test]
 fn s13_14_optional_undefined_in_array_concat_pin() {
-    let cfg = parse("x = [1] ${?missing} [2]").expect("parse failed");
+    let cfg = hocon::parse_with_env("x = [1] ${?missing} [2]", &std::collections::HashMap::new())
+        .expect("parse failed");
     let items = cfg.get_list("x").unwrap();
     // [pin] snapshot current (broken) shape: numeric 1, two whitespace scalar
     // artefacts, numeric 2. Asserting values (not just length) catches partial
@@ -1100,7 +1107,8 @@ fn s13_14_optional_undefined_in_array_concat_pin() {
 #[test]
 #[ignore = "spec violation: optional undefined in array concat must yield empty array per HOCON L637, see #75"]
 fn s13_14_optional_undefined_in_array_concat_spec() {
-    let cfg = parse("x = [1] ${?missing} [2]").expect("parse failed");
+    let cfg = hocon::parse_with_env("x = [1] ${?missing} [2]", &std::collections::HashMap::new())
+        .expect("parse failed");
     let items = cfg.get_list("x").unwrap();
     assert_eq!(
         items.len(),
@@ -1129,7 +1137,11 @@ fn s13_14_optional_undefined_in_array_concat_spec() {
 // Object: {a:1} ${?missing} {b:2} → {a:1, b:2}  (currently passes)
 #[test]
 fn s13_14_optional_undefined_in_object_concat() {
-    let cfg = parse("x = {a:1} ${?missing} {b:2}").expect("parse failed");
+    let cfg = hocon::parse_with_env(
+        "x = {a:1} ${?missing} {b:2}",
+        &std::collections::HashMap::new(),
+    )
+    .expect("parse failed");
     let sub = cfg.get_config("x").expect("x must be an object");
     assert_eq!(sub.get_i64("a").unwrap(), 1);
     assert_eq!(sub.get_i64("b").unwrap(), 2);
@@ -1155,7 +1167,10 @@ fn s13_16_substitution_in_key_is_rejected() {
 #[test]
 fn s13a_13_optional_self_ref_concat_with_no_prior_pin() {
     // [pin] Current (broken) behaviour: ${?a} sees "foo" instead of undefined.
-    let cfg = parse("a = ${?a}foo").expect("parse failed");
+    // Use empty env so an ambient `a` env var cannot leak in (single-letter env
+    // names like `a` are common on POSIX shells — a real-world flake risk).
+    let cfg = hocon::parse_with_env("a = ${?a}foo", &std::collections::HashMap::new())
+        .expect("parse failed");
     assert_eq!(
         cfg.get_string("a").unwrap(),
         "foofoo",
@@ -1166,7 +1181,8 @@ fn s13a_13_optional_self_ref_concat_with_no_prior_pin() {
 #[test]
 #[ignore = "spec violation: a = ${?a}foo must resolve to \"foo\" when a has no prior value, see #76"]
 fn s13a_13_optional_self_ref_concat_with_no_prior_spec() {
-    let cfg = parse("a = ${?a}foo").expect("parse failed");
+    let cfg = hocon::parse_with_env("a = ${?a}foo", &std::collections::HashMap::new())
+        .expect("parse failed");
     assert_eq!(
         cfg.get_string("a").unwrap(),
         "foo",
