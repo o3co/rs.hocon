@@ -621,7 +621,8 @@ fn s23_2_trailing_dot_creates_empty_key_segment() {
     let props = dir.join("trail.properties");
     std::fs::write(&props, "a. = trailing_dot\n").unwrap();
 
-    let hocon_input = format!("include \"{}\"\n", props.to_str().unwrap());
+    let props_str = props.to_str().unwrap().replace('\\', "/");
+    let hocon_input = format!("include \"{}\"\n", props_str);
     let r = hocon::parse_with_env(&hocon_input, &HashMap::new());
     // impl succeeds and creates a nested object under "a"
     assert!(
@@ -645,7 +646,8 @@ fn s23_2_leading_dot_creates_empty_key_segment() {
     let props = dir.join("lead.properties");
     std::fs::write(&props, ".a = leading_dot\n").unwrap();
 
-    let hocon_input = format!("include \"{}\"\n", props.to_str().unwrap());
+    let props_str = props.to_str().unwrap().replace('\\', "/");
+    let hocon_input = format!("include \"{}\"\n", props_str);
     let r = hocon::parse_with_env(&hocon_input, &HashMap::new());
     assert!(
         r.is_ok(),
