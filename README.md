@@ -284,8 +284,8 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 
 | Metric                                | Status        |
 | ------------------------------------- | ------------- |
-| Spec total (incl. out-of-scope)       | **63.9%**     |
-| In-scope only                         | **70.6%**     |
+| Spec total (incl. out-of-scope)       | **64.8%**     |
+| In-scope only                         | **71.7%**     |
 | Lightbend `equiv01`–`equiv05` suite   | 5/5 passing   |
 
 ## Minimum Supported Rust Version
