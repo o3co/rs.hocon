@@ -89,34 +89,34 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/no-commas.conf (fixture)
   status: ✅
 - **S5.2** Single trailing comma is allowed and ignored — §Commas (L155)
-  tests: tests/integration_test.rs:535 (s5_2_single_trailing_comma_in_array_allowed); tests/integration_test.rs:543 (s5_2_single_trailing_comma_in_object_allowed)
+  tests: tests/integration_test.rs:535 (s5_2_single_trailing_comma_in_array_allowed); tests/integration_test.rs:547 (s5_2_single_trailing_comma_in_object_allowed)
   status: ✅
 - **S5.3** Two trailing commas (`[1,2,3,,]`) is invalid — §Commas (L160)
-  tests: tests/integration_test.rs:556 (s5_3_two_trailing_commas_in_array_rejected); tests/integration_test.rs:564 (s5_3_two_trailing_commas_in_object_rejected)
+  tests: tests/integration_test.rs:560 (s5_3_two_trailing_commas_in_array_rejected); tests/integration_test.rs:568 (s5_3_two_trailing_commas_in_object_rejected)
   status: ✅
 - **S5.4** Leading comma (`[,1,2,3]`) is invalid — §Commas (L161)
-  tests: tests/integration_test.rs:578 (s5_4_leading_comma_in_array_rejected); tests/integration_test.rs:586 (s5_4_leading_comma_in_object_rejected)
+  tests: tests/integration_test.rs:582 (s5_4_leading_comma_in_array_rejected); tests/integration_test.rs:590 (s5_4_leading_comma_in_object_rejected)
   status: ✅
 - **S5.5** Two consecutive commas (`[1,,2,3]`) is invalid — §Commas (L162)
-  tests: tests/integration_test.rs:597 (s5_5_two_consecutive_commas_in_array_rejected)
+  tests: tests/integration_test.rs:601 (s5_5_two_consecutive_commas_in_array_rejected)
   status: ✅
 - **S5.6** Same comma rules apply to object fields — §Commas (L163)
-  tests: tests/integration_test.rs:543 (s5_2_single_trailing_comma_in_object_allowed); tests/integration_test.rs:564 (s5_3_two_trailing_commas_in_object_rejected); tests/integration_test.rs:586 (s5_4_leading_comma_in_object_rejected); tests/integration_test.rs:610 (s5_6_two_consecutive_commas_between_object_fields_rejected)
+  tests: tests/integration_test.rs:547 (s5_2_single_trailing_comma_in_object_allowed); tests/integration_test.rs:568 (s5_3_two_trailing_commas_in_object_rejected); tests/integration_test.rs:590 (s5_4_leading_comma_in_object_rejected); tests/integration_test.rs:614 (s5_6_two_consecutive_commas_between_object_fields_rejected)
   status: ✅
 
 ## S6. Whitespace
 
 - **S6.1** Unicode Zs/Zl/Zp category characters are whitespace — §Whitespace (L170)
-  tests: src/lexer.rs:931 (s6_1_em_space_separates_tokens_spec [#ignore]); src/lexer.rs:956 (s6_1_line_separator_separates_tokens_spec [#ignore]); pin tests at src/lexer.rs:914 and src/lexer.rs:944
+  tests: src/lexer.rs:931 (s6_1_em_space_separates_tokens_spec [#ignore]); src/lexer.rs:957 (s6_1_line_separator_separates_tokens_spec [#ignore]); pin tests at src/lexer.rs:915 and src/lexer.rs:944
   status: ❌ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — lexer only recognises ASCII space/tab/CR; Unicode Zs/Zl/Zp chars leak into unquoted runs
 - **S6.2** Non-breaking spaces (0x00A0, 0x2007, 0x202F) are whitespace — §Whitespace (L171)
-  tests: src/lexer.rs:987 (s6_2_nbsp_separates_tokens_spec [#ignore]); src/lexer.rs:1001 (s6_2_figure_space_separates_tokens_spec [#ignore]); src/lexer.rs:1015 (s6_2_narrow_nbsp_separates_tokens_spec [#ignore]); pin test at src/lexer.rs:970
+  tests: src/lexer.rs:987 (s6_2_nbsp_separates_tokens_spec [#ignore]); src/lexer.rs:1001 (s6_2_figure_space_separates_tokens_spec [#ignore]); src/lexer.rs:1015 (s6_2_narrow_nbsp_separates_tokens_spec [#ignore]); pin test at src/lexer.rs:974
   status: ❌ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP / figure space / narrow NBSP are not recognised as whitespace
 - **S6.3** BOM (0xFEFF) treated as whitespace — §Whitespace (L173)
   tests: src/lexer.rs:846 (strips_utf8_bom); tests/testdata/hocon/bom.conf (fixture)
   status: ✅
 - **S6.4** ASCII control whitespace (tab, vtab, FF, CR, FS, GS, RS, US) — §Whitespace (L174)
-  tests: src/lexer.rs:1033 (s6_4_tab_is_whitespace); src/lexer.rs:1046 (s6_4_cr_is_whitespace); src/lexer.rs:1075 (s6_4_vtab_is_whitespace_spec [#ignore]); src/lexer.rs:1088 (s6_4_ff_is_whitespace_spec [#ignore]); src/lexer.rs:1104 (s6_4_fs_gs_rs_us_are_whitespace_spec [#ignore]); pin test at src/lexer.rs:1059
+  tests: src/lexer.rs:1033 (s6_4_tab_is_whitespace); src/lexer.rs:1046 (s6_4_cr_is_whitespace); src/lexer.rs:1075 (s6_4_vtab_is_whitespace_spec [#ignore]); src/lexer.rs:1089 (s6_4_ff_is_whitespace_spec [#ignore]); src/lexer.rs:1105 (s6_4_fs_gs_rs_us_are_whitespace_spec [#ignore]); pin test at src/lexer.rs:1061
   status: ⚠️ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — 2 of 8 sub-rules pass: tab (0x09) ✅ and CR (0x0D) ✅; vtab (0x0B), FF (0x0C), FS–US (0x1C–0x1F) are not recognised as whitespace
 - **S6.5** "newline" means specifically 0x000A (LF) — §Whitespace (L183)
   tests: src/lexer.rs:814 (tokenizes_newlines)
@@ -161,13 +161,13 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S8.6** Unquoted string cannot begin with `0-9` or `-` — §Unquoted strings (L270)
-  tests: src/lexer.rs:1142 (s8_6_digit_leading_unquoted_rejected_spec [#ignore]); src/lexer.rs:1159 (s8_6_hyphen_leading_non_number_rejected_spec [#ignore]); pin tests at src/lexer.rs:1131 and src/lexer.rs:1151
+  tests: src/lexer.rs:1145 (s8_6_digit_leading_unquoted_rejected_spec [#ignore]); src/lexer.rs:1166 (s8_6_hyphen_leading_non_number_rejected_spec [#ignore]); pin tests at src/lexer.rs:1132 and src/lexer.rs:1154
   status: ❌ ([#63](https://github.com/o3co/rs.hocon/issues/63)) — \`is_unquoted_start()\` does not exclude digits or \`-\`; non-numeric forms like \`123abc\` / \`-foo\` are silently coerced to strings by \`parse_scalar_value()\`
 - **S8.7** No escape sequences in unquoted strings — §Unquoted strings (L253)
-  tests: src/lexer.rs:1175 (s8_7_backslash_is_rejected_in_unquoted_context)
+  tests: src/lexer.rs:1181 (s8_7_backslash_is_rejected_in_unquoted_context)
   status: ✅
 - **S8.8** Unquoted strings allow control characters except forbidden set — §Unquoted strings (L280)
-  tests: src/lexer.rs:1190 (s8_8_soh_allowed_in_unquoted_string); src/lexer.rs:1202 (s8_8_bel_allowed_in_unquoted_string)
+  tests: src/lexer.rs:1196 (s8_8_soh_allowed_in_unquoted_string); src/lexer.rs:1208 (s8_8_bel_allowed_in_unquoted_string)
   status: ✅
 
 ## S9. Multi-line strings

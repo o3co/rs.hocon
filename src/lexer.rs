@@ -1190,7 +1190,7 @@ mod tests {
 
     // --- S8.8: unquoted strings allow control chars except forbidden set -----
     // Spec L280: control characters OTHER than the forbidden set (L245:
-    // $ " { } [ ] : = , + # ` ^ ? ! @ * & \) and whitespace are permitted
+    // $ " { } [ ] : = , + # ` ^ ? ! @ * & \ and whitespace are permitted
     // inside unquoted strings.
     #[test]
     fn s8_8_soh_allowed_in_unquoted_string() {
