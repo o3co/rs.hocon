@@ -65,8 +65,8 @@ same item descriptions verbatim.
   tests: src/parser.rs:623 (parses_empty_input)
   status: ⚠️ (test pins spec-violating behavior — spec says empty file is invalid, impl returns empty object)
 - **S3.2** Root non-object/non-array is invalid (when explicitly enclosed) — §Omit root braces (L131)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (s3_2_root_bare_string_rejected)
+  status: ✅
 - **S3.3** Implicit `{}` when file does not start with `[` or `{` — §Omit root braces (L134)
   tests: tests/testdata/hocon/equiv01/no-root-braces.conf (fixture); tests/integration_test.rs:12 (parse_simple_config)
   status: ✅
@@ -200,8 +200,8 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:261 (test_object_concat_deep_merge); tests/integration_test.rs:158 (test_braced_root_object_concat)
   status: ✅
 - **S10.4** Mixing arrays + objects in concat is an error — §Array and object concatenation (L385)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (s10_4_array_object_concat_pin + s10_4_array_object_concat_spec)
+  status: ❌ (see #65)
 - **S10.5** Inner whitespace between simple values preserved — §String value concatenation (L332)
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
@@ -209,11 +209,11 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.7** Concatenation does not span a newline — §String value concatenation (L335)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (s10_7_concat_does_not_span_newline)
+  status: ✅
 - **S10.8** String concat allowed in field keys — §Value concatenation (L317)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (s10_8_quoted_key_with_space_allowed + s10_8_unquoted_space_key_pin + s10_8_unquoted_space_key_spec)
+  status: ⚠️ quoted form ✅; unquoted space-concat key ❌ (see #66)
 - **S10.9** `true`/`false` stringify to `"true"`/`"false"` in concat — §String value concatenation (L363)
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
@@ -227,11 +227,11 @@ same item descriptions verbatim.
   tests: src/parser.rs:674 (parses_boolean_and_null); src/parser.rs:697 (parses_integer_scalars)
   status: ✅
 - **S10.13** Array/object appearing in string concat is an error — §String value concatenation (L373)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s10_13_object_in_string_concat_pin`/`_spec`; `s10_13_array_in_string_concat_pin`/`_spec`)
+  status: ❌ (see #67)
 - **S10.14** Whitespace around obj/array substitutions is ignored — §Concatenation with whitespace (L440)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s10_14_whitespace_around_obj_subst_ignored`, `s10_14_whitespace_around_arr_subst_ignored`)
+  status: ✅
 - **S10.15** Quoted whitespace between obj/array substitutions is an error — §Concatenation with whitespace (L442)
   tests: —
   status: 🤷
@@ -245,8 +245,8 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:248 (delayed_merge_object_with_substitution)
   status: ✅
 - **S10.19** Mixing a substitution-resolved object with a literal array (or vice versa) is an error — §Array and object concatenation (L385-389)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s10_19_subst_obj_concat_literal_array_pin`/`_spec`; `s10_19_subst_arr_concat_literal_obj_pin`/`_spec`)
+  status: ❌ (see #68)
 
 ## S11. Path expressions
 
@@ -260,11 +260,11 @@ same item descriptions verbatim.
   tests: tests/lightbend_test.rs:334 (lightbend_test11_numeric_string_keys); tests/lightbend_test.rs:348 (lightbend_test12_long_numeric_keys)
   status: ✅
 - **S11.4** `10.0foo` → path `[10, 0foo]` — §Path expressions (L496)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s11_4_numeric_dot_unquoted_path_pin`/`_spec`)
+  status: ❌ (see #69)
 - **S11.5** `foo10.0` → path `[foo10, 0]` — §Path expressions (L498)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s11_5_unquoted_dot_numeric_path_pin`/`_spec`)
+  status: ❌ (see #70)
 - **S11.6** Empty path element must be quoted (`a."".b` ok) — §Path expressions (L515)
   tests: tests/lightbend_test.rs:200 (lightbend_test02_empty_keys_and_quoted_paths)
   status: ✅
@@ -272,11 +272,11 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/subst-tokenize/st-err09-empty-segment-leading-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err10-empty-segment-trailing-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err11-empty-segment-double-dot.conf (fixture)
   status: ✅
 - **S11.8** Path expression always stringifies (single `true` → `"true"`) — §Path expressions (L504)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s11_8_path_expression_stringifies_boolean`, `s11_8_path_expression_stringifies_number`)
+  status: ✅
 - **S11.9** Substitutions not allowed inside path expressions — §Path expressions (L479)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s11_9_subst_in_key_rejected`)
+  status: ✅
 - **S11.10** Quoted path segments respected in getter API (e.g. `config.get("foo.\"bar.baz\"")`) — §Path expressions (L485)
   tests: tests/integration_test.rs:182 (test_quoted_path_lookup); tests/integration_test.rs:189 (test_nested_quoted_path_lookup); tests/lightbend_test.rs:200 (lightbend_test02_empty_keys_and_quoted_paths)
   status: ✅
@@ -296,8 +296,8 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv02/path-keys-weird-whitespace.conf (fixture)
   status: ✅
 - **S12.5** `include` may NOT begin a path expression in a key — §Paths as keys (L570)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s12_5_include_as_key_pin`/`_spec`)
+  status: ❌ (see #71)
 
 ## S13. Substitutions
 
@@ -410,8 +410,8 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:103 (handles_plus_equals_on_existing_array); tests/integration_test.rs:84 (parse_with_plus_equals)
   status: ✅
 - **S13b.2** `+=` on non-array prior value → error — §`+=` field separator (L732)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs (`s13b_2_plus_eq_on_non_array_pin`/`_spec`)
+  status: ❌ (see #72)
 - **S13b.3** `+=` works on first mention of key (no prior `=`) — §`+=` field separator (L734)
   tests: src/resolver/mod.rs:113 (handles_plus_equals_on_missing_key)
   status: ✅
