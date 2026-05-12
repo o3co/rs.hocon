@@ -194,8 +194,9 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:221 (resolves_string_concat_with_substitution); tests/integration_test.rs:34 (parse_with_substitutions); tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.2** All arrays → array concatenation — §Value concatenation (L312)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s10_2_pin_array_concat_produces_space_element; s10_2_spec_array_concat [#ignore])
+  status: ❌
+  notes: `[1,2] [3,4]` produces a 5-element list with a whitespace String scalar between the two sub-arrays instead of a 4-element concatenated array. Same root cause as S10.4/S10.19 — array/object concatenation not implemented. Tracked in #65.
 - **S10.3** All objects → object merge (concatenation) — §Value concatenation (L314)
   tests: tests/integration_test.rs:261 (test_object_concat_deep_merge); tests/integration_test.rs:158 (test_braced_root_object_concat)
   status: ✅
@@ -233,14 +234,16 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:786 (s10_14_whitespace_around_obj_subst_ignored); tests/integration_test.rs:798 (s10_14_whitespace_around_arr_subst_ignored)
   status: ✅
 - **S10.15** Quoted whitespace between obj/array substitutions is an error — §Concatenation with whitespace (L442)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s10_15_pin_quoted_ws_between_obj_substs_no_error; s10_15_spec_quoted_ws_between_obj_substs_is_error [#ignore]; s10_15_pin_quoted_ws_between_arr_substs_no_error; s10_15_spec_quoted_ws_between_arr_substs_is_error [#ignore])
+  status: ❌
+  notes: impl does not error; obj subst case stringifies objects into a string containing the debug representation; arr subst case inserts the quoted whitespace as extra array elements. Same concat bug as S10.2/S10.4.
 - **S10.16** Non-newline whitespace in arrays is concat, not separator — §Arrays without commas or newlines (L447)
   tests: tests/testdata/hocon/equiv01/no-commas.conf (fixture)
   status: ✅
 - **S10.17** Substitution resolving to an array participates in array concat (`${arr} [x]`) — §Array and object concatenation (L387)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s10_17_pin_subst_array_concat_space_element; s10_17_spec_subst_array_concat [#ignore])
+  status: ❌
+  notes: `${base} [3,4]` where `base=[1,2]` produces 5 elements with a whitespace scalar between the two arrays instead of 4. Same concat bug as S10.2/S10.4. Tracked in #65.
 - **S10.18** Substitution resolving to an object participates in object merge (`${obj} {x:1}`) — §Array and object concatenation (L388)
   tests: src/resolver/mod.rs:248 (delayed_merge_object_with_substitution)
   status: ✅
@@ -344,8 +347,9 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:1054 (s13_14_optional_undefined_in_array_concat_pin); tests/integration_test.rs:1066 (s13_14_optional_undefined_in_array_concat_spec); tests/integration_test.rs:1078 (s13_14_optional_undefined_in_object_concat)
   status: ⚠️ (see #75) — array case broken (whitespace artefacts leak as extra elements); object case ✅
 - **S13.15** `foo : ${?bar}${?baz}` skipped only when BOTH undefined — §Substitutions (L640)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s13_15_pin_both_optional_undefined_field_exists; s13_15_spec_both_optional_undefined_field_absent [#ignore]; s13_15_one_defined_field_is_created)
+  status: ❌
+  notes: when both `${?bar}` and `${?baz}` are undefined, `foo` is still created with a null value instead of being dropped. The single-defined sub-case (`bar=hello, foo=${?bar}${?baz}`) correctly produces `foo=hello`.
 - **S13.16** Substitutions only in field values / array elements — §Substitutions (L644)
   tests: tests/integration_test.rs:1087 (s13_16_substitution_in_key_is_rejected)
   status: ✅
@@ -386,11 +390,12 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:232 (throws_on_circular_substitution)
   status: ✅
 - **S13a.9** Multi-step cycle `a→b→c→a` → error — §Self-Referential (L862)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s13a_9_multi_step_cycle_is_error)
+  status: ✅
 - **S13a.10** Substitution memoized by instance, not by path — §Self-Referential (L885)
-  tests: — (not externally observable from the black-box parse API; memoization affects evaluation order, not final values)
-  status: 🤷
+  tests: tests/spec_phase5.rs (s13a_10_memoization_same_value)
+  status: ✅
+  notes: the spec-observable outcome is that `a` and `b` must end up equal in the ambiguous `a=1,b=2,a=${b},b=${a}` case. Both end up as 2, satisfying the constraint. Internal memoization is not directly observable from the parse API.
 - **S13a.11** Object can refer to its own descendant (`bar : { foo : 42, baz : ${bar.foo} }`) — §Self-Referential (L806)
   tests: tests/lightbend_test.rs:303 (lightbend_test09_delayed_merge_object); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
   status: ✅
@@ -401,8 +406,8 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:1103 (s13a_13_optional_self_ref_concat_with_no_prior_pin); tests/integration_test.rs:1115 (s13a_13_optional_self_ref_concat_with_no_prior_spec)
   status: ❌ (see #76)
 - **S13a.14** Mutually-referring object fields (`bar.a = ${foo.d}; foo.c = ${bar.b}`) resolve lazily without false cycle — §Self-Referential (L825-834)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s13a_14_mutual_refs_no_false_cycle)
+  status: ✅
 
 ### S13b. `+=` field separator
 
@@ -459,8 +464,8 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:1126 (s14a_6_include_in_dotted_key_is_literal)
   status: ✅
 - **S14a.7** Whitespace allowed between `include` and resource name (incl. newlines) — §Include syntax (L952)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s14a_7_whitespace_before_include_arg; s14a_7_newline_before_include_arg)
+  status: ✅
 - **S14a.8** No value concatenation on include argument — §Include syntax (L957)
   tests: tests/integration_test.rs:1137 (s14a_8_no_concatenation_on_include_arg)
   status: ✅
@@ -468,11 +473,11 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:1146 (s14a_9_no_substitution_in_include_arg)
   status: ✅
 - **S14a.10** Include argument must be quoted string — §Include syntax (L958)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s14a_10_unquoted_include_arg_rejected)
+  status: ✅
 - **S14a.11** `"include"` (quoted) is just a normal key — §Include syntax (L977)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s14a_11_quoted_include_is_normal_key)
+  status: ✅
 
 ### S14b. Include semantics: merging
 
@@ -638,11 +643,12 @@ same item descriptions verbatim.
   tests: src/config.rs:783 (get_duration_no_space); src/config.rs:867 (get_bytes_no_space)
   status: ✅
 - **S18.3** Unit name letters-only (Unicode L* / `isLetter`) — §Units format (L1287)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s18_3_unit_with_digit_rejected; s18_3_unit_with_hyphen_rejected; s18_3_valid_letter_only_unit_accepted)
+  status: ✅
 - **S18.4** String with no unit → interpreted with default unit — §Units format (L1290)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_pin_duration_string_no_unit_errors; s18_4_spec_duration_string_no_unit_uses_default [#ignore])
+  status: ⚠️
+  notes: bytes string with no unit correctly uses byte default (`"1024"` → 1024). Duration string with no unit errors instead of using millisecond default — `parse_duration` does not match empty unit string. Number scalars (non-string) work for both getters.
 
 ## S19. Duration format
 
@@ -668,8 +674,9 @@ same item descriptions verbatim.
   tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units)
   status: ✅
 - **S19.8** Duration unit names are case sensitive (lowercase only) — §Duration format (L1304)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s19_8_pin_uppercase_ms_accepted; s19_8_spec_uppercase_ms_rejected [#ignore]; s19_8_pin_mixed_case_seconds_accepted; s19_8_spec_mixed_case_seconds_rejected [#ignore]; s19_8_lowercase_units_accepted)
+  status: ❌
+  notes: `parse_duration` calls `.to_lowercase()` on the unit string before matching, so `"MS"`, `"Seconds"`, `"NS"` etc. are wrongly accepted. Spec (L1304) requires lowercase only. Lowercase units still work correctly.
 
 ## S20. Period format
 
@@ -714,11 +721,11 @@ same item descriptions verbatim.
   tests: src/config.rs:702 (with_fallback_receiver_wins); tests/integration_test.rs:135 (parse_with_fallback)
   status: ✅
 - **S22.2** Intermediate non-object hides earlier object across files — §Config object merging (L1406)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s22_2_non_object_hides_earlier_object_across_merge)
+  status: ✅
 - **S22.3** Setting key to null clears earlier object value — §Config object merging (L1436)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s22_3_null_clears_earlier_object_in_merge)
+  status: ✅
 
 ## S23. Java properties mapping
 
@@ -726,8 +733,9 @@ same item descriptions verbatim.
   tests: src/properties.rs:91 (handles_dotted_keys)
   status: ✅
 - **S23.2** Empty path elements (leading/trailing) preserved — §Java properties (L1456)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s23_2_trailing_dot_creates_empty_key_segment; s23_2_leading_dot_creates_empty_key_segment)
+  status: ✅
+  notes: `"a."` creates path `["a",""]` (nested object with empty-string key inside `a`). `".a"` creates path `["","a"]` (empty-string root key containing `a`). The empty-string root key `""` is accessible via path `".a"` through `split_config_path`.
 - **S23.3** Properties values are always strings — §Java properties (L1471)
   tests: src/properties.rs:109 (values_are_always_strings)
   status: ✅
@@ -767,8 +775,8 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:190 (resolves_env_var_fallback); tests/integration_test.rs:46 (parse_with_env_fallback); tests/include_test.rs:85 (include_env_fallback_quoted_key_prefix)
   status: ✅
 - **S26.2** Empty env var preserved as empty string (not undefined) — §Substitution fallback (L1558)
-  tests: —
-  status: 🤷
+  tests: tests/spec_phase5.rs (s26_2_empty_env_var_preserved_as_empty_string)
+  status: ✅
 - **S26.3** Env var SecurityException → treated as not present — §Substitution fallback (L1560)
   out-of-scope: `SecurityException` is a JVM-specific exception type; non-JVM runtimes have no equivalent guard at this layer.
   tests: —

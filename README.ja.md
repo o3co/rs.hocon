@@ -220,12 +220,12 @@ defaults { size = 20 }  # マージ: color は保持、size は更新
 
 ## 仕様準拠
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。以下の表は 2026-05-12 時点のスナップショットです — 最新値は [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。以下の表は 2026-05-13 時点のスナップショットです — 最新値は [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 | 指標                                  | 状況         |
 | ------------------------------------- | ------------ |
-| 仕様全体（out-of-scope を含む）       | **70.1%**    |
-| In-scope のみ                         | **77.9%**    |
+| 仕様全体（out-of-scope を含む）       | **75.6%**    |
+| In-scope のみ                         | **84.0%**    |
 | Lightbend `equiv01`–`equiv05` テスト  | 5/5 合格     |
 
 ## Minimum Supported Rust Version
