@@ -963,3 +963,205 @@ fn s13b_2_plus_eq_on_non_array_spec() {
         "+= on string prior value must be a resolve-time error per HOCON L732"
     );
 }
+
+// =============================================================================
+// Spec compliance Phase 3 (issue #73): substitution & include coverage (12 items)
+// S13.3, S13.5, S13.9, S13.13, S13.14, S13.16, S13a.10, S13a.13,
+// S14a.6, S14a.8, S14a.9, S14b.1
+// =============================================================================
+
+// --- S13.3: `${?` is exactly 3 chars — space before `?` breaks optional marker ---
+// Spec L584.  `${ ?foo}` must NOT behave like `${?foo}`.  The correct `${?foo}`
+// produces an optional substitution (field dropped when undefined); a space before
+// `?` is not part of the optional-marker syntax and must produce a different outcome
+// (parse error, or a required substitution whose path begins with whitespace).
+#[test]
+fn s13_3_space_before_question_differs_from_optional() {
+    // ${?foo} with no definition → field is absent (optional substitution)
+    let optional = hocon::parse_with_env("x = ${?foo}", &std::collections::HashMap::new())
+        .expect("${?foo} should parse");
+    assert!(
+        optional.get("x").is_none(),
+        "optional substitution with undefined var must drop the field"
+    );
+
+    // ${ ?foo} (space before ?) must NOT silently behave as optional
+    // Spec says the marker is exactly the 3-char sequence `${?`.
+    // Acceptable: parse error, or a required substitution that then fails resolve.
+    let spaced = hocon::parse_with_env(r#"x = ${ ?foo}"#, &std::collections::HashMap::new());
+    assert!(
+        spaced.is_err(),
+        "space-before-? form must not silently act as optional substitution; expected parse or resolve error"
+    );
+}
+
+// --- S13.5: substitutions not parsed inside quoted strings (spec L593) ----------
+#[test]
+fn s13_5_no_subst_in_quoted_string() {
+    let cfg = parse(r#"x = "${foo}""#).expect("parse failed");
+    assert_eq!(
+        cfg.get_string("x").unwrap(),
+        "${foo}",
+        "substitution syntax inside a quoted string must be treated as literal text"
+    );
+}
+
+// --- S13.9: `null` in config blocks env var lookup (spec L618) ------------------
+// Spec: if the config tree has `key = null`, an optional substitution `${?key}`
+// must NOT fall back to the environment; the explicit null takes precedence.
+// BUG: rs.hocon currently falls through to the env var.
+#[test]
+fn s13_9_null_blocks_env_var_lookup_pin() {
+    // [pin] Current (broken) behaviour: null in config does NOT block env fallback.
+    let mut env = std::collections::HashMap::new();
+    env.insert("HOME".to_string(), "/x/y".to_string());
+    let cfg = hocon::parse_with_env("HOME = null\nresult = ${?HOME}", &env)
+        .expect("parse should succeed");
+    assert!(
+        cfg.get("result").is_some(),
+        "[pin] result is currently present (env fallback not blocked) — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: null in config must block env fallback per HOCON L618, see #74"]
+fn s13_9_null_blocks_env_var_lookup_spec() {
+    let mut env = std::collections::HashMap::new();
+    env.insert("HOME".to_string(), "/x/y".to_string());
+    let cfg = hocon::parse_with_env("HOME = null\nresult = ${?HOME}", &env)
+        .expect("parse should succeed");
+    assert!(
+        cfg.get("result").is_none(),
+        "null in config must block env var fallback; result must be absent per HOCON L618"
+    );
+}
+
+// --- S13.13: optional undefined in string concat → empty string (spec L636) -----
+#[test]
+fn s13_13_optional_undefined_in_string_concat_is_empty() {
+    let cfg = parse(r#"x = "pre"${?missing}"post""#).expect("parse failed");
+    assert_eq!(
+        cfg.get_string("x").unwrap(),
+        "prepost",
+        "optional undefined substitution in string concat must contribute empty string"
+    );
+}
+
+// --- S13.14: optional undefined in array/object concat (spec L637) --------------
+// Array: [1] ${?missing} [2] → [1, 2]
+// BUG: rs.hocon currently produces [1, " ", " ", 2] (whitespace strings).
+#[test]
+fn s13_14_optional_undefined_in_array_concat_pin() {
+    let cfg = parse("x = [1] ${?missing} [2]").expect("parse failed");
+    let items = cfg.get_list("x").unwrap();
+    assert_eq!(
+        items.len(),
+        4,
+        "[pin] array concat currently produces 4 elements (whitespace artefacts) — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: optional undefined in array concat must yield empty array per HOCON L637, see #75"]
+fn s13_14_optional_undefined_in_array_concat_spec() {
+    let cfg = parse("x = [1] ${?missing} [2]").expect("parse failed");
+    let items = cfg.get_list("x").unwrap();
+    assert_eq!(
+        items.len(),
+        2,
+        "optional undefined substitution in array concat must be treated as empty array"
+    );
+}
+
+// Object: {a:1} ${?missing} {b:2} → {a:1, b:2}  (currently passes)
+#[test]
+fn s13_14_optional_undefined_in_object_concat() {
+    let cfg = parse("x = {a:1} ${?missing} {b:2}").expect("parse failed");
+    let sub = cfg.get_config("x").expect("x must be an object");
+    assert_eq!(sub.get_i64("a").unwrap(), 1);
+    assert_eq!(sub.get_i64("b").unwrap(), 2);
+}
+
+// --- S13.16: substitutions only in values/elements — not in keys (spec L644) ----
+#[test]
+fn s13_16_substitution_in_key_is_rejected() {
+    assert!(
+        parse("${foo} = 1").is_err(),
+        "substitution in key position must be a parse error per HOCON L644"
+    );
+}
+
+// --- S13a.10: substitution memoized by instance, not by path (spec L885) --------
+// This property is not externally observable from a pure black-box parse API
+// (it affects evaluation order, not final value).  Marking 🤷 with a note.
+// No test added; see docs/spec-compliance.md S13a.10.
+
+// --- S13a.13: `a = ${?a}foo` resolves to "foo" (spec L841) ----------------------
+// BUG: rs.hocon currently evaluates ${?a} as the (already-set) value of `a`
+// ("foo") and produces "foofoo".
+#[test]
+fn s13a_13_optional_self_ref_concat_with_no_prior_pin() {
+    // [pin] Current (broken) behaviour: ${?a} sees "foo" instead of undefined.
+    let cfg = parse("a = ${?a}foo").expect("parse failed");
+    assert_eq!(
+        cfg.get_string("a").unwrap(),
+        "foofoo",
+        "[pin] a currently resolves to \"foofoo\" — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: a = ${?a}foo must resolve to \"foo\" when a has no prior value, see #76"]
+fn s13a_13_optional_self_ref_concat_with_no_prior_spec() {
+    let cfg = parse("a = ${?a}foo").expect("parse failed");
+    assert_eq!(
+        cfg.get_string("a").unwrap(),
+        "foo",
+        "with no prior value, the self-referencing optional subst is undefined; result must be \"foo\""
+    );
+}
+
+// --- S14a.6: unquoted `include` at non-start-of-key is literal (spec L962) ------
+#[test]
+fn s14a_6_include_in_dotted_key_is_literal() {
+    let cfg = parse("x.include = 1").expect("parse failed");
+    assert_eq!(
+        cfg.get_i64("x.include").unwrap(),
+        1,
+        "unquoted `include` that is not at the start of a key must be treated as literal"
+    );
+}
+
+// --- S14a.8: no value concatenation on include argument (spec L957) -------------
+#[test]
+fn s14a_8_no_concatenation_on_include_arg() {
+    assert!(
+        parse(r#"include "a.conf" "b.conf""#).is_err(),
+        "multiple strings after `include` must be a parse error per HOCON L957"
+    );
+}
+
+// --- S14a.9: no substitutions in include argument (spec L959) -------------------
+#[test]
+fn s14a_9_no_substitution_in_include_arg() {
+    assert!(
+        parse("include ${path}").is_err(),
+        "substitution as include argument must be a parse error per HOCON L959"
+    );
+}
+
+// --- S14b.1: included root must be an object; array root → error (spec L993) ----
+#[test]
+fn s14b_1_array_root_include_is_error() {
+    let dir = test_tmp_dir("s14b1_array_root");
+    let arr_file = dir.join("arr.conf");
+    std::fs::write(&arr_file, "[1, 2, 3]").unwrap();
+    let path_str = arr_file.display().to_string().replace('\\', "/");
+    let input = format!(r#"include "{}""#, path_str);
+    let result = hocon::parse(&input);
+    assert!(
+        result.is_err(),
+        "including a file whose root is an array must produce an error per HOCON L993"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
