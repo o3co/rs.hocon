@@ -6,9 +6,10 @@
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
-Full [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)-compliant
+A [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)
 parser for Rust. Hand-written lexer, recursive-descent parser, and a typed `Config` API
-with optional Serde integration.
+with optional Serde integration. See [Spec Compliance](#spec-compliance) for the current
+conformance rate.
 
 [日本語](README.ja.md)
 
@@ -279,11 +280,13 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 
 ## Spec Compliance
 
-This library targets full compliance with the
-[Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md).
-The test suite includes the Lightbend equivalence tests (equiv01 through equiv05),
-verifying correct handling of object merging, array concatenation, substitutions,
-and all other spec-defined behaviors.
+Conformance against the [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md) is tracked at item granularity in [`docs/spec-compliance.md`](docs/spec-compliance.md). The table below is a snapshot as of 2026-05-12; see [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) for live cross-impl values.
+
+| Metric                                | Status        |
+| ------------------------------------- | ------------- |
+| Spec total (incl. out-of-scope)       | **57.2%**     |
+| In-scope only                         | **63.2%**     |
+| Lightbend `equiv01`–`equiv05` suite   | 5/5 passing   |
 
 ## Minimum Supported Rust Version
 
@@ -297,7 +300,7 @@ The MSRV is **1.82**.
 | [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | HOCON parser for Go |
 | [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties CLI |
 
-All implementations are full Lightbend HOCON spec compliant.
+The three parser implementations ([ts.hocon](https://github.com/o3co/ts.hocon), [rs.hocon](https://github.com/o3co/rs.hocon), [go.hocon](https://github.com/o3co/go.hocon)) are all tracked against the same Lightbend HOCON spec — see the [cross-impl roll-up](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) for per-impl conformance rates.
 
 ## Best Practices
 

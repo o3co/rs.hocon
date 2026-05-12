@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)に完全準拠した Rust パーサー。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) の Rust パーサー。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。現在の準拠率は [仕様準拠](#仕様準拠) を参照。
 
 > **[Claude Code](https://claude.ai/claude-code)（Anthropic）による設計・実装。**
 > [GitHub Copilot](https://github.com/features/copilot) および [OpenAI Codex](https://openai.com/index/openai-codex/) によるレビュー。
@@ -220,7 +220,13 @@ defaults { size = 20 }  # マージ: color は保持、size は更新
 
 ## 仕様準拠
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md)への完全準拠を目標としています。テストスイートには Lightbend 等価テスト（equiv01 - equiv05）を含み、オブジェクトマージ、配列連結、変数参照、その他仕様で定義されたすべての動作を検証しています。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。以下の表は 2026-05-12 時点のスナップショットです — 最新値は [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
+
+| 指標                                  | 状況         |
+| ------------------------------------- | ------------ |
+| 仕様全体（out-of-scope を含む）       | **57.2%**    |
+| In-scope のみ                         | **63.2%**    |
+| Lightbend `equiv01`–`equiv05` テスト  | 5/5 合格     |
 
 ## Minimum Supported Rust Version
 
@@ -234,7 +240,7 @@ MSRV は **1.82** です。
 | [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | Go 向け HOCON パーサー |
 | [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties 変換 CLI |
 
-すべての実装が Lightbend HOCON 仕様に完全準拠しています。
+3 つのパーサー実装（[ts.hocon](https://github.com/o3co/ts.hocon)、[rs.hocon](https://github.com/o3co/rs.hocon)、[go.hocon](https://github.com/o3co/go.hocon)）はすべて同じ Lightbend HOCON 仕様で追跡されています — 実装ごとの準拠率は [横断ロールアップ](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 ## ベストプラクティス
 
