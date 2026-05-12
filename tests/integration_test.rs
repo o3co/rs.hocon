@@ -1242,10 +1242,15 @@ fn s14b_1_array_root_include_is_error() {
 #[test]
 fn s15_1_num_indexed_obj_to_array_pin() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors instead of converting numeric-keyed object to array.
+    // [pin] Buggy: get_list errors with "expected Array" because no conversion path
+    // exists. Asserting the *specific* error message — not just `is_err()` — so a
+    // future fix that errors for an unrelated reason (e.g. validator change) breaks
+    // this pin instead of silently passing.
+    let err = cfg.get_list("v").unwrap_err();
     assert!(
-        cfg.get_list("v").is_err(),
-        "[pin] get_list on numeric-keyed object currently errors — update when fixed"
+        err.message.contains("expected Array"),
+        "[pin] get_list must currently error with \"expected Array\", got {:?}",
+        err
     );
 }
 
@@ -1273,14 +1278,18 @@ fn s15_1_num_indexed_obj_to_array_spec() {
 #[test]
 fn s15_2_conversion_is_lazy_pin() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_config succeeds (object stays object) but get_list fails (no conversion).
+    // [pin] Buggy: get_config succeeds (object stays object) but get_list fails with
+    // "expected Array" (no conversion path). Tight assertion on the specific error
+    // message so an unrelated regression flips this pin.
     assert!(
         cfg.get_config("v").is_ok(),
         "[pin] get_config must succeed — object is not eagerly converted"
     );
+    let err = cfg.get_list("v").unwrap_err();
     assert!(
-        cfg.get_list("v").is_err(),
-        "[pin] get_list on numeric-keyed object currently errors — update when fixed"
+        err.message.contains("expected Array"),
+        "[pin] get_list must currently error with \"expected Array\", got {:?}",
+        err
     );
 }
 
@@ -1381,10 +1390,13 @@ fn s15_4_empty_object_not_converted() {
 #[test]
 fn s15_5_non_integer_keys_ignored_pin() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: no conversion; get_list errors. "foo" key is not dropped on array access.
+    // [pin] Buggy: no conversion; get_list errors with "expected Array". "foo" key
+    // is not dropped on array access. Tight assertion on the specific error message.
+    let err = cfg.get_list("v").unwrap_err();
     assert!(
-        cfg.get_list("v").is_err(),
-        "[pin] get_list on mixed-key object currently errors — update when fixed"
+        err.message.contains("expected Array"),
+        "[pin] get_list must currently error with \"expected Array\", got {:?}",
+        err
     );
 }
 
@@ -1410,10 +1422,12 @@ fn s15_5_non_integer_keys_ignored_spec() {
 fn s15_6_missing_indices_compacted_pin() {
     // Keys "0" and "2" — index "1" is absent. Result must be ["a","c"] (2 elements, 0→a, 1→c).
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","2":"c"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors because conversion is not implemented.
+    // [pin] Buggy: get_list errors with "expected Array" — no conversion path.
+    let err = cfg.get_list("v").unwrap_err();
     assert!(
-        cfg.get_list("v").is_err(),
-        "[pin] get_list on sparse numeric-keyed object currently errors — update when fixed"
+        err.message.contains("expected Array"),
+        "[pin] get_list must currently error with \"expected Array\", got {:?}",
+        err
     );
 }
 
@@ -1438,10 +1452,12 @@ fn s15_6_missing_indices_compacted_spec() {
 fn s15_7_sorted_by_key_value_pin() {
     // Keys given out of order: "2" before "0". Sorted array must be ["a","c"].
     let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors because conversion is not implemented.
+    // [pin] Buggy: get_list errors with "expected Array" — no conversion path.
+    let err = cfg.get_list("v").unwrap_err();
     assert!(
-        cfg.get_list("v").is_err(),
-        "[pin] get_list on unordered numeric-keyed object currently errors — update when fixed"
+        err.message.contains("expected Array"),
+        "[pin] get_list must currently error with \"expected Array\", got {:?}",
+        err
     );
 }
 
