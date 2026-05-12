@@ -1,0 +1,16 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        # Allow small project-coverage drops (≤ 2 %). Test-debt PRs that add
+        # spec-pinning tests under #[ignore] (until the impl is fixed) cause
+        # a structural drop because the ignored bodies are not executed.
+        # 2 % still flags real regressions in actual code paths.
+        threshold: 2%
+    patch:
+      default:
+        # Test-only PRs by design have low patch coverage when most additions
+        # are #[ignore]'d spec assertions. Lower the bar so test-debt work
+        # does not fail this gate.
+        target: 50%
