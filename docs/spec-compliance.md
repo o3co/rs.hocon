@@ -342,7 +342,7 @@ same item descriptions verbatim.
   status: ✅
 - **S13.14** Optional undefined in obj/array concat → empty obj/array — §Substitutions (L637)
   tests: tests/integration_test.rs:1054 (s13_14_optional_undefined_in_array_concat_pin); tests/integration_test.rs:1066 (s13_14_optional_undefined_in_array_concat_spec); tests/integration_test.rs:1078 (s13_14_optional_undefined_in_object_concat)
-  status: ❌ (see #75) — array case broken; object case ✅
+  status: ⚠️ (see #75) — array case broken (whitespace artefacts leak as extra elements); object case ✅
 - **S13.15** `foo : ${?bar}${?baz}` skipped only when BOTH undefined — §Substitutions (L640)
   tests: —
   status: 🤷
