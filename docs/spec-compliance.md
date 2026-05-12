@@ -308,14 +308,14 @@ same item descriptions verbatim.
   tests: src/lexer.rs:806 (tokenizes_optional_substitutions); src/parser.rs:745 (parses_optional_substitutions); src/resolver/mod.rs:148 (resolves_optional_substitution_exists)
   status: ✅
 - **S13.3** `${?` is exactly 3 chars (no whitespace before `?`) — §Substitutions (L584)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:979 (s13_3_space_before_question_differs_from_optional)
+  status: ✅
 - **S13.4** Resolver MAY consult external sources (env vars, system properties) for unresolved substitutions — §Substitutions (L588) (concrete env behavior → S26)
   tests: src/resolver/mod.rs:190 (resolves_env_var_fallback); tests/integration_test.rs:46 (parse_with_env_fallback)
   status: ✅
 - **S13.5** Substitutions are NOT parsed inside quoted strings — §Substitutions (L593)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1000 (s13_5_no_subst_in_quoted_string)
+  status: ✅
 - **S13.6** Substitution paths are absolute (rooted at config root) — §Substitutions (L603)
   tests: src/resolver/mod.rs:139 (resolves_nested_path_substitution); tests/testdata/hocon/equiv01/substitutions.conf (fixture)
   status: ✅
@@ -326,8 +326,8 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:211 (resolves_last_assignment_wins_for_substitution); tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
   status: ✅
 - **S13.9** `null` in config blocks env var lookup — §Substitutions (L618)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1014 (s13_9_null_blocks_env_var_lookup_pin); tests/integration_test.rs:1028 (s13_9_null_blocks_env_var_lookup_spec)
+  status: ❌ (see #74)
 - **S13.10** Required substitution undefined → error — §Substitutions (L627)
   tests: src/resolver/mod.rs:183 (throws_on_unresolved_mandatory); tests/integration_test.rs:470 (resolve_error_is_hocon_error_resolve_variant); tests/testdata/hocon/cycle-expected-error.json (fixture)
   status: ✅
@@ -338,17 +338,17 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv04/missing-substitutions.conf (fixture)
   status: ✅
 - **S13.13** Optional undefined in string concat → empty string — §Substitutions (L636)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1041 (s13_13_optional_undefined_in_string_concat_is_empty)
+  status: ✅
 - **S13.14** Optional undefined in obj/array concat → empty obj/array — §Substitutions (L637)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1054 (s13_14_optional_undefined_in_array_concat_pin); tests/integration_test.rs:1066 (s13_14_optional_undefined_in_array_concat_spec); tests/integration_test.rs:1078 (s13_14_optional_undefined_in_object_concat)
+  status: ❌ (see #75) — array case broken; object case ✅
 - **S13.15** `foo : ${?bar}${?baz}` skipped only when BOTH undefined — §Substitutions (L640)
   tests: —
   status: 🤷
 - **S13.16** Substitutions only in field values / array elements — §Substitutions (L644)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1087 (s13_16_substitution_in_key_is_rejected)
+  status: ✅
 - **S13.17** Single-substitution value preserves type — §Substitutions (L648)
   tests: src/resolver/mod.rs:93 (resolves_arrays); src/resolver/mod.rs:68 (resolves_nested_objects)
   status: ✅
@@ -389,7 +389,7 @@ same item descriptions verbatim.
   tests: —
   status: 🤷
 - **S13a.10** Substitution memoized by instance, not by path — §Self-Referential (L885)
-  tests: —
+  tests: — (not externally observable from the black-box parse API; memoization affects evaluation order, not final values)
   status: 🤷
 - **S13a.11** Object can refer to its own descendant (`bar : { foo : 42, baz : ${bar.foo} }`) — §Self-Referential (L806)
   tests: tests/lightbend_test.rs:303 (lightbend_test09_delayed_merge_object); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
@@ -398,8 +398,8 @@ same item descriptions verbatim.
   tests: tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
   status: ✅
 - **S13a.13** `a = ${?a}foo` resolves to `"foo"` (look-back undefined) — §Self-Referential (L841)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1103 (s13a_13_optional_self_ref_concat_with_no_prior_pin); tests/integration_test.rs:1115 (s13a_13_optional_self_ref_concat_with_no_prior_spec)
+  status: ❌ (see #76)
 - **S13a.14** Mutually-referring object fields (`bar.a = ${foo.d}; foo.c = ${bar.b}`) resolve lazily without false cycle — §Self-Referential (L825-834)
   tests: —
   status: 🤷
@@ -456,17 +456,17 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:297 (test_include_required_file_form); tests/integration_test.rs:325 (test_include_required_missing_file_errors); tests/integration_test.rs:343 (test_include_required_existing_file_ok)
   status: ✅
 - **S14a.6** Unquoted `include` at non-start-of-key is literal — §Include syntax (L962)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1126 (s14a_6_include_in_dotted_key_is_literal)
+  status: ✅
 - **S14a.7** Whitespace allowed between `include` and resource name (incl. newlines) — §Include syntax (L952)
   tests: —
   status: 🤷
 - **S14a.8** No value concatenation on include argument — §Include syntax (L957)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1137 (s14a_8_no_concatenation_on_include_arg)
+  status: ✅
 - **S14a.9** No substitutions in include argument — §Include syntax (L959)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1146 (s14a_9_no_substitution_in_include_arg)
+  status: ✅
 - **S14a.10** Include argument must be quoted string — §Include syntax (L958)
   tests: —
   status: 🤷
@@ -477,8 +477,8 @@ same item descriptions verbatim.
 ### S14b. Include semantics: merging
 
 - **S14b.1** Included root must be an object (array → error) — §Include semantics: merging (L993)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1155 (s14b_1_array_root_include_is_error)
+  status: ✅
 - **S14b.2** Included keys merge per duplicate-key rules — §Include semantics: merging (L997)
   tests: tests/include_test.rs:21 (include_merges_into_current)
   status: ✅
