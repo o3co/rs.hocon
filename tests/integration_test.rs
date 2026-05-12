@@ -507,6 +507,113 @@ fn test_unterminated_triple_quoted_string_errors() {
     );
 }
 
+// =============================================================================
+// Spec compliance Phase 1 (issue #60): parser-level comma rules and full-parse
+// items. See src/lexer.rs (spec compliance block) for the lexer-level tests and
+// the convention comment explaining the #[ignore] pattern.
+// =============================================================================
+
+// --- S2.3: comment markers inside quoted strings are literal (full-parse) ----
+// Spec L126. The lexer already handles this correctly (the quoted-string scanner
+// runs to the closing '"' without treating '//' or '#' as comment starters).
+// This test verifies the end-to-end path through parse().
+#[test]
+fn s2_3_comment_markers_in_quoted_values_are_literal() {
+    let cfg = parse(r#"url = "http://example.com""#).unwrap();
+    assert_eq!(cfg.get_string("url").unwrap(), "http://example.com");
+
+    let cfg = parse("note = \"# not a comment\"").unwrap();
+    assert_eq!(cfg.get_string("note").unwrap(), "# not a comment");
+}
+
+// --- S5.2: single trailing comma is allowed and ignored ----------------------
+// Spec L155. A single trailing comma after the last element/field must be
+// accepted and must not produce an extra element/field.
+// rs.hocon: parse_array() advances past a trailing comma, then the loop head
+// sees ']' and breaks — the phantom-element path never runs. ✅
+#[test]
+fn s5_2_single_trailing_comma_in_array_allowed() {
+    let cfg = parse("list = [1, 2, 3,]").unwrap();
+    // Exactly 3 elements; trailing comma must not produce a 4th.
+    let items = cfg.get_list("list").unwrap();
+    assert_eq!(items.len(), 3, "trailing comma must not produce an extra element");
+}
+
+#[test]
+fn s5_2_single_trailing_comma_in_object_allowed() {
+    // parse_object() advances past the trailing comma, then sees '}' and breaks.
+    let cfg = parse("{ a = 1, b = 2, }").unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
+}
+
+// --- S5.3: two trailing commas is invalid ------------------------------------
+// Spec L160. [1,2,3,,] must be rejected.
+// rs.hocon: after advancing past the first trailing comma, parse_value() is
+// called for the "next" element; it immediately hits the second Comma and tries
+// to return an empty Concat — the parser propagates an "expected value" error. ✅
+#[test]
+fn s5_3_two_trailing_commas_in_array_rejected() {
+    assert!(
+        parse("list = [1, 2, 3,,]").is_err(),
+        "two trailing commas in array must be a parse error per HOCON L160"
+    );
+}
+
+#[test]
+fn s5_3_two_trailing_commas_in_object_rejected() {
+    // parse_object(): second Comma sits at key position; parse_key() errors.
+    assert!(
+        parse("{ a = 1, b = 2,, }").is_err(),
+        "two trailing commas in object must be a parse error per HOCON L160"
+    );
+}
+
+// --- S5.4: leading comma is invalid ------------------------------------------
+// Spec L161. [,1,2,3] must be rejected.
+// rs.hocon: parse_array() calls parse_value() before the first element;
+// parse_value() sees Comma and returns an empty Concat → "expected value". ✅
+// For objects: parse_key() sees Comma at the very first position and errors.
+#[test]
+fn s5_4_leading_comma_in_array_rejected() {
+    assert!(
+        parse("list = [,1, 2, 3]").is_err(),
+        "leading comma in array must be a parse error per HOCON L161"
+    );
+}
+
+#[test]
+fn s5_4_leading_comma_in_object_rejected() {
+    assert!(
+        parse("{ , a = 1 }").is_err(),
+        "leading comma in object must be rejected per HOCON L161"
+    );
+}
+
+// --- S5.5: two consecutive commas is invalid ---------------------------------
+// Spec L162. [1,,2,3] must be rejected.
+// rs.hocon: same mechanism as S5.4 — the second Comma triggers "expected value". ✅
+#[test]
+fn s5_5_two_consecutive_commas_in_array_rejected() {
+    assert!(
+        parse("list = [1,, 2, 3]").is_err(),
+        "two consecutive commas in array must be a parse error per HOCON L162"
+    );
+}
+
+// --- S5.6: same comma rules apply to object fields ---------------------------
+// Spec L163. Verified above via S5.3 / S5.4 object variants and below.
+// Two consecutive commas between object fields:
+// parse_object(): after 'a=1' + first comma advance, the next loop iteration
+// calls parse_key() with Comma as the peeked token → error. ✅
+#[test]
+fn s5_6_two_consecutive_commas_between_object_fields_rejected() {
+    assert!(
+        parse("{ a = 1,, b = 2 }").is_err(),
+        "consecutive commas between object fields must be rejected per HOCON L163"
+    );
+}
+
 #[test]
 fn nested_include_resolves_substitutions_in_scope() {
     // test10.conf includes test09.conf inside foo{} and bar{nested{}}
@@ -524,3 +631,4 @@ fn nested_include_resolves_substitutions_in_scope() {
     assert_eq!(config.get_i64("bar.nested.a.c").unwrap(), 3);
     assert_eq!(config.get_i64("bar.nested.a.q").unwrap(), 10);
 }
+

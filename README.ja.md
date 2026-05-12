@@ -224,8 +224,8 @@ defaults { size = 20 }  # マージ: color は保持、size は更新
 
 | 指標                                  | 状況         |
 | ------------------------------------- | ------------ |
-| 仕様全体（out-of-scope を含む）       | **57.2%**    |
-| In-scope のみ                         | **63.2%**    |
+| 仕様全体（out-of-scope を含む）       | **61.2%**    |
+| In-scope のみ                         | **67.7%**    |
 | Lightbend `equiv01`–`equiv05` テスト  | 5/5 合格     |
 
 ## Minimum Supported Rust Version
