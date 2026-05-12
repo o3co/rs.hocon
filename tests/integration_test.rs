@@ -1234,3 +1234,291 @@ fn s14b_1_array_root_include_is_error() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// --- S15.1: numeric-keyed object → array when array context (spec L1191) ----------
+//
+// [pin] rs.hocon does not implement numeric-indexed object to array conversion.
+// get_list() on {"0":"a","1":"b"} currently errors with "expected Array".
+#[test]
+fn s15_1_num_indexed_obj_to_array_pin() {
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: get_list errors instead of converting numeric-keyed object to array.
+    assert!(
+        cfg.get_list("v").is_err(),
+        "[pin] get_list on numeric-keyed object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: numeric-indexed object must convert to array when array type requested per HOCON L1191, see #79"]
+#[test]
+fn s15_1_num_indexed_obj_to_array_spec() {
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
+    let items = cfg
+        .get_list("v")
+        .expect("numeric-keyed object must be convertible to array per HOCON L1191");
+    assert_eq!(items.len(), 2, "converted array must have 2 elements");
+    match &items[0] {
+        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "a", "first element must be \"a\""),
+        other => panic!("expected Scalar, got {:?}", other),
+    }
+    match &items[1] {
+        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "b", "second element must be \"b\""),
+        other => panic!("expected Scalar, got {:?}", other),
+    }
+}
+
+// --- S15.2: conversion is lazy — only when array type is requested (spec L1204) ---
+//
+// [pin] No lazy conversion is implemented. get_list on a numeric-keyed object errors.
+#[test]
+fn s15_2_conversion_is_lazy_pin() {
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: get_config succeeds (object stays object) but get_list fails (no conversion).
+    assert!(
+        cfg.get_config("v").is_ok(),
+        "[pin] get_config must succeed — object is not eagerly converted"
+    );
+    assert!(
+        cfg.get_list("v").is_err(),
+        "[pin] get_list on numeric-keyed object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: numeric-indexed object must be convertible to array lazily when array type is requested per HOCON L1204, see #79"]
+#[test]
+fn s15_2_conversion_is_lazy_spec() {
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
+    // Object access must still work (lazy: not converted until array type is requested).
+    assert!(
+        cfg.get_config("v").is_ok(),
+        "get_config must still succeed before conversion is triggered"
+    );
+    // Array access must trigger conversion.
+    assert!(
+        cfg.get_list("v").is_ok(),
+        "get_list must trigger lazy conversion of numeric-keyed object to array"
+    );
+}
+
+// --- S15.3: conversion in concatenation when list expected (spec L1210) -----------
+//
+// [pin] No conversion occurs in concatenation context.
+#[test]
+fn s15_3_conversion_in_concatenation_pin() {
+    // obj = {"0":"x","1":"y"}, arr = [a] ++ obj should convert obj to array and append.
+    let cfg = hocon::parse_with_env(
+        r#"obj = {"0":"x","1":"y"}
+arr = ${obj}"#,
+        &HashMap::new(),
+    )
+    .unwrap();
+    // [pin] Buggy: get_list on the substitution-resolved value fails (no conversion).
+    assert!(
+        cfg.get_list("arr").is_err(),
+        "[pin] get_list on substitution of numeric-keyed object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: numeric-indexed object must convert to array in concatenation when list expected per HOCON L1210, see #79"]
+#[test]
+fn s15_3_conversion_in_concatenation_spec() {
+    let cfg = hocon::parse_with_env(
+        r#"obj = {"0":"x","1":"y"}
+arr = ${obj}"#,
+        &HashMap::new(),
+    )
+    .unwrap();
+    assert!(
+        cfg.get_list("arr").is_ok(),
+        "numeric-indexed object must convert to array when array context expected per HOCON L1210"
+    );
+}
+
+// --- S15.4: empty object NOT converted (spec L1212) --------------------------------
+//
+// The spec says: "the conversion should not occur if the object is empty or has no
+// keys which parse as positive integers." Verified: get_list on {} currently errors —
+// which is the correct result (no conversion is done). Since the feature is absent,
+// this case happens to match spec intent. Marked ✅ with a note.
+#[test]
+fn s15_4_empty_object_not_converted() {
+    let cfg = hocon::parse_with_env(r#"v = {}"#, &HashMap::new()).unwrap();
+    // Empty object must NOT be converted to an array (per HOCON L1212).
+    // get_list should return an error (it is not an array, and must not become one).
+    assert!(
+        cfg.get_list("v").is_err(),
+        "empty object must not be converted to array per HOCON L1212"
+    );
+}
+
+// --- S15.5: non-integer keys ignored during conversion (spec L1214) ----------------
+//
+// [pin] Conversion is not implemented at all. Test pins the "no conversion" behavior.
+#[test]
+fn s15_5_non_integer_keys_ignored_pin() {
+    let cfg =
+        hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: no conversion; get_list errors. "foo" key is not dropped on array access.
+    assert!(
+        cfg.get_list("v").is_err(),
+        "[pin] get_list on mixed-key object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: non-integer keys must be ignored when converting numeric-indexed object to array per HOCON L1214, see #79"]
+#[test]
+fn s15_5_non_integer_keys_ignored_spec() {
+    let cfg =
+        hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
+    // "foo" key is ignored; result must be ["a","c"].
+    let items = cfg
+        .get_list("v")
+        .expect("mixed-key object must convert, ignoring non-integer keys per HOCON L1214");
+    assert_eq!(items.len(), 2, "only integer-keyed entries remain: [\"a\",\"c\"]");
+}
+
+// --- S15.6: missing indices compacted in resulting array (spec L1216) --------------
+//
+// [pin] Conversion not implemented; test pins "no conversion" behavior.
+#[test]
+fn s15_6_missing_indices_compacted_pin() {
+    // Keys "0" and "2" — index "1" is absent. Result must be ["a","c"] (2 elements, 0→a, 1→c).
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","2":"c"}"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: get_list errors because conversion is not implemented.
+    assert!(
+        cfg.get_list("v").is_err(),
+        "[pin] get_list on sparse numeric-keyed object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: missing integer indices must be compacted when converting object to array per HOCON L1216, see #79"]
+#[test]
+fn s15_6_missing_indices_compacted_spec() {
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","2":"c"}"#, &HashMap::new()).unwrap();
+    let items = cfg
+        .get_list("v")
+        .expect("sparse numeric-keyed object must convert to compacted array per HOCON L1216");
+    assert_eq!(
+        items.len(),
+        2,
+        "gaps eliminated: keys 0+2 → array of 2 elements"
+    );
+}
+
+// --- S15.7: sorted by integer key value (spec L1216) --------------------------------
+//
+// [pin] Conversion not implemented; test pins "no conversion" behavior.
+#[test]
+fn s15_7_sorted_by_key_value_pin() {
+    // Keys given out of order: "2" before "0". Sorted array must be ["a","c"].
+    let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: get_list errors because conversion is not implemented.
+    assert!(
+        cfg.get_list("v").is_err(),
+        "[pin] get_list on unordered numeric-keyed object currently errors — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: conversion must sort by integer key value per HOCON L1216, see #79"]
+#[test]
+fn s15_7_sorted_by_key_value_spec() {
+    let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
+    let items = cfg
+        .get_list("v")
+        .expect("out-of-order numeric-keyed object must convert sorted by integer key per HOCON L1216");
+    assert_eq!(items.len(), 2, "must produce 2-element array");
+    // After sort by integer key: 0→"a", 2→"c" → [\"a\",\"c\"]
+    match &items[0] {
+        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "a", "first element must be key-0's value"),
+        other => panic!("expected Scalar, got {:?}", other),
+    }
+    match &items[1] {
+        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "c", "second element must be key-2's value"),
+        other => panic!("expected Scalar, got {:?}", other),
+    }
+}
+
+// --- S17.5: "null" string → null when null requested (spec L1244) ------------------
+//
+// The spec says: "the string 'null' should be converted to a null value if the
+// application specifically asks for a null value." rs.hocon has no get_null() API,
+// so this conversion path is not testable at the typed-getter level.
+// The underlying storage correctly distinguishes String "null" from Null scalar.
+// Marked ➖ (out-of-scope for this API surface).
+#[test]
+fn s17_5_null_string_stored_as_string_not_null() {
+    // Verify the internal representation: "null" (quoted) is stored as String, not Null.
+    let cfg = hocon::parse_with_env(r#"v = "null""#, &HashMap::new()).unwrap();
+    match cfg.get("v") {
+        Some(hocon::HoconValue::Scalar(sv)) => {
+            assert_eq!(sv.raw, "null");
+            assert_eq!(
+                sv.value_type,
+                hocon::ScalarType::String,
+                "quoted \"null\" must be stored as String scalar, not Null"
+            );
+        }
+        other => panic!("expected Scalar, got {:?}", other),
+    }
+}
+
+// --- S17.6: null → other type: error (spec L1252) ----------------------------------
+//
+// Partial conformance: get_i64 and get_bool on null correctly error.
+// get_string on null incorrectly returns Ok("null") — bug, see #80.
+#[test]
+fn s17_6_null_to_numeric_and_bool_errors() {
+    let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
+    assert!(
+        cfg.get_i64("v").is_err(),
+        "null → i64 must error per HOCON L1252"
+    );
+    assert!(
+        cfg.get_bool("v").is_err(),
+        "null → bool must error per HOCON L1252"
+    );
+}
+
+#[test]
+fn s17_6_null_to_string_pin() {
+    let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
+    // [pin] Buggy: get_string on a null value returns Ok("null") instead of Err.
+    // The spec (L1252) requires null → any type to be an error.
+    assert!(
+        cfg.get_string("v").is_ok(),
+        "[pin] get_string on null currently returns Ok(\"null\") — update when fixed"
+    );
+}
+
+#[ignore = "spec violation: null → string must error per HOCON L1252, but get_string returns Ok(\"null\"), see #80"]
+#[test]
+fn s17_6_null_to_string_spec() {
+    let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
+    assert!(
+        cfg.get_string("v").is_err(),
+        "null → string must return an error per HOCON L1252"
+    );
+}
+
+// --- S17.8: array → other type (except numeric-indexed): error (spec L1255) --------
+#[test]
+fn s17_8_array_to_other_type_errors() {
+    let cfg = hocon::parse_with_env(r#"v = [1,2,3]"#, &HashMap::new()).unwrap();
+    assert!(
+        cfg.get_string("v").is_err(),
+        "array → string must error per HOCON L1255"
+    );
+    assert!(
+        cfg.get_i64("v").is_err(),
+        "array → i64 must error per HOCON L1255"
+    );
+    assert!(
+        cfg.get_bool("v").is_err(),
+        "array → bool must error per HOCON L1255"
+    );
+    // get_list on a plain array must still succeed (not an error, it IS an array).
+    assert!(
+        cfg.get_list("v").is_ok(),
+        "get_list on an array must succeed"
+    );
+}
