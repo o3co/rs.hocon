@@ -353,6 +353,7 @@ fn s14a_7_whitespace_before_include_arg() {
         42,
         "S14a.7: extra spaces allowed"
     );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -371,6 +372,7 @@ fn s14a_7_newline_before_include_arg() {
         99,
         "S14a.7: newline between include and arg allowed"
     );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -630,12 +632,20 @@ fn s23_2_trailing_dot_creates_empty_key_segment() {
         "S23.2: properties with trailing dot key must parse"
     );
     let cfg = r.unwrap();
-    // "a" is an object (not a scalar), the empty-string key lives inside it
-    // get_config("a") should succeed
+    // "a" is an object (not a scalar), the empty-string key lives inside it.
+    // get_config("a") should succeed AND the value must be retrievable via the
+    // trailing-dot accessor "a." (which split_config_path treats as path
+    // ["a", ""] — the empty trailing segment maps to the empty-string key).
     assert!(
         cfg.get_config("a").is_ok(),
         "S23.2: 'a' must be an object (trailing dot creates nested obj with empty key)"
     );
+    assert_eq!(
+        cfg.get_string("a.").unwrap(),
+        "trailing_dot",
+        "S23.2: 'a.' in properties must create path [\"a\", \"\"] accessible as 'a.'"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -662,6 +672,7 @@ fn s23_2_leading_dot_creates_empty_key_segment() {
         "leading_dot",
         "S23.2: '.a' in properties must create path [\"\", \"a\"] accessible as '.a'"
     );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
