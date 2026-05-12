@@ -1319,7 +1319,9 @@ arr = [a] ${obj}"#,
         &HashMap::new(),
     )
     .unwrap();
-    let items = cfg.get_list("arr").expect("concat produces an array (list literal present)");
+    let items = cfg
+        .get_list("arr")
+        .expect("concat produces an array (list literal present)");
     // [pin] Buggy: last element is the un-converted object, not flattened strings.
     let last = items.last().expect("non-empty array");
     assert!(
