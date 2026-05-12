@@ -664,17 +664,21 @@ same item descriptions verbatim.
 ## S20. Period format
 
 - **S20.1** `d` / `day` / `days` — §Period Format (L1327)
+  out-of-scope: Period Format mirrors `java.time.Period`, a JVM-specific type; the spec text (L1316-1318) explicitly references this Java API. None of the three implementations exposes a period parser/API.
   tests: —
-  status: 🤷
+  status: ➖
 - **S20.2** `w` / `week` / `weeks` — §Period Format (L1328)
+  out-of-scope: Period Format unsupported; see S20.1.
   tests: —
-  status: 🤷
+  status: ➖
 - **S20.3** `m` / `mo` / `month` / `months` — §Period Format (L1329)
+  out-of-scope: Period Format unsupported; see S20.1.
   tests: —
-  status: 🤷
+  status: ➖
 - **S20.4** `y` / `year` / `years` — §Period Format (L1333)
+  out-of-scope: Period Format unsupported; see S20.1.
   tests: —
-  status: 🤷
+  status: ➖
 
 ## S21. Size in bytes format
 
