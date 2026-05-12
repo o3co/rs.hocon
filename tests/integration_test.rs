@@ -1356,8 +1356,7 @@ fn s15_4_empty_object_not_converted() {
 // [pin] Conversion is not implemented at all. Test pins the "no conversion" behavior.
 #[test]
 fn s15_5_non_integer_keys_ignored_pin() {
-    let cfg =
-        hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
     // [pin] Buggy: no conversion; get_list errors. "foo" key is not dropped on array access.
     assert!(
         cfg.get_list("v").is_err(),
@@ -1368,13 +1367,16 @@ fn s15_5_non_integer_keys_ignored_pin() {
 #[ignore = "spec violation: non-integer keys must be ignored when converting numeric-indexed object to array per HOCON L1214, see #79"]
 #[test]
 fn s15_5_non_integer_keys_ignored_spec() {
-    let cfg =
-        hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
+    let cfg = hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
     // "foo" key is ignored; result must be ["a","c"].
     let items = cfg
         .get_list("v")
         .expect("mixed-key object must convert, ignoring non-integer keys per HOCON L1214");
-    assert_eq!(items.len(), 2, "only integer-keyed entries remain: [\"a\",\"c\"]");
+    assert_eq!(
+        items.len(),
+        2,
+        "only integer-keyed entries remain: [\"a\",\"c\"]"
+    );
 }
 
 // --- S15.6: missing indices compacted in resulting array (spec L1216) --------------
@@ -1423,17 +1425,21 @@ fn s15_7_sorted_by_key_value_pin() {
 #[test]
 fn s15_7_sorted_by_key_value_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
-    let items = cfg
-        .get_list("v")
-        .expect("out-of-order numeric-keyed object must convert sorted by integer key per HOCON L1216");
+    let items = cfg.get_list("v").expect(
+        "out-of-order numeric-keyed object must convert sorted by integer key per HOCON L1216",
+    );
     assert_eq!(items.len(), 2, "must produce 2-element array");
     // After sort by integer key: 0→"a", 2→"c" → [\"a\",\"c\"]
     match &items[0] {
-        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "a", "first element must be key-0's value"),
+        hocon::HoconValue::Scalar(sv) => {
+            assert_eq!(sv.raw, "a", "first element must be key-0's value")
+        }
         other => panic!("expected Scalar, got {:?}", other),
     }
     match &items[1] {
-        hocon::HoconValue::Scalar(sv) => assert_eq!(sv.raw, "c", "second element must be key-2's value"),
+        hocon::HoconValue::Scalar(sv) => {
+            assert_eq!(sv.raw, "c", "second element must be key-2's value")
+        }
         other => panic!("expected Scalar, got {:?}", other),
     }
 }
