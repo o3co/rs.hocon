@@ -564,26 +564,33 @@ same item descriptions verbatim.
 ## S15. Numerically-indexed objects to arrays
 
 - **S15.1** `{"0":"a","1":"b"}` → `["a","b"]` when array context — §Conversion (L1191)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1243 (s15_1_num_indexed_obj_to_array_pin); tests/integration_test.rs:1254 (s15_1_num_indexed_obj_to_array_spec)
+  status: ❌
+  note: `get_list()` on a numeric-keyed object returns `Err("expected Array")`. Conversion not implemented. Tracked in #79.
 - **S15.2** Conversion is lazy (only on type-required access) — §Conversion (L1204)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1274 (s15_2_conversion_is_lazy_pin); tests/integration_test.rs:1289 (s15_2_conversion_is_lazy_spec)
+  status: ❌
+  note: No lazy conversion is performed. `get_list()` on a numeric-keyed object errors regardless of whether object access was first attempted. Tracked in #79.
 - **S15.3** Conversion in concatenation when list expected — §Conversion (L1210)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1310 (s15_3_conversion_in_concatenation_pin); tests/integration_test.rs:1335 (s15_3_conversion_in_concatenation_spec)
+  status: ❌
+  note: real concatenation context `arr = [a] ${obj}` (with `obj = {"0":"x","1":"y"}`) produces a 3-element array whose last element is the un-converted Object — spec L1210 requires conversion + flatten to `["a","x","y"]`. Pin asserts the un-converted last element. Tracked in #79.
 - **S15.4** Empty object NOT converted — §Conversion (L1212)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1344 (s15_4_empty_object_not_converted)
+  status: ✅
+  note: `get_list()` on `{}` returns an error (correct — empty object must not be converted). Confirmed conformant by probe; passes because no conversion is implemented at all.
 - **S15.5** Non-integer keys ignored during conversion — §Conversion (L1214)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1358 (s15_5_non_integer_keys_ignored_pin); tests/integration_test.rs:1370 (s15_5_non_integer_keys_ignored_spec)
+  status: ❌
+  note: Conversion not implemented. The `{"0":"a","foo":"b","1":"c"}` case cannot be exercised. Tracked in #79.
 - **S15.6** Missing indices compacted in resulting array — §Conversion (L1216)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1384 (s15_6_missing_indices_compacted_pin); tests/integration_test.rs:1396 (s15_6_missing_indices_compacted_spec)
+  status: ❌
+  note: Conversion not implemented. Tracked in #79.
 - **S15.7** Sorted by integer key value — §Conversion (L1216)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1412 (s15_7_sorted_by_key_value_pin); tests/integration_test.rs:1424 (s15_7_sorted_by_key_value_spec)
+  status: ❌
+  note: Conversion not implemented. Tracked in #79.
 
 ## S16. MIME Type
 
@@ -607,17 +614,20 @@ same item descriptions verbatim.
   tests: src/config.rs:621 (get_bool_coerces_string_true); src/config.rs:627 (get_bool_coerces_string_false); src/config.rs:633 (get_bool_coerces_yes_no_on_off); tests/integration_test.rs:118 (parse_bool_coercion)
   status: ✅
 - **S17.5** `"null"` → null when null requested — §Automatic type conversions (L1244)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1449 (s17_5_null_string_stored_as_string_not_null)
+  status: ➖
+  note: rs.hocon has no `get_null()` typed getter — the "null requested" path does not exist in the API. Internally, quoted `"null"` is correctly stored as `ScalarType::String` (not `Null`), which is consistent with spec intent. Out-of-scope until a null-accessor is added.
 - **S17.6** null → other type: error — §Automatic type conversions (L1252)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1470 (s17_6_null_to_numeric_and_bool_errors); tests/integration_test.rs:1483 (s17_6_null_to_string_pin); tests/integration_test.rs:1495 (s17_6_null_to_string_spec)
+  status: ⚠️
+  note: `get_i64` and `get_bool` on null correctly error. `get_string` on null returns `Ok("null")` instead of an error — spec requires an error for all typed getters. Bug tracked in #80.
 - **S17.7** object → other type: error — §Automatic type conversions (L1254)
   tests: src/config.rs:563 (get_string_error_on_object)
   status: ✅
 - **S17.8** array → other (except numeric-indexed): error — §Automatic type conversions (L1255)
-  tests: —
-  status: 🤷
+  tests: tests/integration_test.rs:1505 (s17_8_array_to_other_type_errors)
+  status: ✅
+  note: `get_string`, `get_i64`, `get_bool` all error on array values. `get_list` on a plain array succeeds.
 
 ## S18. Units format
 
