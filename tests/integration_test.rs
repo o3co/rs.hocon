@@ -732,9 +732,10 @@ fn s10_8_unquoted_space_key_pin() {
 #[ignore = "spec violation: unquoted space-concat key `a b c` must be accepted per HOCON L317/L556, see #66"]
 fn s10_8_unquoted_space_key_spec() {
     // Spec example (L556): `a b c : 42` is equivalent to `"a b c" : 42`
-    let cfg = parse("foo bar = 42").unwrap();
+    let cfg = parse("foo bar = 42").expect("parse must succeed per HOCON L317/L556");
     assert_eq!(
-        cfg.get_i64("foo bar").unwrap(),
+        cfg.get_i64("foo bar")
+            .expect("key 'foo bar' must exist per HOCON L556"),
         42,
         "unquoted space-concat key must produce key 'foo bar' per HOCON L556"
     );
@@ -842,52 +843,37 @@ fn s10_19_subst_arr_concat_literal_obj_spec() {
 
 // --- S11.4: `10.0foo` → path [10, 0foo] (HOCON L496) -----------------------
 // Spec L496: `10.0foo` is a number then unquoted string `foo`, producing a
-// two-element path with segments `10` and `0foo`.
+// two-element path with segments `10` and `0foo`. rs.hocon is compliant —
+// verified by top-level-keys inspection (probe: `cfg.keys() == ["10"]`).
 #[test]
-fn s11_4_numeric_dot_unquoted_path_pin() {
-    // BUG: `10.0foo` is currently stored as a single flat key "10.0foo".
-    // Spec requires it to be parsed as path [10, 0foo].
+fn s11_4_numeric_dot_unquoted_path() {
     let cfg = parse("10.0foo = 42").unwrap();
-    // Current broken behavior: reachable as "10.0foo" flat key
-    assert!(
-        cfg.get_i64("10.0foo").is_ok(),
-        "[pin] 10.0foo currently stored as flat key — update when fixed"
+    assert_eq!(
+        cfg.keys(),
+        vec!["10"],
+        "top-level key must be \"10\" (not flat \"10.0foo\") per HOCON L496"
     );
-}
-
-#[test]
-#[ignore = "spec violation: 10.0foo must parse as two-element path [10, 0foo] per HOCON L496, see #69"]
-fn s11_4_numeric_dot_unquoted_path_spec() {
-    // `10.0foo = 42` must create nested structure: key "10" → object → key "0foo" → 42
-    // The flat key "10.0foo" must NOT exist; the value is only reachable via the two segments.
-    let cfg = parse("10.0foo = 42").unwrap();
-    assert!(
-        cfg.get_i64("10.0foo").is_err(),
-        "10.0foo must NOT be accessible as a flat single-segment key per HOCON L496"
+    assert_eq!(
+        cfg.get_i64("10.0foo").unwrap(),
+        42,
+        "value must be reachable via the nested path 10.0foo"
     );
 }
 
 // --- S11.5: `foo10.0` → path [foo10, 0] (HOCON L498) -----------------------
 // Spec L498: `foo10.0` is an unquoted string with a dot, producing path [foo10, 0].
 #[test]
-fn s11_5_unquoted_dot_numeric_path_pin() {
-    // BUG: `foo10.0` is currently stored as a single flat key "foo10.0".
+fn s11_5_unquoted_dot_numeric_path() {
     let cfg = parse("foo10.0 = 42").unwrap();
-    assert!(
-        cfg.get_i64("foo10.0").is_ok(),
-        "[pin] foo10.0 currently stored as flat key — update when fixed"
+    assert_eq!(
+        cfg.keys(),
+        vec!["foo10"],
+        "top-level key must be \"foo10\" (not flat \"foo10.0\") per HOCON L498"
     );
-}
-
-#[test]
-#[ignore = "spec violation: foo10.0 must parse as two-element path [foo10, 0] per HOCON L498, see #70"]
-fn s11_5_unquoted_dot_numeric_path_spec() {
-    // `foo10.0 = 42` must create: key "foo10" → object → key "0" → 42
-    // The flat key "foo10.0" must NOT exist.
-    let cfg = parse("foo10.0 = 42").unwrap();
-    assert!(
-        cfg.get_i64("foo10.0").is_err(),
-        "foo10.0 must NOT be accessible as a flat single-segment key per HOCON L498"
+    assert_eq!(
+        cfg.get_i64("foo10.0").unwrap(),
+        42,
+        "value must be reachable via the nested path foo10.0"
     );
 }
 
