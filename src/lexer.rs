@@ -873,4 +873,346 @@ mod tests {
     fn throws_on_unterminated_triple_quoted_string() {
         assert!(tokenize(r#""""unterminated"#).is_err());
     }
+
+    // -------------------------------------------------------------------------
+    // Spec compliance Phase 1 (issue #60): lexer-level rules.
+    //
+    // Each test is annotated with its xx.hocon spec checklist ID (S<n>.<m>).
+    //
+    // Convention for known spec violations:
+    //   - The spec-correct test is annotated with #[ignore = "spec violation, see #NN"].
+    //     CI stays green while the impl is buggy; removing the attribute once a fix
+    //     lands flips the test to required-pass.
+    //   - Where the ambiguity of it.fails()-equivalent is high (e.g., S6.x where
+    //     a "fix" could plausibly reject or accept), a companion `_pin` test (no
+    //     #[ignore]) asserts the *current* broken behavior as a regression net.
+    // -------------------------------------------------------------------------
+
+    // --- S2.3: comment markers inside quoted strings are literal -------------
+    // Spec L126: "//" and "#" inside double-quoted strings must NOT be treated as
+    // comment starters — they are literal string content.
+    #[test]
+    fn s2_3_comment_markers_inside_quoted_string_are_literal() {
+        // "http://example.com" — the "//" must not start a comment
+        let tokens = tokenize(r#""http://example.com""#).unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::QuotedString);
+        assert_eq!(tokens[0].value, "http://example.com");
+
+        // "# not a comment" — the "#" must not start a comment
+        let tokens = tokenize("\"# not a comment\"").unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::QuotedString);
+        assert_eq!(tokens[0].value, "# not a comment");
+    }
+
+    // --- S6.1: Unicode Zs / Zl / Zp category chars are whitespace -----------
+    // Spec L170: the lexer must treat any Unicode whitespace category character
+    // (Zs, Zl, Zp) as a token separator, not as unquoted string content.
+    // rs.hocon's lexer (L68) only recognises ASCII space, tab, and CR, so these
+    // characters leak into unquoted runs instead.
+    //
+    // Pin test: current (incorrect) behaviour — em space absorbed into unquoted.
+    #[test]
+    fn s6_1_em_space_absorbed_into_unquoted_pin() {
+        // Em space U+2003 (Zs category). Currently the lexer folds it into the
+        // unquoted token instead of treating it as a separator.
+        let tokens = tokenize("a\u{2003}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        // Current wrong behaviour: one token containing the em space.
+        assert_eq!(unquoted.len(), 1);
+        assert!(unquoted[0].value.contains('\u{2003}'));
+    }
+
+    // Spec-correct test: em space must separate two unquoted tokens.
+    #[test]
+    #[ignore = "spec violation: em space (U+2003, Zs) not treated as whitespace, see #62"]
+    fn s6_1_em_space_separates_tokens_spec() {
+        let tokens = tokenize("a\u{2003}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "em space should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Pin test: line separator U+2028 (Zl category) absorbed into unquoted.
+    #[test]
+    fn s6_1_line_separator_absorbed_into_unquoted_pin() {
+        let tokens = tokenize("a\u{2028}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert!(unquoted[0].value.contains('\u{2028}'));
+    }
+
+    // Spec-correct test: line separator (U+2028, Zl) must be whitespace.
+    #[test]
+    #[ignore = "spec violation: line separator (U+2028, Zl) not treated as whitespace, see #62"]
+    fn s6_1_line_separator_separates_tokens_spec() {
+        let tokens = tokenize("a\u{2028}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "U+2028 (Zl) should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // --- S6.2: non-breaking spaces are whitespace ----------------------------
+    // Spec L171: U+00A0 (NBSP), U+2007 (figure space), U+202F (narrow NBSP)
+    // must be treated as whitespace. Currently the lexer folds them into unquoted.
+
+    // Pin test: NBSP absorbed into unquoted.
+    #[test]
+    fn s6_2_nbsp_absorbed_into_unquoted_pin() {
+        let tokens = tokenize("a\u{00A0}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert!(unquoted[0].value.contains('\u{00A0}'));
+    }
+
+    // Spec-correct test: NBSP (U+00A0) must separate tokens.
+    #[test]
+    #[ignore = "spec violation: NBSP (U+00A0) not treated as whitespace, see #62"]
+    fn s6_2_nbsp_separates_tokens_spec() {
+        let tokens = tokenize("a\u{00A0}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "NBSP should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Spec-correct test: figure space (U+2007) must separate tokens.
+    #[test]
+    #[ignore = "spec violation: figure space (U+2007) not treated as whitespace, see #62"]
+    fn s6_2_figure_space_separates_tokens_spec() {
+        let tokens = tokenize("a\u{2007}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "figure space should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Spec-correct test: narrow NBSP (U+202F) must separate tokens.
+    #[test]
+    #[ignore = "spec violation: narrow NBSP (U+202F) not treated as whitespace, see #62"]
+    fn s6_2_narrow_nbsp_separates_tokens_spec() {
+        let tokens = tokenize("a\u{202F}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "narrow NBSP should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // --- S6.4: ASCII control whitespace --------------------------------------
+    // Spec L174 lists 8 chars that are whitespace: tab (0x09), vtab (0x0B),
+    // FF (0x0C), CR (0x0D), FS (0x1C), GS (0x1D), RS (0x1E), US (0x1F).
+    // rs.hocon's lexer handles tab and CR (L68) but NOT vtab, FF, or FS–US.
+
+    // Tab and CR — these already pass (covered by existing code path).
+    #[test]
+    fn s6_4_tab_is_whitespace() {
+        // Tab (0x09): already in the lexer's whitespace check.
+        let tokens = tokenize("a\tb").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2);
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    #[test]
+    fn s6_4_cr_is_whitespace() {
+        // CR (0x0D): already in the lexer's whitespace check.
+        // CR alone (without LF) acts as inline whitespace, not a newline emitter.
+        let tokens = tokenize("a\rb").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2);
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Vtab and FF — pin tests for current (wrong) behavior.
+    #[test]
+    fn s6_4_vtab_absorbed_into_unquoted_pin() {
+        // Vtab (0x0B) is not in the whitespace check; it leaks into unquoted.
+        let tokens = tokenize("a\x0Bb").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert!(unquoted[0].value.contains('\x0B'));
+    }
+
+    // Spec-correct test: vtab (0x0B) must be whitespace.
+    #[test]
+    #[ignore = "spec violation: vtab (0x0B) not treated as whitespace, see #62"]
+    fn s6_4_vtab_is_whitespace_spec() {
+        let tokens = tokenize("a\x0Bb").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "vtab should separate tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Spec-correct test: form feed (0x0C) must be whitespace.
+    #[test]
+    #[ignore = "spec violation: FF (0x0C) not treated as whitespace, see #62"]
+    fn s6_4_ff_is_whitespace_spec() {
+        let tokens = tokenize("a\x0Cb").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "FF should separate tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
+    // Spec-correct test: FS, GS, RS, US (0x1C–0x1F) must be whitespace.
+    // These are grouped because they share the same root cause (not in the
+    // lexer's whitespace check) and the same fix will address all four.
+    #[test]
+    #[ignore = "spec violation: FS/GS/RS/US (0x1C-0x1F) not treated as whitespace, see #62"]
+    fn s6_4_fs_gs_rs_us_are_whitespace_spec() {
+        for (label, ch) in [
+            ("FS (0x1C)", '\x1C'),
+            ("GS (0x1D)", '\x1D'),
+            ("RS (0x1E)", '\x1E'),
+            ("US (0x1F)", '\x1F'),
+        ] {
+            let input = format!("a{}b", ch);
+            let tokens = tokenize(&input).unwrap();
+            let unquoted: Vec<_> = tokens
+                .iter()
+                .filter(|t| t.kind == TokenKind::Unquoted)
+                .collect();
+            assert_eq!(unquoted.len(), 2, "{label} should separate tokens");
+            assert_eq!(unquoted[0].value, "a", "{label}");
+            assert_eq!(unquoted[1].value, "b", "{label}");
+        }
+    }
+
+    // --- S8.6: unquoted string cannot begin with 0-9 or - -------------------
+    // Spec L270: unquoted strings must not start with a digit (0–9) or hyphen (-).
+    // rs.hocon's is_unquoted_start() does not exclude these characters, so
+    // `123abc` and `-foo` are lexed as unquoted tokens and then either parsed as
+    // numbers (if valid) or silently coerced to strings (if not).
+    //
+    // Pin test: current (wrong) behavior — digit-leading token accepted as string.
+    #[test]
+    fn s8_6_digit_leading_unquoted_accepted_as_string_pin() {
+        // "123abc" is not a valid number; the parser falls back to treating it
+        // as a string scalar. This is the current wrong behavior.
+        let result = crate::parse("x = 123abc");
+        assert!(
+            result.is_ok(),
+            "impl currently accepts digit-leading unquoted"
+        );
+    }
+
+    // Spec-correct test: digit-starting unquoted string must be rejected.
+    #[test]
+    #[ignore = "spec violation: digit-leading unquoted string accepted, see #63"]
+    fn s8_6_digit_leading_unquoted_rejected_spec() {
+        assert!(
+            crate::parse("x = 123abc").is_err(),
+            "digit-leading unquoted should be a parse error per HOCON L270"
+        );
+    }
+
+    // Pin test: current (wrong) behavior — hyphen-leading non-number accepted.
+    #[test]
+    fn s8_6_hyphen_leading_non_number_accepted_as_string_pin() {
+        // "-foo" is not a valid number; the parser falls back to a string.
+        let result = crate::parse("x = -foo");
+        assert!(
+            result.is_ok(),
+            "impl currently accepts hyphen-leading unquoted"
+        );
+    }
+
+    // Spec-correct test: hyphen-starting non-number must be rejected.
+    #[test]
+    #[ignore = "spec violation: hyphen-leading non-number unquoted accepted, see #63"]
+    fn s8_6_hyphen_leading_non_number_rejected_spec() {
+        // Note: "-123" is a valid JSON number and IS allowed. Only non-numeric
+        // hyphen-led forms like "-foo" must be rejected.
+        assert!(
+            crate::parse("x = -foo").is_err(),
+            "hyphen-leading non-number unquoted should be a parse error per HOCON L270"
+        );
+    }
+
+    // --- S8.7: no escape sequences in unquoted strings -----------------------
+    // Spec L253: unquoted strings do not interpret any escape sequences.
+    // A backslash inside an unquoted run is forbidden (it terminates the run
+    // in rs.hocon because '\' is excluded from is_unquoted_start and
+    // is_unquoted_continue), and the bare backslash produces a lexer error.
+    #[test]
+    fn s8_7_backslash_is_rejected_in_unquoted_context() {
+        // "a\n" outside quotes: the lexer reads 'a' as unquoted, then hits '\',
+        // which is not a valid unquoted character and not a recognised token
+        // introducer — the lexer should error.
+        assert!(
+            tokenize(r"a\n").is_err(),
+            "bare backslash outside quotes must be rejected"
+        );
+    }
+
+    // --- S8.8: unquoted strings allow control chars except forbidden set -----
+    // Spec L280: control characters OTHER than the forbidden set (L245:
+    // $ " { } [ ] : = , + # ` ^ ? ! @ * & \ and whitespace are permitted
+    // inside unquoted strings.
+    #[test]
+    fn s8_8_soh_allowed_in_unquoted_string() {
+        // SOH (0x01) is a control character not in the forbidden set.
+        let tokens = tokenize("foo\x01bar").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert_eq!(unquoted[0].value, "foo\x01bar");
+    }
+
+    #[test]
+    fn s8_8_bel_allowed_in_unquoted_string() {
+        // BEL (0x07) is a control character not in the forbidden set.
+        let tokens = tokenize("foo\x07bar").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert_eq!(unquoted[0].value, "foo\x07bar");
+    }
 }
