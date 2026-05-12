@@ -280,15 +280,13 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 
 ## Spec Compliance
 
-Conformance against the [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md) is tracked at item granularity in [`docs/spec-compliance.md`](docs/spec-compliance.md).
+Conformance against the [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md) is tracked at item granularity in [`docs/spec-compliance.md`](docs/spec-compliance.md). The table below is a snapshot as of 2026-05-12; see [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) for live cross-impl values.
 
 | Metric                                | Status        |
 | ------------------------------------- | ------------- |
 | Spec total (incl. out-of-scope)       | **57.2%**     |
 | In-scope only                         | **63.2%**     |
 | Lightbend `equiv01`–`equiv05` suite   | 5/5 passing   |
-
-Cross-impl roll-up across ts/rs/go: [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md).
 
 ## Minimum Supported Rust Version
 
@@ -302,7 +300,7 @@ The MSRV is **1.82**.
 | [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | HOCON parser for Go |
 | [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties CLI |
 
-All three implementations are tracked against the same Lightbend HOCON spec — see the [cross-impl roll-up](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) for per-impl conformance rates.
+The three parser implementations ([ts.hocon](https://github.com/o3co/ts.hocon), [rs.hocon](https://github.com/o3co/rs.hocon), [go.hocon](https://github.com/o3co/go.hocon)) are all tracked against the same Lightbend HOCON spec — see the [cross-impl roll-up](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) for per-impl conformance rates.
 
 ## Best Practices
 

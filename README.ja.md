@@ -220,15 +220,13 @@ defaults { size = 20 }  # マージ: color は保持、size は更新
 
 ## 仕様準拠
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。以下の表は 2026-05-12 時点のスナップショットです — 最新値は [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 | 指標                                  | 状況         |
 | ------------------------------------- | ------------ |
 | 仕様全体（out-of-scope を含む）       | **57.2%**    |
 | In-scope のみ                         | **63.2%**    |
 | Lightbend `equiv01`–`equiv05` テスト  | 5/5 合格     |
-
-ts/rs/go 横断のロールアップ: [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md)。
 
 ## Minimum Supported Rust Version
 
@@ -242,7 +240,7 @@ MSRV は **1.82** です。
 | [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | Go 向け HOCON パーサー |
 | [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties 変換 CLI |
 
-3 実装はすべて同じ Lightbend HOCON 仕様で追跡されています — 実装ごとの準拠率は [横断ロールアップ](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
+3 つのパーサー実装（[ts.hocon](https://github.com/o3co/ts.hocon)、[rs.hocon](https://github.com/o3co/rs.hocon)、[go.hocon](https://github.com/o3co/go.hocon)）はすべて同じ Lightbend HOCON 仕様で追跡されています — 実装ごとの準拠率は [横断ロールアップ](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 ## ベストプラクティス
 
