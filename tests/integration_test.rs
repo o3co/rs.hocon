@@ -536,7 +536,11 @@ fn s5_2_single_trailing_comma_in_array_allowed() {
     let cfg = parse("list = [1, 2, 3,]").unwrap();
     // Exactly 3 elements; trailing comma must not produce a 4th.
     let items = cfg.get_list("list").unwrap();
-    assert_eq!(items.len(), 3, "trailing comma must not produce an extra element");
+    assert_eq!(
+        items.len(),
+        3,
+        "trailing comma must not produce an extra element"
+    );
 }
 
 #[test]
@@ -631,4 +635,3 @@ fn nested_include_resolves_substitutions_in_scope() {
     assert_eq!(config.get_i64("bar.nested.a.c").unwrap(), 3);
     assert_eq!(config.get_i64("bar.nested.a.q").unwrap(), 10);
 }
-

@@ -1133,7 +1133,10 @@ mod tests {
         // "123abc" is not a valid number; the parser falls back to treating it
         // as a string scalar. This is the current wrong behavior.
         let result = crate::parse("x = 123abc");
-        assert!(result.is_ok(), "impl currently accepts digit-leading unquoted");
+        assert!(
+            result.is_ok(),
+            "impl currently accepts digit-leading unquoted"
+        );
     }
 
     // Spec-correct test: digit-starting unquoted string must be rejected.
@@ -1151,7 +1154,10 @@ mod tests {
     fn s8_6_hyphen_leading_non_number_accepted_as_string_pin() {
         // "-foo" is not a valid number; the parser falls back to a string.
         let result = crate::parse("x = -foo");
-        assert!(result.is_ok(), "impl currently accepts hyphen-leading unquoted");
+        assert!(
+            result.is_ok(),
+            "impl currently accepts hyphen-leading unquoted"
+        );
     }
 
     // Spec-correct test: hyphen-starting non-number must be rejected.
