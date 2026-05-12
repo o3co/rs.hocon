@@ -2,10 +2,10 @@
 
 This file extends the canonical checklist at
 [`xx.hocon/docs/spec-checklist.md`](../../xx.hocon/docs/spec-checklist.md)
-with rs.hocon-specific status for all 208 items, in the same order and with the
+with rs.hocon-specific status for all 209 items, in the same order and with the
 same item descriptions verbatim.
 
-- **`tests:`** is a placeholder (`—`) until the test-path mapping phase.
+- **`tests:`** records the test path (or fixture) that exercises each item, or `—` if no test covers it.
 - **`status:`** glyphs and compliance-rate formula follow the legend and
   convention defined in the template. Summary: `✅` pass, `⚠️` partial,
   `❌` fail/known violation, `🤷` unverified, `➖` out of scope.
@@ -161,8 +161,8 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S8.6** Unquoted string cannot begin with `0-9` or `-` — §Unquoted strings (L270)
-  tests: tests/lightbend_test.rs:334 (lightbend_test11_numeric_string_keys)
-  status: ✅
+  tests: —
+  status: 🤷
 - **S8.7** No escape sequences in unquoted strings — §Unquoted strings (L253)
   tests: —
   status: 🤷
@@ -420,19 +420,19 @@ same item descriptions verbatim.
 
 - **S13c.1** `${X[]}` looks up `X_0`, `X_1`, ... env vars — §List values from env (L900)
   tests: —
-  status: 🤷
+  status: ❌ — not implemented; src/lexer.rs:429 (`is_unquoted_subst_char`) rejects `[` / `]` inside `${...}` body, so `${X[]}` is unparseable
 - **S13c.2** Stops at first missing index — §List values from env (L905)
   tests: —
-  status: 🤷
+  status: ❌ — not implemented (see S13c.1)
 - **S13c.3** `${X[]}` no elements → required error — §List values from env (L910)
   tests: —
-  status: 🤷
+  status: ❌ — not implemented (see S13c.1)
 - **S13c.4** `${?X[]}` no elements → undefined / removed — §List values from env (L912)
   tests: —
-  status: 🤷
+  status: ❌ — not implemented (see S13c.1)
 - **S13c.5** `[]` suffix supported only for env vars (not config / sys props) — §List values from env (L902)
   tests: —
-  status: 🤷
+  status: ❌ — not implemented (see S13c.1); the constraint is moot when the `[]` suffix itself is rejected by the lexer
 
 ## S14. Includes
 
@@ -496,7 +496,7 @@ same item descriptions verbatim.
   status: ✅
 - **S14c.2** Original (non-relativized) path also tried as fallback — §Include semantics: substitution (L1048)
   tests: tests/lightbend_test.rs:221 (lightbend_test03_includes_with_substitution_fallback)
-  status: ❌ ([#44](https://github.com/o3co/rs.hocon/issues/44))
+  status: ❌ ([#44](https://github.com/o3co/rs.hocon/issues/44)) — non-relativized fallback is not implemented; the cited test is written to accept either success or a substitution error, so passing the test does not prove correctness
 
 ### S14d. Include semantics: missing / required
 
@@ -664,11 +664,11 @@ same item descriptions verbatim.
 ## S20. Period format
 
 - **S20.1** `d` / `day` / `days` — §Period Format (L1327)
-  tests: tests/integration_test.rs:211 (test_duration_missing_units)
-  status: ✅
+  tests: —
+  status: 🤷
 - **S20.2** `w` / `week` / `weeks` — §Period Format (L1328)
-  tests: tests/integration_test.rs:211 (test_duration_missing_units)
-  status: ✅
+  tests: —
+  status: 🤷
 - **S20.3** `m` / `mo` / `month` / `months` — §Period Format (L1329)
   tests: —
   status: 🤷
