@@ -993,6 +993,18 @@ fn s13_3_space_before_question_differs_from_optional() {
         spaced.is_err(),
         "space-before-? form must not silently act as optional substitution; expected parse or resolve error"
     );
+
+    // Probe with foo defined: if rs.hocon were ever to silently treat ${ ?foo}
+    // as required ${foo}, the previous case could pass for the wrong reason
+    // (undefined required substitution). With foo defined the only spec-correct
+    // outcomes are still parse / resolve error.
+    let mut env = std::collections::HashMap::new();
+    env.insert("foo".to_string(), "x".to_string());
+    let spaced_defined = hocon::parse_with_env(r#"x = ${ ?foo}"#, &env);
+    assert!(
+        spaced_defined.is_err(),
+        "space-before-? form must still error when the path is defined; got Ok value"
+    );
 }
 
 // --- S13.5: substitutions not parsed inside quoted strings (spec L593) ----------
@@ -1012,15 +1024,26 @@ fn s13_5_no_subst_in_quoted_string() {
 // BUG: rs.hocon currently falls through to the env var.
 #[test]
 fn s13_9_null_blocks_env_var_lookup_pin() {
-    // [pin] Current (broken) behaviour: null in config does NOT block env fallback.
+    // [pin] Current behaviour: rs.hocon does NOT leak the env value, but it
+    // also does NOT treat null-as-missing (which would erase the field per
+    // L618). Instead it resolves ${?HOME} to the explicit null scalar, so
+    // `result` ends up present with value null. The spec wants the field
+    // absent. Pinning the exact Some(Scalar(null)) shape catches both
+    // (a) regression to env leak ("/x/y") and
+    // (b) accidental progress to None (which the spec test would then catch).
     let mut env = std::collections::HashMap::new();
     env.insert("HOME".to_string(), "/x/y".to_string());
     let cfg = hocon::parse_with_env("HOME = null\nresult = ${?HOME}", &env)
         .expect("parse should succeed");
-    assert!(
-        cfg.get("result").is_some(),
-        "[pin] result is currently present (env fallback not blocked) — update when fixed"
-    );
+    let v = cfg.get("result").expect("[pin] result must be present");
+    match v {
+        hocon::HoconValue::Scalar(s) => assert_eq!(
+            s.value_type,
+            hocon::ScalarType::Null,
+            "[pin] result must be the explicit null scalar — env value must not leak"
+        ),
+        other => panic!("[pin] result must be a null scalar, got {:?}", other),
+    }
 }
 
 #[test]
@@ -1054,11 +1077,24 @@ fn s13_13_optional_undefined_in_string_concat_is_empty() {
 fn s13_14_optional_undefined_in_array_concat_pin() {
     let cfg = parse("x = [1] ${?missing} [2]").expect("parse failed");
     let items = cfg.get_list("x").unwrap();
+    // [pin] snapshot current (broken) shape: numeric 1, two whitespace scalar
+    // artefacts, numeric 2. Asserting values (not just length) catches partial
+    // fixes that change the count without removing the artefacts.
     assert_eq!(
         items.len(),
         4,
-        "[pin] array concat currently produces 4 elements (whitespace artefacts) — update when fixed"
+        "[pin] array concat must currently produce 4 elements"
     );
+    assert!(matches!(&items[0], hocon::HoconValue::Scalar(s) if s.raw == "1"));
+    assert!(
+        matches!(&items[1], hocon::HoconValue::Scalar(s) if s.value_type == hocon::ScalarType::String),
+        "[pin] items[1] must be a whitespace scalar artefact"
+    );
+    assert!(
+        matches!(&items[2], hocon::HoconValue::Scalar(s) if s.value_type == hocon::ScalarType::String),
+        "[pin] items[2] must be a whitespace scalar artefact"
+    );
+    assert!(matches!(&items[3], hocon::HoconValue::Scalar(s) if s.raw == "2"));
 }
 
 #[test]
@@ -1069,7 +1105,24 @@ fn s13_14_optional_undefined_in_array_concat_spec() {
     assert_eq!(
         items.len(),
         2,
-        "optional undefined substitution in array concat must be treated as empty array"
+        "array concat must collapse to exactly two elements"
+    );
+    // Beyond length, both elements must be the original numeric values — a
+    // malformed two-element result (e.g. surviving whitespace artefacts) would
+    // also fail.
+    let val = |v: &hocon::HoconValue| match v {
+        hocon::HoconValue::Scalar(s) => Some((s.raw.clone(), s.value_type)),
+        _ => None,
+    };
+    assert_eq!(
+        val(&items[0]),
+        Some(("1".to_string(), hocon::ScalarType::Number)),
+        "items[0] must be numeric 1"
+    );
+    assert_eq!(
+        val(&items[1]),
+        Some(("2".to_string(), hocon::ScalarType::Number)),
+        "items[1] must be numeric 2"
     );
 }
 
