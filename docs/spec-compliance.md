@@ -1,7 +1,7 @@
 # HOCON Spec Compliance — rs.hocon
 
 This file extends the canonical checklist at
-[`xx.hocon/docs/spec-checklist.md`](../../xx.hocon/docs/spec-checklist.md)
+[`xx.hocon/docs/spec-checklist.md`](https://github.com/o3co/xx.hocon/blob/main/docs/spec-checklist.md)
 with rs.hocon-specific status for all 209 items, in the same order and with the
 same item descriptions verbatim.
 
@@ -12,7 +12,7 @@ same item descriptions verbatim.
 - Compliance rate: `(✅ + ⚠️·0.5) / total` (spec-total) and
   `(✅ + ⚠️·0.5) / (total − ➖)` (in-scope). See template for full formula.
 - Section headings match the template (S1–S26 with sub-sections).
-- Cross-implementation roll-up: `xx.hocon/docs/compliance-matrix.md`.
+- Cross-implementation roll-up: [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md).
 
 ---
 
