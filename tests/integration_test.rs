@@ -635,3 +635,345 @@ fn nested_include_resolves_substitutions_in_scope() {
     assert_eq!(config.get_i64("bar.nested.a.c").unwrap(), 3);
     assert_eq!(config.get_i64("bar.nested.a.q").unwrap(), 10);
 }
+
+// =============================================================================
+// Spec compliance Phase 2 — concatenation, paths, +=
+// Convention: for ✅ items a single #[test] documents current (correct) behavior.
+// For ❌ items a _pin test (no #[ignore]) captures the current broken behavior as
+// a regression guard, and a companion _spec test with
+// #[ignore = "spec violation, see #NN"] asserts the spec-correct expectation.
+// =============================================================================
+
+// --- S3.2: root non-object/non-array is invalid (HOCON L131) -----------------
+// Spec: a HOCON file that contains only a bare string (neither an object nor an
+// array) must be rejected.  rs.hocon already returns Err for this case. ✅
+#[test]
+fn s3_2_root_bare_string_rejected() {
+    assert!(
+        parse("\"just a string\"").is_err(),
+        "bare string at root (no enclosing object or array) must be a parse error per HOCON L131"
+    );
+    assert!(
+        parse("42").is_err(),
+        "bare number at root must be a parse error per HOCON L131"
+    );
+}
+
+// --- S10.4: mixing arrays + objects in concat → error (HOCON L385) -----------
+#[test]
+fn s10_4_array_object_concat_pin() {
+    // BUG: current parser silently accepts [1,2] {b:3} without error.
+    assert!(
+        parse("a = [1,2] {b:3}").is_ok(),
+        "[pin] array+object concat currently produces no error — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: array+object concat must be rejected per HOCON L385, see #65"]
+fn s10_4_array_object_concat_spec() {
+    assert!(
+        parse("a = [1,2] {b:3}").is_err(),
+        "mixing array and object in concat must be a parse/resolve error per HOCON L385"
+    );
+    assert!(
+        parse("a = {b:3} [1,2]").is_err(),
+        "mixing object and array in concat must be a parse/resolve error per HOCON L385"
+    );
+}
+
+// --- S10.7: concatenation does not span a newline (HOCON L335) ---------------
+// Spec: string-value concatenation must stop at a newline.
+// rs.hocon already implements this correctly. ✅
+#[test]
+fn s10_7_concat_does_not_span_newline() {
+    // Same-line concat works
+    let cfg = parse("a = foo bar").unwrap();
+    assert_eq!(
+        cfg.get_string("a").unwrap(),
+        "foo bar",
+        "same-line unquoted string concat must produce 'foo bar'"
+    );
+    // After a newline the second token starts a new field, not a continuation
+    let cfg2 = parse("a = foo\nb = 1").unwrap();
+    assert_eq!(
+        cfg2.get_string("a").unwrap(),
+        "foo",
+        "value concat must not span a newline per HOCON L335"
+    );
+}
+
+// --- S10.8: string concat allowed in field keys (HOCON L317) -----------------
+// Spec L553-560: path expressions work like value concatenations, so
+// `a b c : 42` is a single-element path with key "a b c". ✅ for quoted keys;
+// unquoted space-separated keys are ❌.
+#[test]
+fn s10_8_quoted_key_with_space_allowed() {
+    // A quoted string with spaces as a key is unambiguous and must be accepted.
+    let cfg = parse("\"foo bar\" = 42").unwrap();
+    assert_eq!(
+        cfg.get_i64("foo bar").unwrap(),
+        42,
+        "quoted key containing a space must be accepted per HOCON L317"
+    );
+}
+
+#[test]
+fn s10_8_unquoted_space_key_pin() {
+    // BUG: `a b c : 42` (spec example L556) should set key "a b c".
+    // Currently rs.hocon rejects this as a parse error.
+    assert!(
+        parse("foo bar = 42").is_err(),
+        "[pin] unquoted space-concat key currently rejected — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: unquoted space-concat key `a b c` must be accepted per HOCON L317/L556, see #66"]
+fn s10_8_unquoted_space_key_spec() {
+    // Spec example (L556): `a b c : 42` is equivalent to `"a b c" : 42`
+    let cfg = parse("foo bar = 42").unwrap();
+    assert_eq!(
+        cfg.get_i64("foo bar").unwrap(),
+        42,
+        "unquoted space-concat key must produce key 'foo bar' per HOCON L556"
+    );
+}
+
+// --- S10.13: array/object in string concat → error (HOCON L373) --------------
+#[test]
+fn s10_13_object_in_string_concat_pin() {
+    // BUG: `hello {b:1}` is a string adjacent to an object — must be rejected.
+    assert!(
+        parse("a = hello {b:1}").is_ok(),
+        "[pin] object in string concat currently not rejected — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: object in string concat must be rejected per HOCON L373, see #67"]
+fn s10_13_object_in_string_concat_spec() {
+    assert!(
+        parse("a = hello {b:1}").is_err(),
+        "object appearing in string concat must be rejected per HOCON L373"
+    );
+}
+
+#[test]
+fn s10_13_array_in_string_concat_pin() {
+    // BUG: `hello [1,2]` is a string adjacent to an array — must be rejected.
+    assert!(
+        parse("a = hello [1,2]").is_ok(),
+        "[pin] array in string concat currently not rejected — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: array in string concat must be rejected per HOCON L373, see #67"]
+fn s10_13_array_in_string_concat_spec() {
+    assert!(
+        parse("a = hello [1,2]").is_err(),
+        "array appearing in string concat must be rejected per HOCON L373"
+    );
+}
+
+// --- S10.14: whitespace around obj/array substitutions is ignored (HOCON L440) --
+// Spec: when a substitution resolves to an object or array, surrounding
+// non-newline whitespace is stripped and the object/array is the result.
+// rs.hocon already handles this correctly. ✅
+#[test]
+fn s10_14_whitespace_around_obj_subst_ignored() {
+    // Whitespace before/after a substitution that resolves to an object is stripped;
+    // the result is the object itself, not a string.
+    let cfg = parse("b = {x:1}\na =   ${b}  ").unwrap();
+    assert_eq!(
+        cfg.get_i64("a.x").unwrap(),
+        1,
+        "whitespace around obj substitution must be ignored per HOCON L440"
+    );
+}
+
+#[test]
+fn s10_14_whitespace_around_arr_subst_ignored() {
+    let cfg = parse("b = [1,2,3]\na =   ${b}  ").unwrap();
+    assert_eq!(
+        cfg.get_list("a").unwrap().len(),
+        3,
+        "whitespace around array substitution must be ignored per HOCON L440"
+    );
+}
+
+// --- S10.19: subst-resolved obj + literal array → error (HOCON L385-389) ----
+#[test]
+fn s10_19_subst_obj_concat_literal_array_pin() {
+    // BUG: ${b} resolves to object; concatenating with [1,2] must be rejected.
+    assert!(
+        parse("b = {x:1}\na = ${b} [1,2]").is_ok(),
+        "[pin] subst-obj + literal array currently accepted — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: subst-resolved object concatenated with literal array must error per HOCON L385-389, see #68"]
+fn s10_19_subst_obj_concat_literal_array_spec() {
+    assert!(
+        parse("b = {x:1}\na = ${b} [1,2]").is_err(),
+        "subst resolving to object + literal array must be a resolve-time error per HOCON L385-389"
+    );
+}
+
+#[test]
+fn s10_19_subst_arr_concat_literal_obj_pin() {
+    // BUG: ${b} resolves to array; concatenating with {x:1} must be rejected.
+    assert!(
+        parse("b = [1,2]\na = ${b} {x:1}").is_ok(),
+        "[pin] subst-array + literal object currently accepted — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: subst-resolved array concatenated with literal object must error per HOCON L385-389, see #68"]
+fn s10_19_subst_arr_concat_literal_obj_spec() {
+    assert!(
+        parse("b = [1,2]\na = ${b} {x:1}").is_err(),
+        "subst resolving to array + literal object must be a resolve-time error per HOCON L385-389"
+    );
+}
+
+// --- S11.4: `10.0foo` → path [10, 0foo] (HOCON L496) -----------------------
+// Spec L496: `10.0foo` is a number then unquoted string `foo`, producing a
+// two-element path with segments `10` and `0foo`.
+#[test]
+fn s11_4_numeric_dot_unquoted_path_pin() {
+    // BUG: `10.0foo` is currently stored as a single flat key "10.0foo".
+    // Spec requires it to be parsed as path [10, 0foo].
+    let cfg = parse("10.0foo = 42").unwrap();
+    // Current broken behavior: reachable as "10.0foo" flat key
+    assert!(
+        cfg.get_i64("10.0foo").is_ok(),
+        "[pin] 10.0foo currently stored as flat key — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: 10.0foo must parse as two-element path [10, 0foo] per HOCON L496, see #69"]
+fn s11_4_numeric_dot_unquoted_path_spec() {
+    // `10.0foo = 42` must create nested structure: key "10" → object → key "0foo" → 42
+    // The flat key "10.0foo" must NOT exist; the value is only reachable via the two segments.
+    let cfg = parse("10.0foo = 42").unwrap();
+    assert!(
+        cfg.get_i64("10.0foo").is_err(),
+        "10.0foo must NOT be accessible as a flat single-segment key per HOCON L496"
+    );
+}
+
+// --- S11.5: `foo10.0` → path [foo10, 0] (HOCON L498) -----------------------
+// Spec L498: `foo10.0` is an unquoted string with a dot, producing path [foo10, 0].
+#[test]
+fn s11_5_unquoted_dot_numeric_path_pin() {
+    // BUG: `foo10.0` is currently stored as a single flat key "foo10.0".
+    let cfg = parse("foo10.0 = 42").unwrap();
+    assert!(
+        cfg.get_i64("foo10.0").is_ok(),
+        "[pin] foo10.0 currently stored as flat key — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: foo10.0 must parse as two-element path [foo10, 0] per HOCON L498, see #70"]
+fn s11_5_unquoted_dot_numeric_path_spec() {
+    // `foo10.0 = 42` must create: key "foo10" → object → key "0" → 42
+    // The flat key "foo10.0" must NOT exist.
+    let cfg = parse("foo10.0 = 42").unwrap();
+    assert!(
+        cfg.get_i64("foo10.0").is_err(),
+        "foo10.0 must NOT be accessible as a flat single-segment key per HOCON L498"
+    );
+}
+
+// --- S11.8: path expression always stringifies (HOCON L504) -----------------
+// Spec: even a single boolean/number value in a path expression is stringified.
+// `true : 42` becomes key "true" → 42. rs.hocon handles this correctly. ✅
+#[test]
+fn s11_8_path_expression_stringifies_boolean() {
+    let cfg = parse("true = 42").unwrap();
+    assert_eq!(
+        cfg.get_i64("true").unwrap(),
+        42,
+        "boolean `true` used as a path key must be stringified to \"true\" per HOCON L504"
+    );
+}
+
+#[test]
+fn s11_8_path_expression_stringifies_number() {
+    // `3 : 42` is key "3" → 42 (not a numeric index)
+    let cfg = parse("3 = 42").unwrap();
+    assert_eq!(
+        cfg.get_i64("3").unwrap(),
+        42,
+        "number `3` used as a path key must be stringified to \"3\" per HOCON L504"
+    );
+}
+
+// --- S11.9: substitutions not allowed inside path expressions (HOCON L479) --
+// Spec: substitutions cannot appear in path expressions (keys).
+// rs.hocon already rejects this. ✅
+#[test]
+fn s11_9_subst_in_key_rejected() {
+    assert!(
+        parse("${a} = 42").is_err(),
+        "substitution at start of key path must be rejected per HOCON L479"
+    );
+    assert!(
+        parse("a.${b} = 42").is_err(),
+        "substitution inside dotted key path must be rejected per HOCON L479"
+    );
+}
+
+// --- S12.5: `include` may NOT begin a key path (HOCON L570) -----------------
+#[test]
+fn s12_5_include_as_key_pin() {
+    // BUG: `include.foo = 42` is currently accepted; spec forbids `include` as the
+    // first element of a path expression in a key position.
+    assert!(
+        parse("include.foo = 42").is_ok(),
+        "[pin] include.foo currently accepted as a key — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: unquoted `include` must not begin a key path per HOCON L570, see #71"]
+fn s12_5_include_as_key_spec() {
+    assert!(
+        parse("include.foo = 42").is_err(),
+        "unquoted `include` at start of a key path must be a parse error per HOCON L570"
+    );
+}
+
+// --- S13b.2: `+=` on non-array prior value → error (HOCON L732) -------------
+#[test]
+fn s13b_2_plus_eq_on_non_array_pin() {
+    // BUG: `a = 42 \n a += 1` should error because prior value is a number not an array.
+    // Currently rs.hocon silently produces Array([42, 1]).
+    assert!(
+        parse("a = 42\na += 1").is_ok(),
+        "[pin] += on non-array currently accepted — update when fixed"
+    );
+    assert!(
+        parse("a = \"str\"\na += 1").is_ok(),
+        "[pin] += on string currently accepted — update when fixed"
+    );
+}
+
+#[test]
+#[ignore = "spec violation: += on non-array prior value must error per HOCON L732, see #72"]
+fn s13b_2_plus_eq_on_non_array_spec() {
+    assert!(
+        parse("a = 42\na += 1").is_err(),
+        "+= on numeric prior value must be a resolve-time error per HOCON L732"
+    );
+    assert!(
+        parse("a = \"str\"\na += 1").is_err(),
+        "+= on string prior value must be a resolve-time error per HOCON L732"
+    );
+}
