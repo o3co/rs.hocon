@@ -572,9 +572,9 @@ same item descriptions verbatim.
   status: ❌
   note: No lazy conversion is performed. `get_list()` on a numeric-keyed object errors regardless of whether object access was first attempted. Tracked in #79.
 - **S15.3** Conversion in concatenation when list expected — §Conversion (L1210)
-  tests: tests/integration_test.rs:1307 (s15_3_conversion_in_concatenation_pin); tests/integration_test.rs:1324 (s15_3_conversion_in_concatenation_spec)
+  tests: tests/integration_test.rs:1310 (s15_3_conversion_in_concatenation_pin); tests/integration_test.rs:1335 (s15_3_conversion_in_concatenation_spec)
   status: ❌
-  note: `get_list()` on a substitution-resolved numeric-keyed object (used where array expected) errors. No concatenation conversion. Tracked in #79.
+  note: real concatenation context `arr = [a] ${obj}` (with `obj = {"0":"x","1":"y"}`) produces a 3-element array whose last element is the un-converted Object — spec L1210 requires conversion + flatten to `["a","x","y"]`. Pin asserts the un-converted last element. Tracked in #79.
 - **S15.4** Empty object NOT converted — §Conversion (L1212)
   tests: tests/integration_test.rs:1344 (s15_4_empty_object_not_converted)
   status: ✅

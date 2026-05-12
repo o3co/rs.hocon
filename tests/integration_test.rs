@@ -1302,20 +1302,30 @@ fn s15_2_conversion_is_lazy_spec() {
 
 // --- S15.3: conversion in concatenation when list expected (spec L1210) -----------
 //
-// [pin] No conversion occurs in concatenation context.
+// Spec: when a numerically-indexed object participates in concatenation where a
+// list is expected (e.g. adjacent to a literal array), it must convert to its
+// array form and flatten in. Probe shows rs.hocon currently puts the object
+// into the resulting array as-is (no conversion), plus a whitespace artefact —
+// pin asserts the buggy element layout so a future fix flips the assertion.
 #[test]
 fn s15_3_conversion_in_concatenation_pin() {
-    // obj = {"0":"x","1":"y"}, arr = [a] ++ obj should convert obj to array and append.
+    // Real concatenation context: literal array adjacent to a substitution-resolved
+    // numeric-keyed object. Spec L1210 says obj must convert to ["x","y"], producing
+    // ["a","x","y"]. Probe (2026-05-12) shows we get 3 elements but the last is the
+    // un-converted Object, not the flattened strings.
     let cfg = hocon::parse_with_env(
         r#"obj = {"0":"x","1":"y"}
-arr = ${obj}"#,
+arr = [a] ${obj}"#,
         &HashMap::new(),
     )
     .unwrap();
-    // [pin] Buggy: get_list on the substitution-resolved value fails (no conversion).
+    let items = cfg.get_list("arr").expect("concat produces an array (list literal present)");
+    // [pin] Buggy: last element is the un-converted object, not flattened strings.
+    let last = items.last().expect("non-empty array");
     assert!(
-        cfg.get_list("arr").is_err(),
-        "[pin] get_list on substitution of numeric-keyed object currently errors — update when fixed"
+        matches!(last, hocon::HoconValue::Object(_)),
+        "[pin] last element must currently be the un-converted Object, got {:?}",
+        last
     );
 }
 
@@ -1324,14 +1334,26 @@ arr = ${obj}"#,
 fn s15_3_conversion_in_concatenation_spec() {
     let cfg = hocon::parse_with_env(
         r#"obj = {"0":"x","1":"y"}
-arr = ${obj}"#,
+arr = [a] ${obj}"#,
         &HashMap::new(),
     )
     .unwrap();
-    assert!(
-        cfg.get_list("arr").is_ok(),
-        "numeric-indexed object must convert to array when array context expected per HOCON L1210"
+    let items = cfg.get_list("arr").expect("concat produces an array");
+    // Spec L1210: obj converts to ["x","y"] and flattens → ["a","x","y"] (3 elements).
+    assert_eq!(
+        items.len(),
+        3,
+        "expected ['a','x','y'] after conversion, got {:?}",
+        items
     );
+    let raws: Vec<&str> = items
+        .iter()
+        .map(|v| match v {
+            hocon::HoconValue::Scalar(s) => s.raw.as_str(),
+            _ => panic!("expected scalar after conversion, got {:?}", v),
+        })
+        .collect();
+    assert_eq!(raws, vec!["a", "x", "y"]);
 }
 
 // --- S15.4: empty object NOT converted (spec L1212) --------------------------------
