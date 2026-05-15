@@ -107,17 +107,17 @@ same item descriptions verbatim.
 ## S6. Whitespace
 
 - **S6.1** Unicode Zs/Zl/Zp category characters are whitespace — §Whitespace (L170)
-  tests: src/lexer.rs:931 (s6_1_em_space_separates_tokens_spec [#ignore]); src/lexer.rs:957 (s6_1_line_separator_separates_tokens_spec [#ignore]); pin tests at src/lexer.rs:915 and src/lexer.rs:944
-  status: ❌ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — lexer only recognises ASCII space/tab/CR; Unicode Zs/Zl/Zp chars leak into unquoted runs
+  tests: src/lexer.rs (s6_1_em_space_separates_tokens_spec); src/lexer.rs (s6_1_line_separator_separates_tokens_spec)
+  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — is_hocon_whitespace covers all Zs/Zl/Zp members
 - **S6.2** Non-breaking spaces (0x00A0, 0x2007, 0x202F) are whitespace — §Whitespace (L171)
-  tests: src/lexer.rs:987 (s6_2_nbsp_separates_tokens_spec [#ignore]); src/lexer.rs:1001 (s6_2_figure_space_separates_tokens_spec [#ignore]); src/lexer.rs:1015 (s6_2_narrow_nbsp_separates_tokens_spec [#ignore]); pin test at src/lexer.rs:974
-  status: ❌ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP / figure space / narrow NBSP are not recognised as whitespace
+  tests: src/lexer.rs (s6_2_nbsp_separates_tokens_spec); src/lexer.rs (s6_2_figure_space_separates_tokens_spec); src/lexer.rs (s6_2_narrow_nbsp_separates_tokens_spec)
+  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP variants included in is_hocon_whitespace
 - **S6.3** BOM (0xFEFF) treated as whitespace — §Whitespace (L173)
-  tests: src/lexer.rs:846 (strips_utf8_bom); tests/testdata/hocon/bom.conf (fixture)
-  status: ✅
+  tests: src/lexer.rs (strips_utf8_bom); src/lexer.rs (s6_3_bom_midstream_is_whitespace); tests/testdata/hocon/bom.conf (fixture)
+  status: ✅ (broadened in fix/s6-whitespace-expansion) — BOM now treated as whitespace anywhere, not just at start of input
 - **S6.4** ASCII control whitespace (tab, vtab, FF, CR, FS, GS, RS, US) — §Whitespace (L174)
-  tests: src/lexer.rs:1033 (s6_4_tab_is_whitespace); src/lexer.rs:1046 (s6_4_cr_is_whitespace); src/lexer.rs:1075 (s6_4_vtab_is_whitespace_spec [#ignore]); src/lexer.rs:1089 (s6_4_ff_is_whitespace_spec [#ignore]); src/lexer.rs:1105 (s6_4_fs_gs_rs_us_are_whitespace_spec [#ignore]); pin test at src/lexer.rs:1061
-  status: ⚠️ ([#62](https://github.com/o3co/rs.hocon/issues/62)) — 2 of 8 sub-rules pass: tab (0x09) ✅ and CR (0x0D) ✅; vtab (0x0B), FF (0x0C), FS–US (0x1C–0x1F) are not recognised as whitespace
+  tests: src/lexer.rs (s6_4_tab_is_whitespace); src/lexer.rs (s6_4_cr_is_whitespace); src/lexer.rs (s6_4_vtab_is_whitespace_spec); src/lexer.rs (s6_4_ff_is_whitespace_spec); src/lexer.rs (s6_4_fs_gs_rs_us_are_whitespace_spec)
+  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — all 8 ASCII control whitespace chars covered by is_hocon_whitespace
 - **S6.5** "newline" means specifically 0x000A (LF) — §Whitespace (L183)
   tests: src/lexer.rs:814 (tokenizes_newlines)
   status: ✅
