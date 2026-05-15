@@ -1113,6 +1113,19 @@ mod tests {
         }
     }
 
+    // --- LF regression guard: LF must still emit Newline token ---------------
+    // After predicate centralization, is_hocon_whitespace returns true for LF.
+    // The newline branch must check BEFORE the whitespace skip so LF still
+    // produces TokenKind::Newline (per spec §D, design invariant).
+    #[test]
+    fn s6_lf_still_emits_newline_token() {
+        let tokens = tokenize("a\nb").unwrap();
+        assert!(
+            tokens.iter().any(|t| matches!(t.kind, TokenKind::Newline)),
+            "LF must still emit a Newline token after whitespace predicate centralization"
+        );
+    }
+
     // --- S6.3 (broadened): BOM mid-stream is whitespace ----------------------
     // Spec L173: BOM (U+FEFF) is whitespace, not a start-of-input marker.
     // Currently the lexer strips BOM only at char index 0 (src/lexer.rs:55).
