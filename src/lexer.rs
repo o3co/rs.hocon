@@ -981,7 +981,6 @@ mod tests {
 
     // Spec-correct test: NBSP (U+00A0) must separate tokens.
     #[test]
-    #[ignore = "spec violation: NBSP (U+00A0) not treated as whitespace, see #62"]
     fn s6_2_nbsp_separates_tokens_spec() {
         let tokens = tokenize("a\u{00A0}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -995,7 +994,6 @@ mod tests {
 
     // Spec-correct test: figure space (U+2007) must separate tokens.
     #[test]
-    #[ignore = "spec violation: figure space (U+2007) not treated as whitespace, see #62"]
     fn s6_2_figure_space_separates_tokens_spec() {
         let tokens = tokenize("a\u{2007}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1009,7 +1007,6 @@ mod tests {
 
     // Spec-correct test: narrow NBSP (U+202F) must separate tokens.
     #[test]
-    #[ignore = "spec violation: narrow NBSP (U+202F) not treated as whitespace, see #62"]
     fn s6_2_narrow_nbsp_separates_tokens_spec() {
         let tokens = tokenize("a\u{202F}b").unwrap();
         let unquoted: Vec<_> = tokens
