@@ -1113,6 +1113,38 @@ mod tests {
         }
     }
 
+    // --- S6.3 (broadened): BOM mid-stream is whitespace ----------------------
+    // Spec L173: BOM (U+FEFF) is whitespace, not a start-of-input marker.
+    // Currently the lexer strips BOM only at char index 0 (src/lexer.rs:55).
+    // A BOM mid-stream leaks into the unquoted run instead of acting as a
+    // token separator.
+    //
+    // Pin test: BOM mid-stream absorbed into unquoted (current wrong behavior).
+    #[test]
+    fn s6_3_bom_midstream_absorbed_into_unquoted_pin() {
+        // BOM (U+FEFF) mid-stream: currently folds into the unquoted token.
+        let tokens = tokenize("a\u{FEFF}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 1);
+        assert!(unquoted[0].value.contains('\u{FEFF}'));
+    }
+
+    // Spec-correct test: BOM mid-stream must separate two unquoted tokens.
+    #[test]
+    fn s6_3_bom_midstream_is_whitespace() {
+        let tokens = tokenize("a\u{FEFF}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(unquoted.len(), 2, "BOM mid-stream should separate two tokens");
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
+    }
+
     // --- S8.6: unquoted string cannot begin with 0-9 or - -------------------
     // Spec L270: unquoted strings must not start with a digit (0–9) or hyphen (-).
     // rs.hocon's is_unquoted_start() does not exclude these characters, so
