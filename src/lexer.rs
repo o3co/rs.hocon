@@ -43,6 +43,45 @@ pub struct Token {
     pub subst: Option<SubstPayload>,
 }
 
+/// Returns true for every character in the HOCON whitespace set.
+///
+/// The set is defined by Lightbend HOCON.md §Whitespace (L165-184) as:
+///   Java Character.isWhitespace set
+///   ∪ { U+00A0, U+2007, U+202F }  (NBSP variants Java excludes)
+///   ∪ { U+FEFF }                  (BOM)
+///
+/// Expanded:
+///   ASCII:  0x09 (TAB), 0x0A (LF), 0x0B (VTAB), 0x0C (FF), 0x0D (CR),
+///           0x1C (FS), 0x1D (GS), 0x1E (RS), 0x1F (US)
+///   Zs:     0x20, 0x00A0, 0x1680, 0x2000-0x200A, 0x202F, 0x205F, 0x3000
+///   Zl:     0x2028
+///   Zp:     0x2029
+///   BOM:    0xFEFF
+///
+/// NOTE: U+000A (LF) is included here because it is in the Java
+/// Character.isWhitespace set.  Callers that need to distinguish newline from
+/// inter-token whitespace must call is_hocon_newline first.
+fn is_hocon_whitespace(ch: char) -> bool {
+    matches!(ch,
+        '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r'
+      | '\u{001C}'..='\u{001F}'
+      | ' ' | '\u{00A0}' | '\u{FEFF}'
+      | '\u{1680}'
+      | '\u{2000}'..='\u{200A}'
+      | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}'
+      | '\u{3000}'
+    )
+}
+
+/// Returns true if `ch` is the HOCON newline character (ASCII LF, U+000A only).
+///
+/// Per HOCON.md L182-184: "newline refers only and specifically to ASCII
+/// newline 0x000A".  Unicode line/paragraph separators (U+2028, U+2029) are
+/// whitespace but NOT newlines.
+fn is_hocon_newline(ch: char) -> bool {
+    ch == '\n'
+}
+
 pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
     let chars: Vec<char> = input.chars().collect();
     let mut tokens = Vec::new();
@@ -64,16 +103,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         let sc = col;
         let ch = chars[pos];
 
-        // Whitespace (not newline)
-        if ch == ' ' || ch == '\t' || ch == '\r' {
-            pos += 1;
-            col += 1;
-            had_space = true;
-            continue;
-        }
-
-        // Newline
-        if ch == '\n' {
+        // Newline (must be checked before general whitespace because
+        // is_hocon_whitespace also returns true for LF — see spec §D).
+        if is_hocon_newline(ch) {
             pos += 1;
             line += 1;
             col = 1;
@@ -92,6 +124,14 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 });
                 had_space = false;
             }
+            continue;
+        }
+
+        // Whitespace (not newline) — full HOCON_WS set per spec L165-184.
+        if is_hocon_whitespace(ch) {
+            pos += 1;
+            col += 1;
+            had_space = true;
             continue;
         }
 
@@ -424,16 +464,16 @@ fn read_quoted_body(
 }
 
 /// Returns true if `ch` is a valid unquoted character inside a `${...}` body.
-/// Forbidden: whitespace (space/tab), `"`, `\`, `{`, `}`, `[`, `]`, `:`, `=`, `,`,
-///            `+`, `#`, `` ` ``, `^`, `?`, `!`, `@`, `*`, `&`, `$`, `.`, newline, CR.
+/// Forbidden: any HOCON whitespace (full set per is_hocon_whitespace), `"`, `\`,
+///            `{`, `}`, `[`, `]`, `:`, `=`, `,`, `+`, `#`, `` ` ``, `^`, `?`,
+///            `!`, `@`, `*`, `&`, `$`, `.`.
 fn is_unquoted_subst_char(ch: char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     !matches!(
         ch,
-        ' ' | '\t'
-            | '\n'
-            | '\r'
-            | '"'
-            | '\\'
+        '"' | '\\'
             | '{'
             | '}'
             | '['
@@ -565,13 +605,15 @@ fn parse_subst_body(
                 *pos += 1;
                 *col += 1;
             }
-            ' ' | '\t' => {
-                // WS: buffer into pending_ws
+            ch if is_hocon_whitespace(ch) && !is_hocon_newline(ch) => {
+                // Inter-token whitespace (full HOCON_WS minus LF): buffer into
+                // pending_ws; column advances but line is unchanged.
                 pending_ws.push(ch);
                 *pos += 1;
                 *col += 1;
             }
-            '\n' | '\r' => {
+            '\n' => {
+                // LF inside ${...} is not allowed (unterminated substitution).
                 return Err(ParseError {
                     message: "unterminated substitution".into(),
                     line: start_line,
@@ -619,6 +661,9 @@ fn parse_subst_body(
 }
 
 fn is_unquoted_start(ch: char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     !matches!(
         ch,
         '{' | '}'
@@ -629,10 +674,6 @@ fn is_unquoted_start(ch: char) -> bool {
             | '='
             | '+'
             | '#'
-            | '\n'
-            | '\r'
-            | '\t'
-            | ' '
             | '"'
             | '$'
             | '?'
@@ -646,6 +687,9 @@ fn is_unquoted_start(ch: char) -> bool {
 }
 
 fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     if matches!(
         ch,
         '{' | '}'
@@ -654,13 +698,9 @@ fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
             | ','
             | ':'
             | '='
-            | '\n'
-            | '\r'
-            | '\t'
             | '#'
             | '"'
             | '$'
-            | ' '
             | '?'
             | '!'
             | '@'
