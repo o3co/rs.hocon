@@ -1066,7 +1066,6 @@ mod tests {
 
     // Spec-correct test: vtab (0x0B) must be whitespace.
     #[test]
-    #[ignore = "spec violation: vtab (0x0B) not treated as whitespace, see #62"]
     fn s6_4_vtab_is_whitespace_spec() {
         let tokens = tokenize("a\x0Bb").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1080,7 +1079,6 @@ mod tests {
 
     // Spec-correct test: form feed (0x0C) must be whitespace.
     #[test]
-    #[ignore = "spec violation: FF (0x0C) not treated as whitespace, see #62"]
     fn s6_4_ff_is_whitespace_spec() {
         let tokens = tokenize("a\x0Cb").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1096,7 +1094,6 @@ mod tests {
     // These are grouped because they share the same root cause (not in the
     // lexer's whitespace check) and the same fix will address all four.
     #[test]
-    #[ignore = "spec violation: FS/GS/RS/US (0x1C-0x1F) not treated as whitespace, see #62"]
     fn s6_4_fs_gs_rs_us_are_whitespace_spec() {
         for (label, ch) in [
             ("FS (0x1C)", '\x1C'),
