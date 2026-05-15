@@ -43,6 +43,45 @@ pub struct Token {
     pub subst: Option<SubstPayload>,
 }
 
+/// Returns true for every character in the HOCON whitespace set.
+///
+/// The set is defined by Lightbend HOCON.md §Whitespace (L165-184) as:
+///   Java Character.isWhitespace set
+///   ∪ { U+00A0, U+2007, U+202F }  (NBSP variants Java excludes)
+///   ∪ { U+FEFF }                  (BOM)
+///
+/// Expanded:
+///   ASCII:  0x09 (TAB), 0x0A (LF), 0x0B (VTAB), 0x0C (FF), 0x0D (CR),
+///           0x1C (FS), 0x1D (GS), 0x1E (RS), 0x1F (US)
+///   Zs:     0x20, 0x00A0, 0x1680, 0x2000-0x200A, 0x202F, 0x205F, 0x3000
+///   Zl:     0x2028
+///   Zp:     0x2029
+///   BOM:    0xFEFF
+///
+/// NOTE: U+000A (LF) is included here because it is in the Java
+/// Character.isWhitespace set.  Callers that need to distinguish newline from
+/// inter-token whitespace must call is_hocon_newline first.
+fn is_hocon_whitespace(ch: char) -> bool {
+    matches!(ch,
+        '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r'
+      | '\u{001C}'..='\u{001F}'
+      | ' ' | '\u{00A0}' | '\u{FEFF}'
+      | '\u{1680}'
+      | '\u{2000}'..='\u{200A}'
+      | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}'
+      | '\u{3000}'
+    )
+}
+
+/// Returns true if `ch` is the HOCON newline character (ASCII LF, U+000A only).
+///
+/// Per HOCON.md L182-184: "newline refers only and specifically to ASCII
+/// newline 0x000A".  Unicode line/paragraph separators (U+2028, U+2029) are
+/// whitespace but NOT newlines.
+fn is_hocon_newline(ch: char) -> bool {
+    ch == '\n'
+}
+
 pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
     let chars: Vec<char> = input.chars().collect();
     let mut tokens = Vec::new();
@@ -64,16 +103,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
         let sc = col;
         let ch = chars[pos];
 
-        // Whitespace (not newline)
-        if ch == ' ' || ch == '\t' || ch == '\r' {
-            pos += 1;
-            col += 1;
-            had_space = true;
-            continue;
-        }
-
-        // Newline
-        if ch == '\n' {
+        // Newline (must be checked before general whitespace because
+        // is_hocon_whitespace also returns true for LF — see spec §D).
+        if is_hocon_newline(ch) {
             pos += 1;
             line += 1;
             col = 1;
@@ -92,6 +124,14 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 });
                 had_space = false;
             }
+            continue;
+        }
+
+        // Whitespace (not newline) — full HOCON_WS set per spec L165-184.
+        if is_hocon_whitespace(ch) {
+            pos += 1;
+            col += 1;
+            had_space = true;
             continue;
         }
 
@@ -424,16 +464,16 @@ fn read_quoted_body(
 }
 
 /// Returns true if `ch` is a valid unquoted character inside a `${...}` body.
-/// Forbidden: whitespace (space/tab), `"`, `\`, `{`, `}`, `[`, `]`, `:`, `=`, `,`,
-///            `+`, `#`, `` ` ``, `^`, `?`, `!`, `@`, `*`, `&`, `$`, `.`, newline, CR.
+/// Forbidden: any HOCON whitespace (full set per is_hocon_whitespace), `"`, `\`,
+///            `{`, `}`, `[`, `]`, `:`, `=`, `,`, `+`, `#`, `` ` ``, `^`, `?`,
+///            `!`, `@`, `*`, `&`, `$`, `.`.
 fn is_unquoted_subst_char(ch: char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     !matches!(
         ch,
-        ' ' | '\t'
-            | '\n'
-            | '\r'
-            | '"'
-            | '\\'
+        '"' | '\\'
             | '{'
             | '}'
             | '['
@@ -565,13 +605,15 @@ fn parse_subst_body(
                 *pos += 1;
                 *col += 1;
             }
-            ' ' | '\t' => {
-                // WS: buffer into pending_ws
+            ch if is_hocon_whitespace(ch) && !is_hocon_newline(ch) => {
+                // Inter-token whitespace (full HOCON_WS minus LF): buffer into
+                // pending_ws; column advances but line is unchanged.
                 pending_ws.push(ch);
                 *pos += 1;
                 *col += 1;
             }
-            '\n' | '\r' => {
+            '\n' => {
+                // LF inside ${...} is not allowed (unterminated substitution).
                 return Err(ParseError {
                     message: "unterminated substitution".into(),
                     line: start_line,
@@ -619,6 +661,9 @@ fn parse_subst_body(
 }
 
 fn is_unquoted_start(ch: char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     !matches!(
         ch,
         '{' | '}'
@@ -629,10 +674,6 @@ fn is_unquoted_start(ch: char) -> bool {
             | '='
             | '+'
             | '#'
-            | '\n'
-            | '\r'
-            | '\t'
-            | ' '
             | '"'
             | '$'
             | '?'
@@ -646,6 +687,9 @@ fn is_unquoted_start(ch: char) -> bool {
 }
 
 fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
+    if is_hocon_whitespace(ch) {
+        return false;
+    }
     if matches!(
         ch,
         '{' | '}'
@@ -654,13 +698,9 @@ fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
             | ','
             | ':'
             | '='
-            | '\n'
-            | '\r'
-            | '\t'
             | '#'
             | '"'
             | '$'
-            | ' '
             | '?'
             | '!'
             | '@'
@@ -907,27 +947,10 @@ mod tests {
     // --- S6.1: Unicode Zs / Zl / Zp category chars are whitespace -----------
     // Spec L170: the lexer must treat any Unicode whitespace category character
     // (Zs, Zl, Zp) as a token separator, not as unquoted string content.
-    // rs.hocon's lexer (L68) only recognises ASCII space, tab, and CR, so these
-    // characters leak into unquoted runs instead.
+    // All Zs/Zl/Zp members are covered by is_hocon_whitespace.
     //
-    // Pin test: current (incorrect) behaviour — em space absorbed into unquoted.
-    #[test]
-    fn s6_1_em_space_absorbed_into_unquoted_pin() {
-        // Em space U+2003 (Zs category). Currently the lexer folds it into the
-        // unquoted token instead of treating it as a separator.
-        let tokens = tokenize("a\u{2003}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        // Current wrong behaviour: one token containing the em space.
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{2003}'));
-    }
-
     // Spec-correct test: em space must separate two unquoted tokens.
     #[test]
-    #[ignore = "spec violation: em space (U+2003, Zs) not treated as whitespace, see #62"]
     fn s6_1_em_space_separates_tokens_spec() {
         let tokens = tokenize("a\u{2003}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -939,21 +962,8 @@ mod tests {
         assert_eq!(unquoted[1].value, "b");
     }
 
-    // Pin test: line separator U+2028 (Zl category) absorbed into unquoted.
-    #[test]
-    fn s6_1_line_separator_absorbed_into_unquoted_pin() {
-        let tokens = tokenize("a\u{2028}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{2028}'));
-    }
-
     // Spec-correct test: line separator (U+2028, Zl) must be whitespace.
     #[test]
-    #[ignore = "spec violation: line separator (U+2028, Zl) not treated as whitespace, see #62"]
     fn s6_1_line_separator_separates_tokens_spec() {
         let tokens = tokenize("a\u{2028}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -967,23 +977,10 @@ mod tests {
 
     // --- S6.2: non-breaking spaces are whitespace ----------------------------
     // Spec L171: U+00A0 (NBSP), U+2007 (figure space), U+202F (narrow NBSP)
-    // must be treated as whitespace. Currently the lexer folds them into unquoted.
-
-    // Pin test: NBSP absorbed into unquoted.
-    #[test]
-    fn s6_2_nbsp_absorbed_into_unquoted_pin() {
-        let tokens = tokenize("a\u{00A0}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{00A0}'));
-    }
+    // must be treated as whitespace. All three are in is_hocon_whitespace.
 
     // Spec-correct test: NBSP (U+00A0) must separate tokens.
     #[test]
-    #[ignore = "spec violation: NBSP (U+00A0) not treated as whitespace, see #62"]
     fn s6_2_nbsp_separates_tokens_spec() {
         let tokens = tokenize("a\u{00A0}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -997,7 +994,6 @@ mod tests {
 
     // Spec-correct test: figure space (U+2007) must separate tokens.
     #[test]
-    #[ignore = "spec violation: figure space (U+2007) not treated as whitespace, see #62"]
     fn s6_2_figure_space_separates_tokens_spec() {
         let tokens = tokenize("a\u{2007}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1011,7 +1007,6 @@ mod tests {
 
     // Spec-correct test: narrow NBSP (U+202F) must separate tokens.
     #[test]
-    #[ignore = "spec violation: narrow NBSP (U+202F) not treated as whitespace, see #62"]
     fn s6_2_narrow_nbsp_separates_tokens_spec() {
         let tokens = tokenize("a\u{202F}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1026,12 +1021,11 @@ mod tests {
     // --- S6.4: ASCII control whitespace --------------------------------------
     // Spec L174 lists 8 chars that are whitespace: tab (0x09), vtab (0x0B),
     // FF (0x0C), CR (0x0D), FS (0x1C), GS (0x1D), RS (0x1E), US (0x1F).
-    // rs.hocon's lexer handles tab and CR (L68) but NOT vtab, FF, or FS–US.
+    // All 8 are now covered by is_hocon_whitespace.
 
-    // Tab and CR — these already pass (covered by existing code path).
     #[test]
     fn s6_4_tab_is_whitespace() {
-        // Tab (0x09): already in the lexer's whitespace check.
+        // Tab (0x09): in the HOCON whitespace set.
         let tokens = tokenize("a\tb").unwrap();
         let unquoted: Vec<_> = tokens
             .iter()
@@ -1044,8 +1038,8 @@ mod tests {
 
     #[test]
     fn s6_4_cr_is_whitespace() {
-        // CR (0x0D): already in the lexer's whitespace check.
-        // CR alone (without LF) acts as inline whitespace, not a newline emitter.
+        // CR (0x0D): in the HOCON whitespace set.
+        // CR alone (without LF) acts as inter-token whitespace, not a newline emitter.
         let tokens = tokenize("a\rb").unwrap();
         let unquoted: Vec<_> = tokens
             .iter()
@@ -1056,22 +1050,8 @@ mod tests {
         assert_eq!(unquoted[1].value, "b");
     }
 
-    // Vtab and FF — pin tests for current (wrong) behavior.
-    #[test]
-    fn s6_4_vtab_absorbed_into_unquoted_pin() {
-        // Vtab (0x0B) is not in the whitespace check; it leaks into unquoted.
-        let tokens = tokenize("a\x0Bb").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\x0B'));
-    }
-
     // Spec-correct test: vtab (0x0B) must be whitespace.
     #[test]
-    #[ignore = "spec violation: vtab (0x0B) not treated as whitespace, see #62"]
     fn s6_4_vtab_is_whitespace_spec() {
         let tokens = tokenize("a\x0Bb").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1085,7 +1065,6 @@ mod tests {
 
     // Spec-correct test: form feed (0x0C) must be whitespace.
     #[test]
-    #[ignore = "spec violation: FF (0x0C) not treated as whitespace, see #62"]
     fn s6_4_ff_is_whitespace_spec() {
         let tokens = tokenize("a\x0Cb").unwrap();
         let unquoted: Vec<_> = tokens
@@ -1101,7 +1080,6 @@ mod tests {
     // These are grouped because they share the same root cause (not in the
     // lexer's whitespace check) and the same fix will address all four.
     #[test]
-    #[ignore = "spec violation: FS/GS/RS/US (0x1C-0x1F) not treated as whitespace, see #62"]
     fn s6_4_fs_gs_rs_us_are_whitespace_spec() {
         for (label, ch) in [
             ("FS (0x1C)", '\x1C'),
@@ -1119,6 +1097,42 @@ mod tests {
             assert_eq!(unquoted[0].value, "a", "{label}");
             assert_eq!(unquoted[1].value, "b", "{label}");
         }
+    }
+
+    // --- LF regression guard: LF must still emit Newline token ---------------
+    // After predicate centralization, is_hocon_whitespace returns true for LF.
+    // The newline branch must check BEFORE the whitespace skip so LF still
+    // produces TokenKind::Newline (per spec §D, design invariant).
+    #[test]
+    fn s6_lf_still_emits_newline_token() {
+        let tokens = tokenize("a\nb").unwrap();
+        assert!(
+            tokens.iter().any(|t| matches!(t.kind, TokenKind::Newline)),
+            "LF must still emit a Newline token after whitespace predicate centralization"
+        );
+    }
+
+    // --- S6.3 (broadened): BOM mid-stream is whitespace ----------------------
+    // Spec L173: BOM (U+FEFF) is whitespace, not a start-of-input marker.
+    // The lexer still strips BOM at char index 0 (harmless redundancy), and
+    // BOM mid-stream is now consumed as inter-token whitespace via
+    // is_hocon_whitespace.
+    //
+    // Spec-correct test: BOM mid-stream must separate two unquoted tokens.
+    #[test]
+    fn s6_3_bom_midstream_is_whitespace() {
+        let tokens = tokenize("a\u{FEFF}b").unwrap();
+        let unquoted: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == TokenKind::Unquoted)
+            .collect();
+        assert_eq!(
+            unquoted.len(),
+            2,
+            "BOM mid-stream should separate two tokens"
+        );
+        assert_eq!(unquoted[0].value, "a");
+        assert_eq!(unquoted[1].value, "b");
     }
 
     // --- S8.6: unquoted string cannot begin with 0-9 or - -------------------
