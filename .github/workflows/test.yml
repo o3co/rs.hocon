@@ -18,12 +18,12 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - name: Cache expected JSON
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             tests/testdata/expected
@@ -49,10 +49,10 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Cache expected JSON
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             tests/testdata/expected
