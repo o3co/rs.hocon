@@ -947,24 +947,8 @@ mod tests {
     // --- S6.1: Unicode Zs / Zl / Zp category chars are whitespace -----------
     // Spec L170: the lexer must treat any Unicode whitespace category character
     // (Zs, Zl, Zp) as a token separator, not as unquoted string content.
-    // rs.hocon's lexer (L68) only recognises ASCII space, tab, and CR, so these
-    // characters leak into unquoted runs instead.
+    // All Zs/Zl/Zp members are covered by is_hocon_whitespace.
     //
-    // Pin test: current (incorrect) behaviour — em space absorbed into unquoted.
-    #[test]
-    fn s6_1_em_space_absorbed_into_unquoted_pin() {
-        // Em space U+2003 (Zs category). Currently the lexer folds it into the
-        // unquoted token instead of treating it as a separator.
-        let tokens = tokenize("a\u{2003}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        // Current wrong behaviour: one token containing the em space.
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{2003}'));
-    }
-
     // Spec-correct test: em space must separate two unquoted tokens.
     #[test]
     fn s6_1_em_space_separates_tokens_spec() {
@@ -976,18 +960,6 @@ mod tests {
         assert_eq!(unquoted.len(), 2, "em space should separate two tokens");
         assert_eq!(unquoted[0].value, "a");
         assert_eq!(unquoted[1].value, "b");
-    }
-
-    // Pin test: line separator U+2028 (Zl category) absorbed into unquoted.
-    #[test]
-    fn s6_1_line_separator_absorbed_into_unquoted_pin() {
-        let tokens = tokenize("a\u{2028}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{2028}'));
     }
 
     // Spec-correct test: line separator (U+2028, Zl) must be whitespace.
@@ -1005,19 +977,7 @@ mod tests {
 
     // --- S6.2: non-breaking spaces are whitespace ----------------------------
     // Spec L171: U+00A0 (NBSP), U+2007 (figure space), U+202F (narrow NBSP)
-    // must be treated as whitespace. Currently the lexer folds them into unquoted.
-
-    // Pin test: NBSP absorbed into unquoted.
-    #[test]
-    fn s6_2_nbsp_absorbed_into_unquoted_pin() {
-        let tokens = tokenize("a\u{00A0}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{00A0}'));
-    }
+    // must be treated as whitespace. All three are in is_hocon_whitespace.
 
     // Spec-correct test: NBSP (U+00A0) must separate tokens.
     #[test]
@@ -1061,12 +1021,11 @@ mod tests {
     // --- S6.4: ASCII control whitespace --------------------------------------
     // Spec L174 lists 8 chars that are whitespace: tab (0x09), vtab (0x0B),
     // FF (0x0C), CR (0x0D), FS (0x1C), GS (0x1D), RS (0x1E), US (0x1F).
-    // rs.hocon's lexer handles tab and CR (L68) but NOT vtab, FF, or FS–US.
+    // All 8 are now covered by is_hocon_whitespace.
 
-    // Tab and CR — these already pass (covered by existing code path).
     #[test]
     fn s6_4_tab_is_whitespace() {
-        // Tab (0x09): already in the lexer's whitespace check.
+        // Tab (0x09): in the HOCON whitespace set.
         let tokens = tokenize("a\tb").unwrap();
         let unquoted: Vec<_> = tokens
             .iter()
@@ -1079,8 +1038,8 @@ mod tests {
 
     #[test]
     fn s6_4_cr_is_whitespace() {
-        // CR (0x0D): already in the lexer's whitespace check.
-        // CR alone (without LF) acts as inline whitespace, not a newline emitter.
+        // CR (0x0D): in the HOCON whitespace set.
+        // CR alone (without LF) acts as inter-token whitespace, not a newline emitter.
         let tokens = tokenize("a\rb").unwrap();
         let unquoted: Vec<_> = tokens
             .iter()
@@ -1089,19 +1048,6 @@ mod tests {
         assert_eq!(unquoted.len(), 2);
         assert_eq!(unquoted[0].value, "a");
         assert_eq!(unquoted[1].value, "b");
-    }
-
-    // Vtab and FF — pin tests for current (wrong) behavior.
-    #[test]
-    fn s6_4_vtab_absorbed_into_unquoted_pin() {
-        // Vtab (0x0B) is not in the whitespace check; it leaks into unquoted.
-        let tokens = tokenize("a\x0Bb").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\x0B'));
     }
 
     // Spec-correct test: vtab (0x0B) must be whitespace.
@@ -1168,23 +1114,10 @@ mod tests {
 
     // --- S6.3 (broadened): BOM mid-stream is whitespace ----------------------
     // Spec L173: BOM (U+FEFF) is whitespace, not a start-of-input marker.
-    // Currently the lexer strips BOM only at char index 0 (src/lexer.rs:55).
-    // A BOM mid-stream leaks into the unquoted run instead of acting as a
-    // token separator.
+    // The lexer still strips BOM at char index 0 (harmless redundancy), and
+    // BOM mid-stream is now consumed as inter-token whitespace via
+    // is_hocon_whitespace.
     //
-    // Pin test: BOM mid-stream absorbed into unquoted (current wrong behavior).
-    #[test]
-    fn s6_3_bom_midstream_absorbed_into_unquoted_pin() {
-        // BOM (U+FEFF) mid-stream: currently folds into the unquoted token.
-        let tokens = tokenize("a\u{FEFF}b").unwrap();
-        let unquoted: Vec<_> = tokens
-            .iter()
-            .filter(|t| t.kind == TokenKind::Unquoted)
-            .collect();
-        assert_eq!(unquoted.len(), 1);
-        assert!(unquoted[0].value.contains('\u{FEFF}'));
-    }
-
     // Spec-correct test: BOM mid-stream must separate two unquoted tokens.
     #[test]
     fn s6_3_bom_midstream_is_whitespace() {
@@ -1193,7 +1126,11 @@ mod tests {
             .iter()
             .filter(|t| t.kind == TokenKind::Unquoted)
             .collect();
-        assert_eq!(unquoted.len(), 2, "BOM mid-stream should separate two tokens");
+        assert_eq!(
+            unquoted.len(),
+            2,
+            "BOM mid-stream should separate two tokens"
+        );
         assert_eq!(unquoted[0].value, "a");
         assert_eq!(unquoted[1].value, "b");
     }
