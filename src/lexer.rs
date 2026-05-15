@@ -927,7 +927,6 @@ mod tests {
 
     // Spec-correct test: em space must separate two unquoted tokens.
     #[test]
-    #[ignore = "spec violation: em space (U+2003, Zs) not treated as whitespace, see #62"]
     fn s6_1_em_space_separates_tokens_spec() {
         let tokens = tokenize("a\u{2003}b").unwrap();
         let unquoted: Vec<_> = tokens
@@ -953,7 +952,6 @@ mod tests {
 
     // Spec-correct test: line separator (U+2028, Zl) must be whitespace.
     #[test]
-    #[ignore = "spec violation: line separator (U+2028, Zl) not treated as whitespace, see #62"]
     fn s6_1_line_separator_separates_tokens_spec() {
         let tokens = tokenize("a\u{2028}b").unwrap();
         let unquoted: Vec<_> = tokens
