@@ -107,19 +107,19 @@ same item descriptions verbatim.
 ## S6. Whitespace
 
 - **S6.1** Unicode Zs/Zl/Zp category characters are whitespace — §Whitespace (L170)
-  tests: src/lexer.rs (s6_1_em_space_separates_tokens_spec); src/lexer.rs (s6_1_line_separator_separates_tokens_spec)
-  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — is_hocon_whitespace covers all Zs/Zl/Zp members
+  tests: src/lexer.rs:954 (s6_1_em_space_separates_tokens_spec); src/lexer.rs:967 (s6_1_line_separator_separates_tokens_spec)
+  status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — is_hocon_whitespace covers all Zs/Zl/Zp members
 - **S6.2** Non-breaking spaces (0x00A0, 0x2007, 0x202F) are whitespace — §Whitespace (L171)
-  tests: src/lexer.rs (s6_2_nbsp_separates_tokens_spec); src/lexer.rs (s6_2_figure_space_separates_tokens_spec); src/lexer.rs (s6_2_narrow_nbsp_separates_tokens_spec)
-  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP variants included in is_hocon_whitespace
+  tests: src/lexer.rs:984 (s6_2_nbsp_separates_tokens_spec); src/lexer.rs:997 (s6_2_figure_space_separates_tokens_spec); src/lexer.rs:1010 (s6_2_narrow_nbsp_separates_tokens_spec)
+  status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP variants included in is_hocon_whitespace
 - **S6.3** BOM (0xFEFF) treated as whitespace — §Whitespace (L173)
-  tests: src/lexer.rs (strips_utf8_bom); src/lexer.rs (s6_3_bom_midstream_is_whitespace); tests/testdata/hocon/bom.conf (fixture)
-  status: ✅ (broadened in fix/s6-whitespace-expansion) — BOM now treated as whitespace anywhere, not just at start of input
+  tests: src/lexer.rs:887 (strips_utf8_bom); src/lexer.rs:1123 (s6_3_bom_midstream_is_whitespace); tests/testdata/hocon/bom.conf (fixture)
+  status: ✅ (broadened in #84) — BOM now treated as whitespace anywhere, not just at start of input
 - **S6.4** ASCII control whitespace (tab, vtab, FF, CR, FS, GS, RS, US) — §Whitespace (L174)
-  tests: src/lexer.rs (s6_4_tab_is_whitespace); src/lexer.rs (s6_4_cr_is_whitespace); src/lexer.rs (s6_4_vtab_is_whitespace_spec); src/lexer.rs (s6_4_ff_is_whitespace_spec); src/lexer.rs (s6_4_fs_gs_rs_us_are_whitespace_spec)
-  status: ✅ (fixed in fix/s6-whitespace-expansion, [#62](https://github.com/o3co/rs.hocon/issues/62)) — all 8 ASCII control whitespace chars covered by is_hocon_whitespace
+  tests: src/lexer.rs:1027 (s6_4_tab_is_whitespace); src/lexer.rs:1040 (s6_4_cr_is_whitespace); src/lexer.rs:1055 (s6_4_vtab_is_whitespace_spec); src/lexer.rs:1068 (s6_4_ff_is_whitespace_spec); src/lexer.rs:1083 (s6_4_fs_gs_rs_us_are_whitespace_spec)
+  status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — all 8 ASCII control whitespace chars covered by is_hocon_whitespace
 - **S6.5** "newline" means specifically 0x000A (LF) — §Whitespace (L183)
-  tests: src/lexer.rs:814 (tokenizes_newlines)
+  tests: src/lexer.rs:855 (tokenizes_newlines)
   status: ✅
 
 ## S7. Duplicate keys and object merging
