@@ -1,4 +1,5 @@
 use crate::error::ResolveError;
+use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -285,15 +286,30 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(HoconValue::Object(merged));
         }
 
-        // Array concatenation
+        // Array concatenation (S15.3: numerically-indexed objects convert to array
+        // when joined with a literal array partner).
         if resolved
             .iter()
             .any(|(v, _)| matches!(v, HoconValue::Array(_)))
         {
             let mut items = Vec::new();
-            for (v, _) in resolved {
+            for (v, is_sep) in resolved {
+                if is_sep {
+                    // Skip parser-synthesized separator whitespace (same as object-concat branch).
+                    continue;
+                }
                 match v {
                     HoconValue::Array(arr) => items.extend(arr),
+                    HoconValue::Object(_) => {
+                        // S15.3: attempt numeric-keyed object → array conversion.
+                        // If it succeeds, extend the result with the converted elements.
+                        // If it fails (empty / no eligible int keys), push the object as-is
+                        // (preserving the existing "mixed concat" error-path behaviour).
+                        match numeric_object_to_array(&v) {
+                            Some(converted) => items.extend(converted),
+                            None => items.push(v),
+                        }
+                    }
                     other => items.push(other),
                 }
             }

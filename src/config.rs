@@ -1,4 +1,5 @@
 use crate::error::ConfigError;
+use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarType};
 use indexmap::IndexMap;
 
@@ -123,10 +124,22 @@ impl Config {
     /// Return the array at `path` as a `Vec<HoconValue>`.
     ///
     /// Returns [`ConfigError`] if the path is missing or the value is not an array.
+    ///
+    /// Numerically-indexed objects (S15) are converted to an array on demand:
+    /// `{"0":"a","1":"b"}` returns `["a","b"]`. Empty objects and objects with
+    /// no integer keys are NOT converted — they return a type-mismatch error.
     pub fn get_list(&self, path: &str) -> Result<Vec<HoconValue>, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Array(items)) => Ok(items.clone()),
+            Some(v @ HoconValue::Object(_)) => {
+                // S15: attempt numeric-keyed object → array conversion.
+                // Returns None for empty objects (S15.4) and objects with no
+                // eligible integer keys (S15.12 / na12). In those cases fall
+                // through to the type-mismatch error.
+                numeric_object_to_array(v)
+                    .ok_or_else(|| type_mismatch(path, "Array"))
+            }
             _ => Err(type_mismatch(path, "Array")),
         }
     }
