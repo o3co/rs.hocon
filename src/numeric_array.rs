@@ -52,9 +52,7 @@ pub(crate) fn numeric_object_to_array(value: &HoconValue) -> Option<Vec<HoconVal
     // Collect eligible (parsed_key, value) pairs
     let mut eligible: Vec<(i32, HoconValue)> = map
         .iter()
-        .filter_map(|(k, v)| {
-            parse_eligible_key(k).map(|n| (n, v.clone()))
-        })
+        .filter_map(|(k, v)| parse_eligible_key(k).map(|n| (n, v.clone())))
         .collect();
 
     // No eligible integer keys → None

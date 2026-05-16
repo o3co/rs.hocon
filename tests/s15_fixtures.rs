@@ -15,8 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/hocon/numeric-obj-array")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/hocon/numeric-obj-array")
 }
 
 fn load_fixture(name: &str) -> hocon::Config {
@@ -71,7 +70,12 @@ fn na03a_concat_left_list_produces_three_elements() {
         .get_list("arr")
         .expect("na03a: getList on concat result must succeed");
     // Expected: ["a", "x", "y"]
-    assert_eq!(items.len(), 3, "na03a: expected [\"a\",\"x\",\"y\"] (3 elements), got {:?}", items);
+    assert_eq!(
+        items.len(),
+        3,
+        "na03a: expected [\"a\",\"x\",\"y\"] (3 elements), got {:?}",
+        items
+    );
     assert_eq!(scalar_raw(&items[0]), "a", "na03a: items[0] must be \"a\"");
     assert_eq!(scalar_raw(&items[1]), "x", "na03a: items[1] must be \"x\"");
     assert_eq!(scalar_raw(&items[2]), "y", "na03a: items[2] must be \"y\"");
@@ -86,7 +90,12 @@ fn na03b_concat_right_list_produces_three_elements() {
         .get_list("arr")
         .expect("na03b: getList on concat result must succeed");
     // Expected: ["x", "y", "a"]
-    assert_eq!(items.len(), 3, "na03b: expected [\"x\",\"y\",\"a\"] (3 elements), got {:?}", items);
+    assert_eq!(
+        items.len(),
+        3,
+        "na03b: expected [\"x\",\"y\",\"a\"] (3 elements), got {:?}",
+        items
+    );
     assert_eq!(scalar_raw(&items[0]), "x", "na03b: items[0] must be \"x\"");
     assert_eq!(scalar_raw(&items[1]), "y", "na03b: items[1] must be \"y\"");
     assert_eq!(scalar_raw(&items[2]), "a", "na03b: items[2] must be \"a\"");
@@ -104,7 +113,12 @@ fn na03c_concat_two_objs_produces_merged_object_or_list() {
         .get_list("arr")
         .expect("na03c: getList on merged numeric object must succeed via accessor conversion");
     // {"0":"x","1":"y","2":"z","3":"w"} → ["x","y","z","w"]
-    assert_eq!(items.len(), 4, "na03c: expected 4 elements, got {:?}", items);
+    assert_eq!(
+        items.len(),
+        4,
+        "na03c: expected 4 elements, got {:?}",
+        items
+    );
     assert_eq!(scalar_raw(&items[0]), "x");
     assert_eq!(scalar_raw(&items[1]), "y");
     assert_eq!(scalar_raw(&items[2]), "z");
@@ -124,7 +138,8 @@ fn na03d_concat_multi_piece_left_to_right_pairwise() {
         .get_list("arr")
         .expect("na03d: getList on multi-piece concat must succeed");
     assert_eq!(
-        items.len(), 5,
+        items.len(),
+        5,
         "na03d: NORMATIVE multi-piece: expected [\"x\",\"y\",\"z\",\"w\",\"a\"], got {:?}",
         items
     );
@@ -152,11 +167,16 @@ fn na03e_multi_piece_overlap_pairwise_fold() {
         .get_list("arr")
         .expect("na03e: getList on multi-piece overlap concat must succeed");
     assert_eq!(
-        items.len(), 3,
+        items.len(),
+        3,
         "na03e: NORMATIVE pairwise fold: expected [\"z\",\"y\",\"a\"], got {:?}",
         items
     );
-    assert_eq!(scalar_raw(&items[0]), "z", "na03e: items[0] must be \"z\" (later obj2 key wins)");
+    assert_eq!(
+        scalar_raw(&items[0]),
+        "z",
+        "na03e: items[0] must be \"z\" (later obj2 key wins)"
+    );
     assert_eq!(scalar_raw(&items[1]), "y", "na03e: items[1] must be \"y\"");
     assert_eq!(scalar_raw(&items[2]), "a", "na03e: items[2] must be \"a\"");
 }
@@ -180,7 +200,11 @@ fn na05_non_int_keys_ignored() {
     let items = cfg
         .get_list("items")
         .expect("na05: getList must succeed ignoring non-int key \"foo\"");
-    assert_eq!(items.len(), 2, "na05: only keys \"0\" and \"1\" are eligible");
+    assert_eq!(
+        items.len(),
+        2,
+        "na05: only keys \"0\" and \"1\" are eligible"
+    );
     assert_eq!(scalar_raw(&items[0]), "a");
     assert_eq!(scalar_raw(&items[1]), "c");
 }
@@ -193,7 +217,11 @@ fn na06_gaps_compacted() {
     let items = cfg
         .get_list("items")
         .expect("na06: getList on gapped keys must succeed");
-    assert_eq!(items.len(), 2, "na06: keys 0+2 → 2-element array (gap compacted)");
+    assert_eq!(
+        items.len(),
+        2,
+        "na06: keys 0+2 → 2-element array (gap compacted)"
+    );
     assert_eq!(scalar_raw(&items[0]), "a");
     assert_eq!(scalar_raw(&items[1]), "c");
 }

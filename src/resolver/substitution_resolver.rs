@@ -350,9 +350,7 @@ impl<'a> SubstitutionResolver<'a> {
 fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
     match (left, right) {
         // Object + Object → deep-merge (S10.3)
-        (HoconValue::Object(lf), HoconValue::Object(rf)) => {
-            Ok(deep_merge_hocon_objects(lf, rf))
-        }
+        (HoconValue::Object(lf), HoconValue::Object(rf)) => Ok(deep_merge_hocon_objects(lf, rf)),
 
         // Array + Object → S15.3: try numeric-keyed object conversion
         (HoconValue::Array(mut arr), obj @ HoconValue::Object(_)) => {

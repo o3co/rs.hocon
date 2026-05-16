@@ -137,8 +137,7 @@ impl Config {
                 // Returns None for empty objects (S15.4) and objects with no
                 // eligible integer keys (S15.12 / na12). In those cases fall
                 // through to the type-mismatch error.
-                numeric_object_to_array(v)
-                    .ok_or_else(|| type_mismatch(path, "Array"))
+                numeric_object_to_array(v).ok_or_else(|| type_mismatch(path, "Array"))
             }
             _ => Err(type_mismatch(path, "Array")),
         }

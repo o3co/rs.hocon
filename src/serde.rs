@@ -474,9 +474,9 @@ impl<'de> ::serde::de::SeqAccess<'de> for HoconSeqAccess<'de> {
 // ---------------------------------------------------------------------------
 
 pub(crate) struct HoconOwnedSeqAccess {
-    /// Items stored in reverse so we can pop from the front efficiently.
+    /// Items in their original (forward) order.
     items: Vec<HoconValue>,
-    /// Current index into items (forward iteration).
+    /// Current index into items; advances on each `next_element_seed` call.
     idx: usize,
 }
 
@@ -539,12 +539,8 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
                 }
                 ScalarType::String => visitor.visit_string(sv.raw),
             },
-            HoconValue::Object(map) => {
-                visitor.visit_map(OwnedHoconMapAccess::new(map))
-            }
-            HoconValue::Array(items) => {
-                visitor.visit_seq(HoconOwnedSeqAccess::new(items))
-            }
+            HoconValue::Object(map) => visitor.visit_map(OwnedHoconMapAccess::new(map)),
+            HoconValue::Array(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
         }
     }
 
@@ -718,6 +714,22 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
         self.deserialize_map(visitor)
     }
 
+    fn deserialize_enum<V: ::serde::de::Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        // Mirror HoconDeserializer::deserialize_enum (line ~345) so that converted
+        // numeric-keyed-object → array elements can deserialize as string enum variants.
+        match self.value {
+            HoconValue::Scalar(sv) => visitor.visit_enum(sv.raw.as_str().into_deserializer()),
+            other => Err(DeserializeError {
+                message: format!("expected string for enum variant, got {:?}", other),
+            }),
+        }
+    }
+
     fn deserialize_identifier<V: ::serde::de::Visitor<'de>>(
         self,
         visitor: V,
@@ -733,7 +745,7 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
     }
 
     ::serde::forward_to_deserialize_any! {
-        i8 i16 i32 u8 u16 u32 f32 char bytes byte_buf unit_struct enum
+        i8 i16 i32 u8 u16 u32 f32 char bytes byte_buf unit_struct
     }
 }
 
