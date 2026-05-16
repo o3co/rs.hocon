@@ -135,6 +135,32 @@ fn na03d_concat_multi_piece_left_to_right_pairwise() {
     assert_eq!(scalar_raw(&items[4]), "a");
 }
 
+// ── na03e: multi-piece concat with overlapping keys (pairwise fold regression guard) ─────
+
+#[test]
+fn na03e_multi_piece_overlap_pairwise_fold() {
+    // obj1={"0":"x","1":"y"}, obj2={"0":"z"}, arr=${obj1} ${obj2} [a]
+    // Step 1: join(obj1, obj2) → object-merge → {"0":"z","1":"y"} (later "0" wins)
+    // Step 2: join(merged, [a]) → numericObjectToArray(merged) → ["z","y"] ++ ["a"]
+    // Expected: ["z","y","a"]
+    //
+    // A single-pass loop that converts each Object element independently produces
+    // wrong ["x","y","z","a"]. This fixture is the regression guard added after
+    // multi-reviewer code review (2026-05-16).
+    let cfg = load_fixture("na03e-multi-piece-overlap.conf");
+    let items = cfg
+        .get_list("arr")
+        .expect("na03e: getList on multi-piece overlap concat must succeed");
+    assert_eq!(
+        items.len(), 3,
+        "na03e: NORMATIVE pairwise fold: expected [\"z\",\"y\",\"a\"], got {:?}",
+        items
+    );
+    assert_eq!(scalar_raw(&items[0]), "z", "na03e: items[0] must be \"z\" (later obj2 key wins)");
+    assert_eq!(scalar_raw(&items[1]), "y", "na03e: items[1] must be \"y\"");
+    assert_eq!(scalar_raw(&items[2]), "a", "na03e: items[2] must be \"a\"");
+}
+
 // ── na04: empty object NOT converted (S15.4) ──────────────────────────────────
 
 #[test]
