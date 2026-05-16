@@ -113,3 +113,50 @@ fn deserialize_to_hashmap() {
     assert_eq!(map.get("a"), Some(&1));
     assert_eq!(map.get("b"), Some(&2));
 }
+
+/// S15 §"Accessor behaviour" L160-161: every typed-array accessor must invoke
+/// numeric_object_to_array. `deserialize_seq` is a typed-array accessor, so
+/// Vec<T> deserialization on a numeric-keyed object must succeed.
+#[test]
+fn deserialize_vec_from_numeric_keyed_object() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Cfg {
+        items: Vec<String>,
+    }
+    // Numeric-keyed object: equivalent to a 2-element list ["a", "b"]
+    let config = parse(r#"items = {"0":"a","1":"b"}"#).unwrap();
+    let val: Cfg = config
+        .deserialize()
+        .expect("Vec<String> deserialization on numeric-keyed object must succeed");
+    assert_eq!(val.items, vec!["a", "b"]);
+}
+
+/// Verify that serde Vec<T> deserialization on a non-numeric-keyed object
+/// still fails with an appropriate error (not a panic).
+#[test]
+fn deserialize_vec_from_non_numeric_object_errors() {
+    #[derive(Debug, Deserialize)]
+    struct Cfg {
+        items: Vec<String>,
+    }
+    let config = parse(r#"items = {"foo":"a","bar":"b"}"#).unwrap();
+    assert!(
+        config.deserialize::<Cfg>().is_err(),
+        "Vec<T> deserialization on non-numeric-keyed object must error"
+    );
+}
+
+/// Verify sort + gap-compaction semantics are preserved through serde.
+#[test]
+fn deserialize_vec_from_numeric_keyed_object_sorted_and_compacted() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Cfg {
+        items: Vec<String>,
+    }
+    // Keys out of order and with a gap: {1:b, 0:a, 3:d} → ["a","b","d"]
+    let config = parse(r#"items = {"1":"b","0":"a","3":"d"}"#).unwrap();
+    let val: Cfg = config
+        .deserialize()
+        .expect("Vec<String> deserialization must sort by integer key");
+    assert_eq!(val.items, vec!["a", "b", "d"]);
+}

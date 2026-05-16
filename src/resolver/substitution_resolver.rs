@@ -1,4 +1,5 @@
 use crate::error::ResolveError;
+use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -254,53 +255,59 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(resolved.into_iter().next().unwrap().0);
         }
 
-        // Object concatenation — only skip parser-synthesized separators (not user-authored strings).
-        if resolved
+        // Pairwise left-to-right fold (NORMATIVE per spec §"Multi-piece concat is
+        // left-to-right pairwise").
+        //
+        // Why a fold instead of a single-pass classify-then-dispatch loop:
+        //   A single-pass loop that checks "any array present → array branch" converts
+        //   each Object element independently. When adjacent Objects have overlapping
+        //   numeric keys, independent conversion preserves both values (wrong). The
+        //   spec requires Object+Object to merge first (so the later key wins), then
+        //   convert when a list partner is reached. A pairwise fold matches Lightbend's
+        //   ConfigConcatenation.consolidate semantics exactly.
+        //
+        // Separator handling:
+        //   Separators (parser-synthesized whitespace tokens) are kept in the sequence
+        //   but join_pair treats them as pass-through scalars for non-object/array
+        //   concat. For object and array concat, separators are skipped (is_sep=true).
+        //   This preserves the original behaviour where whitespace contributes to
+        //   string concatenation (e.g. "foo bar") but is discarded for structured types.
+        //
+        // join_pair type-pair cases (separators are folded as scalars):
+        //   Object + Object → deep-merge, skip is_sep between them (S10.3)
+        //   Array  + Object → numeric_object_to_array; if Some concat arrays (S15.3)
+        //   Object + Array  → numeric_object_to_array; if Some concat arrays (S15.3)
+        //   Array  + Array  → array concat
+        //   Scalar + *      → string concat (separator whitespace contributes its raw value)
+
+        // Determine whether we are in an object/array concat (where separators are
+        // skipped) or a scalar concat (where separators contribute their text).
+        let has_structured = resolved
             .iter()
-            .all(|(v, is_sep)| matches!(v, HoconValue::Object(_)) || *is_sep)
-            && resolved
-                .iter()
-                .any(|(v, _)| matches!(v, HoconValue::Object(_)))
-        {
-            let mut merged = IndexMap::new();
-            for (v, is_sep) in resolved {
-                if is_sep {
-                    continue; // skip parser-synthesized separator whitespace
-                }
-                if let HoconValue::Object(fields) = v {
-                    for (k, val) in fields {
-                        if let (
-                            Some(HoconValue::Object(existing)),
-                            HoconValue::Object(new_fields),
-                        ) = (merged.get(&k).cloned(), &val)
-                        {
-                            merged
-                                .insert(k, deep_merge_hocon_objects(existing, new_fields.clone()));
-                        } else {
-                            merged.insert(k, val);
-                        }
-                    }
-                }
+            .any(|(v, _)| matches!(v, HoconValue::Object(_) | HoconValue::Array(_)));
+
+        if has_structured {
+            // Object/array concat: filter separators first, then pairwise fold.
+            let non_sep: Vec<HoconValue> = resolved
+                .into_iter()
+                .filter(|(_, is_sep)| !is_sep)
+                .map(|(v, _)| v)
+                .collect();
+
+            if non_sep.is_empty() {
+                return Ok(HoconValue::Scalar(ScalarValue::null()));
             }
-            return Ok(HoconValue::Object(merged));
+            if non_sep.len() == 1 {
+                return Ok(non_sep.into_iter().next().unwrap());
+            }
+
+            let mut iter = non_sep.into_iter();
+            let first = iter.next().unwrap();
+            return iter.try_fold(first, join_pair).map(Ok)?;
         }
 
-        // Array concatenation
-        if resolved
-            .iter()
-            .any(|(v, _)| matches!(v, HoconValue::Array(_)))
-        {
-            let mut items = Vec::new();
-            for (v, _) in resolved {
-                match v {
-                    HoconValue::Array(arr) => items.extend(arr),
-                    other => items.push(other),
-                }
-            }
-            return Ok(HoconValue::Array(items));
-        }
-
-        // String concatenation
+        // Scalar-only concat: include separators so whitespace contributes to the result
+        // (e.g., "foo bar" where the space token is a separator).
         let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
         Ok(HoconValue::Scalar(ScalarValue::string(s)))
     }
@@ -323,6 +330,77 @@ impl<'a> SubstitutionResolver<'a> {
             items.push(e);
         }
         Ok(HoconValue::Array(items))
+    }
+}
+
+/// Pairwise join for the left-to-right concat fold.
+///
+/// Implements the `join_pair(left, right)` spec pseudocode:
+/// - Object + Object → deep-merge (S10.3)
+/// - Array  + Object → attempt numeric_object_to_array; if Some → array-array concat
+/// - Object + Array  → attempt numeric_object_to_array; if Some → array-array concat
+/// - Array  + Array  → array-array concat
+/// - other pairs     → string concat (scalars coerced to string)
+///
+/// The `Result` wrapper exists so it can be used directly with `try_fold`.
+/// This function currently never produces an `Err` — type-mismatch cases (e.g.
+/// a non-convertible Object next to an Array) push the unconverted Object into
+/// the Array, which preserves the existing "mixed concat" behaviour rather than
+/// erroring, consistent with how the original single-pass loop behaved.
+fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
+    match (left, right) {
+        // Object + Object → deep-merge (S10.3)
+        (HoconValue::Object(lf), HoconValue::Object(rf)) => Ok(deep_merge_hocon_objects(lf, rf)),
+
+        // Array + Object → S15.3: try numeric-keyed object conversion
+        (HoconValue::Array(mut arr), obj @ HoconValue::Object(_)) => {
+            match numeric_object_to_array(&obj) {
+                Some(converted) => arr.extend(converted),
+                None => arr.push(obj),
+            }
+            Ok(HoconValue::Array(arr))
+        }
+
+        // Object + Array → S15.3 symmetric: try numeric-keyed object conversion
+        (obj @ HoconValue::Object(_), HoconValue::Array(right_arr)) => {
+            match numeric_object_to_array(&obj) {
+                Some(mut converted) => {
+                    converted.extend(right_arr);
+                    Ok(HoconValue::Array(converted))
+                }
+                None => {
+                    let mut arr = vec![obj];
+                    arr.extend(right_arr);
+                    Ok(HoconValue::Array(arr))
+                }
+            }
+        }
+
+        // Array + Array → array concat
+        (HoconValue::Array(mut left_arr), HoconValue::Array(right_arr)) => {
+            left_arr.extend(right_arr);
+            Ok(HoconValue::Array(left_arr))
+        }
+
+        // Array + Scalar → push scalar into array (preserves prior single-pass behaviour
+        // where scalar elements were appended to an in-progress array concat).
+        (HoconValue::Array(mut arr), scalar) => {
+            arr.push(scalar);
+            Ok(HoconValue::Array(arr))
+        }
+
+        // Scalar + Array → prepend array to scalar (push scalar as first element).
+        (scalar, HoconValue::Array(right_arr)) => {
+            let mut arr = vec![scalar];
+            arr.extend(right_arr);
+            Ok(HoconValue::Array(arr))
+        }
+
+        // Scalar pairs → string concat
+        (left, right) => {
+            let s = format!("{}{}", stringify_value(&left), stringify_value(&right));
+            Ok(HoconValue::Scalar(ScalarValue::string(s)))
+        }
     }
 }
 

@@ -569,33 +569,33 @@ same item descriptions verbatim.
 ## S15. Numerically-indexed objects to arrays
 
 - **S15.1** `{"0":"a","1":"b"}` → `["a","b"]` when array context — §Conversion (L1191)
-  tests: tests/integration_test.rs:1243 (s15_1_num_indexed_obj_to_array_pin); tests/integration_test.rs:1254 (s15_1_num_indexed_obj_to_array_spec)
-  status: ❌
-  note: `get_list()` on a numeric-keyed object returns `Err("expected Array")`. Conversion not implemented. Tracked in #79.
-- **S15.2** Conversion is lazy (only on type-required access) — §Conversion (L1204)
-  tests: tests/integration_test.rs:1274 (s15_2_conversion_is_lazy_pin); tests/integration_test.rs:1289 (s15_2_conversion_is_lazy_spec)
-  status: ❌
-  note: No lazy conversion is performed. `get_list()` on a numeric-keyed object errors regardless of whether object access was first attempted. Tracked in #79.
-- **S15.3** Conversion in concatenation when list expected — §Conversion (L1210)
-  tests: tests/integration_test.rs:1310 (s15_3_conversion_in_concatenation_pin); tests/integration_test.rs:1335 (s15_3_conversion_in_concatenation_spec)
-  status: ❌
-  note: real concatenation context `arr = [a] ${obj}` (with `obj = {"0":"x","1":"y"}`) produces a 3-element array whose last element is the un-converted Object — spec L1210 requires conversion + flatten to `["a","x","y"]`. Pin asserts the un-converted last element. Tracked in #79.
-- **S15.4** Empty object NOT converted — §Conversion (L1212)
-  tests: tests/integration_test.rs:1344 (s15_4_empty_object_not_converted)
+  tests: tests/integration_test.rs (s15_1_num_indexed_obj_to_array_spec); tests/s15_fixtures.rs (na01_basic_get_list_returns_two_elements); src/numeric_array.rs (unit tests)
   status: ✅
-  note: `get_list()` on `{}` returns an error (correct — empty object must not be converted). Confirmed conformant by probe; passes because no conversion is implemented at all.
+  note: Implemented in fix/s15-numeric-obj-array (#79). Helper `numeric_object_to_array` in `src/numeric_array.rs` invoked from `Config::get_list` accessor site.
+- **S15.2** Conversion is lazy (only on type-required access) — §Conversion (L1204)
+  tests: tests/integration_test.rs (s15_2_conversion_is_lazy_spec); tests/s15_fixtures.rs (na02_lazy_get_config_still_works_and_get_list_also_works)
+  status: ✅
+  note: Laziness preserved: `get_config`/`get` do not invoke the helper. Conversion fires only from `get_list`. Verified by na02 fixture and spec test.
+- **S15.3** Conversion in concatenation when list expected — §Conversion (L1210)
+  tests: tests/integration_test.rs (s15_3_conversion_in_concatenation_spec); tests/s15_fixtures.rs (na03a, na03b, na03c, na03d)
+  status: ✅
+  note: Resolver pairwise-join in `src/resolver/substitution_resolver.rs::resolve_concat` calls `numeric_object_to_array` when an Object is concat'd with an Array. Multi-piece left-to-right pairwise ordering confirmed by na03d.
+- **S15.4** Empty object NOT converted — §Conversion (L1212)
+  tests: tests/integration_test.rs (s15_4_empty_object_not_converted); tests/s15_fixtures.rs (na04_empty_object_not_converted)
+  status: ✅
+  note: Empty-object guard is now explicit in `numeric_object_to_array` (returns None for empty maps). No longer incidental.
 - **S15.5** Non-integer keys ignored during conversion — §Conversion (L1214)
-  tests: tests/integration_test.rs:1358 (s15_5_non_integer_keys_ignored_pin); tests/integration_test.rs:1370 (s15_5_non_integer_keys_ignored_spec)
-  status: ❌
-  note: Conversion not implemented. The `{"0":"a","foo":"b","1":"c"}` case cannot be exercised. Tracked in #79.
+  tests: tests/integration_test.rs (s15_5_non_integer_keys_ignored_spec); tests/s15_fixtures.rs (na05_non_int_keys_ignored)
+  status: ✅
+  note: Pre-filter regex `^(0|[1-9][0-9]*)$` rejects non-integer keys. Mixed-key objects produce only integer-keyed entries in output.
 - **S15.6** Missing indices compacted in resulting array — §Conversion (L1216)
-  tests: tests/integration_test.rs:1384 (s15_6_missing_indices_compacted_pin); tests/integration_test.rs:1396 (s15_6_missing_indices_compacted_spec)
-  status: ❌
-  note: Conversion not implemented. Tracked in #79.
+  tests: tests/integration_test.rs (s15_6_missing_indices_compacted_spec); tests/s15_fixtures.rs (na06_gaps_compacted)
+  status: ✅
+  note: Gaps eliminated naturally: eligible pairs are sorted and projected to value array, discarding index values.
 - **S15.7** Sorted by integer key value — §Conversion (L1216)
-  tests: tests/integration_test.rs:1412 (s15_7_sorted_by_key_value_pin); tests/integration_test.rs:1424 (s15_7_sorted_by_key_value_spec)
-  status: ❌
-  note: Conversion not implemented. Tracked in #79.
+  tests: tests/integration_test.rs (s15_7_sorted_by_key_value_spec); tests/s15_fixtures.rs (na07_sorted_by_key)
+  status: ✅
+  note: `sort_by_key` on parsed integer keys ensures deterministic order regardless of declaration order.
 
 ## S16. MIME Type
 

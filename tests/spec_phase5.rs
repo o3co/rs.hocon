@@ -13,39 +13,12 @@ use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S10.2  All arrays → array concatenation  (spec L312)
-// Status: ❌  tracked in #65 (same root as S10.4 / S10.19 — concat not impl'd)
+// Status: ✅  Fixed as a side effect of fix/s15-numeric-obj-array:
+// the is_sep separator-skip in the array-concat branch discards the whitespace
+// artefacts that used to leak between adjacent literal arrays.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pin: impl currently produces 5 elements with a whitespace string in the middle
-/// instead of a 4-element array.  The space between `[1,2]` and `[3,4]` leaks
-/// as an extra String scalar.
 #[test]
-fn s10_2_pin_array_concat_produces_space_element() {
-    let cfg = hocon::parse_with_env(r#"a = [1,2] [3,4]"#, &HashMap::new()).unwrap();
-    let list = cfg.get_list("a").unwrap();
-    // Currently produces 5 elements (1, 2, " ", 3, 4)
-    assert_eq!(
-        list.len(),
-        5,
-        "[pin] S10.2: expected impl to produce 5 (broken) elements, got {}",
-        list.len()
-    );
-    // The middle element is the whitespace string
-    if let hocon::HoconValue::Scalar(sv) = &list[2] {
-        assert_eq!(
-            sv.raw, " ",
-            "[pin] S10.2: middle element should be the space whitespace scalar"
-        );
-    } else {
-        panic!(
-            "[pin] S10.2: element [2] should be a scalar, got {:?}",
-            list[2]
-        );
-    }
-}
-
-#[test]
-#[ignore = "spec violation per S10.2 (L312): two adjacent arrays must concatenate into one 4-element array; impl inserts whitespace as extra element — tracked in #65"]
 fn s10_2_spec_array_concat() {
     let cfg = hocon::parse_with_env(r#"a = [1,2] [3,4]"#, &HashMap::new()).unwrap();
     let list = cfg.get_list("a").unwrap();
@@ -156,41 +129,11 @@ fn s10_15_spec_quoted_ws_between_arr_substs_is_error() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S10.17  Substitution resolving to array participates in array concat (L387)
-// Status: ❌  (same root as S10.2)
+// Status: ✅  Fixed as a side effect of fix/s15-numeric-obj-array (same root
+// as S10.2 fix: is_sep separator-skip in the array-concat branch).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pin: `${base} [3,4]` where base resolves to `[1,2]` produces 5 elements
-/// (with whitespace string) instead of 4.
 #[test]
-fn s10_17_pin_subst_array_concat_space_element() {
-    let cfg = hocon::parse_with_env(
-        r#"
-        base = [1,2]
-        combined = ${base} [3,4]
-    "#,
-        &HashMap::new(),
-    )
-    .unwrap();
-    let list = cfg.get_list("combined").unwrap();
-    assert_eq!(
-        list.len(),
-        5,
-        "[pin] S10.17: expected 5 (broken) elements, got {}",
-        list.len()
-    );
-    // Space whitespace is the 3rd element (index 2)
-    if let hocon::HoconValue::Scalar(sv) = &list[2] {
-        assert_eq!(
-            sv.raw, " ",
-            "[pin] S10.17: element[2] should be the whitespace scalar"
-        );
-    } else {
-        panic!("[pin] S10.17: element[2] should be a scalar");
-    }
-}
-
-#[test]
-#[ignore = "spec violation per S10.17 (L387): ${arr} [x] where arr resolves to array must concat into one array; impl inserts whitespace as extra element — tracked in #65"]
 fn s10_17_spec_subst_array_concat() {
     let cfg = hocon::parse_with_env(
         r#"

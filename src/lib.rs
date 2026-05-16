@@ -112,6 +112,7 @@
 pub mod config;
 pub mod error;
 pub(crate) mod lexer;
+pub(crate) mod numeric_array;
 pub(crate) mod parser;
 pub(crate) mod properties;
 pub(crate) mod resolver;

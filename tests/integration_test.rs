@@ -1078,34 +1078,9 @@ fn s13_13_optional_undefined_in_string_concat_is_empty() {
 
 // --- S13.14: optional undefined in array/object concat (spec L637) --------------
 // Array: [1] ${?missing} [2] → [1, 2]
-// BUG: rs.hocon currently produces [1, " ", " ", 2] (whitespace strings).
+// Fixed as a side effect of the S15.3 array-concat separator-skip fix (fix/s15-numeric-obj-array).
+// The is_sep whitespace tokens are now discarded in the array-concat branch, eliminating artefacts.
 #[test]
-fn s13_14_optional_undefined_in_array_concat_pin() {
-    let cfg = hocon::parse_with_env("x = [1] ${?missing} [2]", &std::collections::HashMap::new())
-        .expect("parse failed");
-    let items = cfg.get_list("x").unwrap();
-    // [pin] snapshot current (broken) shape: numeric 1, two whitespace scalar
-    // artefacts, numeric 2. Asserting values (not just length) catches partial
-    // fixes that change the count without removing the artefacts.
-    assert_eq!(
-        items.len(),
-        4,
-        "[pin] array concat must currently produce 4 elements"
-    );
-    assert!(matches!(&items[0], hocon::HoconValue::Scalar(s) if s.raw == "1"));
-    assert!(
-        matches!(&items[1], hocon::HoconValue::Scalar(s) if s.value_type == hocon::ScalarType::String),
-        "[pin] items[1] must be a whitespace scalar artefact"
-    );
-    assert!(
-        matches!(&items[2], hocon::HoconValue::Scalar(s) if s.value_type == hocon::ScalarType::String),
-        "[pin] items[2] must be a whitespace scalar artefact"
-    );
-    assert!(matches!(&items[3], hocon::HoconValue::Scalar(s) if s.raw == "2"));
-}
-
-#[test]
-#[ignore = "spec violation: optional undefined in array concat must yield empty array per HOCON L637, see #75"]
 fn s13_14_optional_undefined_in_array_concat_spec() {
     let cfg = hocon::parse_with_env("x = [1] ${?missing} [2]", &std::collections::HashMap::new())
         .expect("parse failed");
@@ -1237,24 +1212,10 @@ fn s14b_1_array_root_include_is_error() {
 
 // --- S15.1: numeric-keyed object → array when array context (spec L1191) ----------
 //
-// [pin] rs.hocon does not implement numeric-indexed object to array conversion.
-// get_list() on {"0":"a","1":"b"} currently errors with "expected Array".
-#[test]
-fn s15_1_num_indexed_obj_to_array_pin() {
-    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors with "expected Array" because no conversion path
-    // exists. Asserting the *specific* error message — not just `is_err()` — so a
-    // future fix that errors for an unrelated reason (e.g. validator change) breaks
-    // this pin instead of silently passing.
-    let err = cfg.get_list("v").unwrap_err();
-    assert!(
-        err.message.contains("expected Array"),
-        "[pin] get_list must currently error with \"expected Array\", got {:?}",
-        err
-    );
-}
-
-#[ignore = "spec violation: numeric-indexed object must convert to array when array type requested per HOCON L1191, see #79"]
+// Implemented in fix/s15-numeric-obj-array (closes #79).
+// Helper: src/numeric_array.rs::numeric_object_to_array
+// Accessor site: src/config.rs::Config::get_list
+// Extended fixture tests: tests/s15_fixtures.rs
 #[test]
 fn s15_1_num_indexed_obj_to_array_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
@@ -1274,26 +1235,8 @@ fn s15_1_num_indexed_obj_to_array_spec() {
 
 // --- S15.2: conversion is lazy — only when array type is requested (spec L1204) ---
 //
-// [pin] No lazy conversion is implemented. get_list on a numeric-keyed object errors.
-#[test]
-fn s15_2_conversion_is_lazy_pin() {
-    let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_config succeeds (object stays object) but get_list fails with
-    // "expected Array" (no conversion path). Tight assertion on the specific error
-    // message so an unrelated regression flips this pin.
-    assert!(
-        cfg.get_config("v").is_ok(),
-        "[pin] get_config must succeed — object is not eagerly converted"
-    );
-    let err = cfg.get_list("v").unwrap_err();
-    assert!(
-        err.message.contains("expected Array"),
-        "[pin] get_list must currently error with \"expected Array\", got {:?}",
-        err
-    );
-}
-
-#[ignore = "spec violation: numeric-indexed object must be convertible to array lazily when array type is requested per HOCON L1204, see #79"]
+// Laziness is preserved: get_config/get on a numeric-keyed object returns the object
+// as-is; conversion only triggers from get_list (accessor-time, not parse/resolve time).
 #[test]
 fn s15_2_conversion_is_lazy_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","1":"b"}"#, &HashMap::new()).unwrap();
@@ -1311,36 +1254,8 @@ fn s15_2_conversion_is_lazy_spec() {
 
 // --- S15.3: conversion in concatenation when list expected (spec L1210) -----------
 //
-// Spec: when a numerically-indexed object participates in concatenation where a
-// list is expected (e.g. adjacent to a literal array), it must convert to its
-// array form and flatten in. Probe shows rs.hocon currently puts the object
-// into the resulting array as-is (no conversion), plus a whitespace artefact —
-// pin asserts the buggy element layout so a future fix flips the assertion.
-#[test]
-fn s15_3_conversion_in_concatenation_pin() {
-    // Real concatenation context: literal array adjacent to a substitution-resolved
-    // numeric-keyed object. Spec L1210 says obj must convert to ["x","y"], producing
-    // ["a","x","y"]. Probe (2026-05-12) shows we get 3 elements but the last is the
-    // un-converted Object, not the flattened strings.
-    let cfg = hocon::parse_with_env(
-        r#"obj = {"0":"x","1":"y"}
-arr = [a] ${obj}"#,
-        &HashMap::new(),
-    )
-    .unwrap();
-    let items = cfg
-        .get_list("arr")
-        .expect("concat produces an array (list literal present)");
-    // [pin] Buggy: last element is the un-converted object, not flattened strings.
-    let last = items.last().expect("non-empty array");
-    assert!(
-        matches!(last, hocon::HoconValue::Object(_)),
-        "[pin] last element must currently be the un-converted Object, got {:?}",
-        last
-    );
-}
-
-#[ignore = "spec violation: numeric-indexed object must convert to array in concatenation when list expected per HOCON L1210, see #79"]
+// Resolver pairwise-join site: src/resolver/substitution_resolver.rs::resolve_concat
+// When one side is Array and the other is Object, numeric_object_to_array fires.
 #[test]
 fn s15_3_conversion_in_concatenation_spec() {
     let cfg = hocon::parse_with_env(
@@ -1369,10 +1284,8 @@ arr = [a] ${obj}"#,
 
 // --- S15.4: empty object NOT converted (spec L1212) --------------------------------
 //
-// The spec says: "the conversion should not occur if the object is empty or has no
-// keys which parse as positive integers." Verified: get_list on {} currently errors —
-// which is the correct result (no conversion is done). Since the feature is absent,
-// this case happens to match spec intent. Marked ✅ with a note.
+// numeric_object_to_array returns None for empty objects; get_list then errors.
+// Now backed by explicit empty-guard rather than incidental pass.
 #[test]
 fn s15_4_empty_object_not_converted() {
     let cfg = hocon::parse_with_env(r#"v = {}"#, &HashMap::new()).unwrap();
@@ -1386,21 +1299,7 @@ fn s15_4_empty_object_not_converted() {
 
 // --- S15.5: non-integer keys ignored during conversion (spec L1214) ----------------
 //
-// [pin] Conversion is not implemented at all. Test pins the "no conversion" behavior.
-#[test]
-fn s15_5_non_integer_keys_ignored_pin() {
-    let cfg = hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: no conversion; get_list errors with "expected Array". "foo" key
-    // is not dropped on array access. Tight assertion on the specific error message.
-    let err = cfg.get_list("v").unwrap_err();
-    assert!(
-        err.message.contains("expected Array"),
-        "[pin] get_list must currently error with \"expected Array\", got {:?}",
-        err
-    );
-}
-
-#[ignore = "spec violation: non-integer keys must be ignored when converting numeric-indexed object to array per HOCON L1214, see #79"]
+// Eligible filter in numeric_object_to_array: only ^(0|[1-9][0-9]*)$ keys count.
 #[test]
 fn s15_5_non_integer_keys_ignored_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","foo":"b","1":"c"}"#, &HashMap::new()).unwrap();
@@ -1417,21 +1316,7 @@ fn s15_5_non_integer_keys_ignored_spec() {
 
 // --- S15.6: missing indices compacted in resulting array (spec L1216) --------------
 //
-// [pin] Conversion not implemented; test pins "no conversion" behavior.
-#[test]
-fn s15_6_missing_indices_compacted_pin() {
-    // Keys "0" and "2" — index "1" is absent. Result must be ["a","c"] (2 elements, 0→a, 1→c).
-    let cfg = hocon::parse_with_env(r#"v = {"0":"a","2":"c"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors with "expected Array" — no conversion path.
-    let err = cfg.get_list("v").unwrap_err();
-    assert!(
-        err.message.contains("expected Array"),
-        "[pin] get_list must currently error with \"expected Array\", got {:?}",
-        err
-    );
-}
-
-#[ignore = "spec violation: missing integer indices must be compacted when converting object to array per HOCON L1216, see #79"]
+// Gaps are naturally eliminated by sorting eligible (key, value) pairs and projecting.
 #[test]
 fn s15_6_missing_indices_compacted_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"0":"a","2":"c"}"#, &HashMap::new()).unwrap();
@@ -1447,21 +1332,7 @@ fn s15_6_missing_indices_compacted_spec() {
 
 // --- S15.7: sorted by integer key value (spec L1216) --------------------------------
 //
-// [pin] Conversion not implemented; test pins "no conversion" behavior.
-#[test]
-fn s15_7_sorted_by_key_value_pin() {
-    // Keys given out of order: "2" before "0". Sorted array must be ["a","c"].
-    let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_list errors with "expected Array" — no conversion path.
-    let err = cfg.get_list("v").unwrap_err();
-    assert!(
-        err.message.contains("expected Array"),
-        "[pin] get_list must currently error with \"expected Array\", got {:?}",
-        err
-    );
-}
-
-#[ignore = "spec violation: conversion must sort by integer key value per HOCON L1216, see #79"]
+// numeric_object_to_array sorts eligible pairs by parsed integer before projecting.
 #[test]
 fn s15_7_sorted_by_key_value_spec() {
     let cfg = hocon::parse_with_env(r#"v = {"2":"c","0":"a"}"#, &HashMap::new()).unwrap();
@@ -1469,7 +1340,7 @@ fn s15_7_sorted_by_key_value_spec() {
         "out-of-order numeric-keyed object must convert sorted by integer key per HOCON L1216",
     );
     assert_eq!(items.len(), 2, "must produce 2-element array");
-    // After sort by integer key: 0→"a", 2→"c" → [\"a\",\"c\"]
+    // After sort by integer key: 0→"a", 2→"c" → ["a","c"]
     match &items[0] {
         hocon::HoconValue::Scalar(sv) => {
             assert_eq!(sv.raw, "a", "first element must be key-0's value")
