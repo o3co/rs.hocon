@@ -267,12 +267,48 @@ impl<'a> Parser<'a> {
                 trailing_dot = false;
             } else if kind == TokenKind::Unquoted {
                 let val = self.peek_value().to_string();
+                let key_line = self.peek_line();
+                let key_col = self.peek_col();
                 self.advance();
-                // Split unquoted key at dots
+                // Split unquoted key at dots, tracking the char offset of each
+                // segment within the original raw token so S8.6 errors below
+                // can point at the offending segment, not the token start.
+                let mut seg_char_offset: usize = 0;
                 for part in val.split('.') {
                     if !part.is_empty() {
+                        // S8.6 (HOCON.md L270–276): each unquoted key segment
+                        // that begins with '-' must be followed by a digit. The
+                        // lexer sees `a.-foo` as a single unquoted token, so we
+                        // validate per-segment here after splitting. Symmetric
+                        // with the lexer and parse_subst_body checks.
+                        let mut seg_chars = part.chars();
+                        if seg_chars.next() == Some('-') {
+                            let after = seg_chars.next();
+                            if !after.is_some_and(|c| c.is_ascii_digit()) {
+                                let after_str = match after {
+                                    Some(c) => format!("{:?}", c),
+                                    None => String::from("EOF"),
+                                };
+                                return Err(ParseError {
+                                    message: format!(
+                                        "unquoted key segment cannot begin with '-' unless followed by a digit (got '-' then {} in {:?}, HOCON.md L270-276)",
+                                        after_str, part
+                                    ),
+                                    line: key_line,
+                                    // Point at the segment start, not the token start.
+                                    // Lexer columns are 1-based char positions on the same
+                                    // line; substitutions/keys cannot span newlines, so
+                                    // adding the char offset is safe.
+                                    col: key_col + seg_char_offset,
+                                });
+                            }
+                        }
                         segments.push(part.to_string());
                     }
+                    // Advance offset past this segment + its trailing '.' separator
+                    // (the '.' is consumed by split; account for it by adding 1
+                    // unless this is the last segment).
+                    seg_char_offset += part.chars().count() + 1;
                 }
                 trailing_dot = val.ends_with('.');
             } else {

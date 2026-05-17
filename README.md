@@ -288,6 +288,10 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 | In-scope only                         | **84.0%**     |
 | Lightbend `equiv01`–`equiv05` suite   | 5/5 passing   |
 
+### Stricter than Lightbend
+
+- **S8.6 leading-hyphen rejection** (Unreleased): `a = -foo`, `a = -bar`, `a = -` etc. now raise a lex error per HOCON.md L270–276, where Lightbend silently falls back to unquoted strings. The same rule applies to substitution paths (`${-foo}`) and dotted key segments (`a.-foo = 1`). Mitigation: quote the value (`a = "-foo"`). See [CHANGELOG](CHANGELOG.md#unreleased) and [`docs/spec-compliance.md`](docs/spec-compliance.md) §S8.6.
+
 ## Minimum Supported Rust Version
 
 The MSRV is **1.82**.
