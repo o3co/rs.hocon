@@ -333,6 +333,33 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
 
         // Unquoted string
         if is_unquoted_start(ch) {
+            // S8.6 (HOCON.md L270–276): an unquoted string starting with '-'
+            // MUST be followed by a digit (so the run BEGINS what could be a
+            // number literal — full number validity is not enforced here; e.g.
+            // '-1foo' is permitted as a single unquoted token because '-1'
+            // starts a valid number prefix). Bare '-' and '-foo' / '-bar'
+            // inputs are lex errors. Digit-leading runs (e.g. '123abc')
+            // intentionally remain a single unquoted token — rs.hocon has no
+            // separate Number token, so spec compliance for digit-leading
+            // runs is provided behaviorally via value coercion (the resolved
+            // string value matches Lightbend's value-concat result). See
+            // docs/spec-compliance.md §S8.6.
+            if ch == '-' && !peek(pos, 1).is_ascii_digit() {
+                let next = peek(pos, 1);
+                let after = if next == '\0' {
+                    String::from("EOF")
+                } else {
+                    format!("{:?}", next)
+                };
+                return Err(ParseError {
+                    message: format!(
+                        "unquoted string cannot begin with '-' unless followed by a digit (got '-' then {}, HOCON.md L270-276)",
+                        after
+                    ),
+                    line: sl,
+                    col: sc,
+                });
+            }
             let mut value = String::new();
             while pos < chars.len() && is_unquoted_continue(chars[pos], || peek(pos, 1)) {
                 value.push(chars[pos]);
@@ -565,6 +592,29 @@ fn parse_subst_body(
                 }
             }
             ch if is_unquoted_subst_char(ch) => {
+                // S8.6 (HOCON.md L270–276) also applies to unquoted path
+                // segments inside ${...}: a segment beginning with '-' must be
+                // followed by a digit. Digit-leading segments are not policed
+                // here (consistent with the value-position rule and rs.hocon's
+                // unquoted-only token model — see docs/spec-compliance.md §S8.6).
+                if ch == '-' {
+                    let next = chars.get(*pos + 1).copied().unwrap_or('\0');
+                    if !next.is_ascii_digit() {
+                        let after = if next == '\0' {
+                            String::from("EOF")
+                        } else {
+                            format!("{:?}", next)
+                        };
+                        return Err(ParseError {
+                            message: format!(
+                                "unquoted path segment cannot begin with '-' unless followed by a digit (got '-' then {}, HOCON.md L270-276)",
+                                after
+                            ),
+                            line: start_line,
+                            col: *col,
+                        });
+                    }
+                }
                 // UNQUOTED token: read a run of unquoted chars
                 let uq_col = *col;
                 if cur_started {
@@ -1163,23 +1213,14 @@ mod tests {
         );
     }
 
-    // Pin test: current (wrong) behavior — hyphen-leading non-number accepted.
-    #[test]
-    fn s8_6_hyphen_leading_non_number_accepted_as_string_pin() {
-        // "-foo" is not a valid number; the parser falls back to a string.
-        let result = crate::parse("x = -foo");
-        assert!(
-            result.is_ok(),
-            "impl currently accepts hyphen-leading unquoted"
-        );
-    }
-
     // Spec-correct test: hyphen-starting non-number must be rejected.
+    // The pin counterpart (s8_6_hyphen_leading_non_number_accepted_as_string_pin)
+    // was deleted when the fix landed — see fix/s8.6-unquoted-starts (#63).
     #[test]
-    #[ignore = "spec violation: hyphen-leading non-number unquoted accepted, see #63"]
     fn s8_6_hyphen_leading_non_number_rejected_spec() {
-        // Note: "-123" is a valid JSON number and IS allowed. Only non-numeric
-        // hyphen-led forms like "-foo" must be rejected.
+        // Note: "-123" is a valid JSON number prefix and IS allowed. Only
+        // non-numeric hyphen-led forms like "-foo" / "-" must be rejected,
+        // via the S8.6 check in the lexer's unquoted-start branch.
         assert!(
             crate::parse("x = -foo").is_err(),
             "hyphen-leading non-number unquoted should be a parse error per HOCON L270"

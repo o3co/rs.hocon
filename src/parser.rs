@@ -267,10 +267,35 @@ impl<'a> Parser<'a> {
                 trailing_dot = false;
             } else if kind == TokenKind::Unquoted {
                 let val = self.peek_value().to_string();
+                let key_line = self.peek_line();
+                let key_col = self.peek_col();
                 self.advance();
                 // Split unquoted key at dots
                 for part in val.split('.') {
                     if !part.is_empty() {
+                        // S8.6 (HOCON.md L270–276): each unquoted key segment
+                        // that begins with '-' must be followed by a digit. The
+                        // lexer sees `a.-foo` as a single unquoted token, so we
+                        // validate per-segment here after splitting. Symmetric
+                        // with the lexer and parse_subst_body checks.
+                        let mut seg_chars = part.chars();
+                        if seg_chars.next() == Some('-') {
+                            let after = seg_chars.next();
+                            if !after.map_or(false, |c| c.is_ascii_digit()) {
+                                let after_str = match after {
+                                    Some(c) => format!("{:?}", c),
+                                    None => String::from("EOF"),
+                                };
+                                return Err(ParseError {
+                                    message: format!(
+                                        "unquoted key segment cannot begin with '-' unless followed by a digit (got '-' then {} in {:?}, HOCON.md L270-276)",
+                                        after_str, part
+                                    ),
+                                    line: key_line,
+                                    col: key_col,
+                                });
+                            }
+                        }
                         segments.push(part.to_string());
                     }
                 }
