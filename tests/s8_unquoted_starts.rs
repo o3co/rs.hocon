@@ -149,6 +149,22 @@ x = ${"a"-foo}
     );
 }
 
+// Error position precision: for `a.-foo = 1` the error column should point at
+// the '-' that opens the offending segment (col 3), NOT at the start of the
+// full unquoted token `a.-foo` (col 1). Convergent Copilot/Claude finding on
+// PR #86 round 2.
+#[test]
+fn s8_6_key_path_hyphen_segment_error_col_at_segment_start() {
+    let result = hocon::parse_with_env("a.-foo = 1", &HashMap::new());
+    match result {
+        Err(hocon::HoconError::Parse(e)) => {
+            assert_eq!(e.col, 3, "expected col 3 (start of '-foo'), got {}", e.col);
+        }
+        Err(other) => panic!("expected ParseError, got: {:?}", other),
+        Ok(_) => panic!("expected error, parse succeeded"),
+    }
+}
+
 #[test]
 fn s8_6_key_path_hyphen_segment_rejected() {
     // `a.-foo = 1` — the lexer sees `a.-foo` as one unquoted token; parse_key
