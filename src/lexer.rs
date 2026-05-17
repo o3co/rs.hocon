@@ -594,10 +594,16 @@ fn parse_subst_body(
             ch if is_unquoted_subst_char(ch) => {
                 // S8.6 (HOCON.md L270–276) also applies to unquoted path
                 // segments inside ${...}: a segment beginning with '-' must be
-                // followed by a digit. Digit-leading segments are not policed
-                // here (consistent with the value-position rule and rs.hocon's
-                // unquoted-only token model — see docs/spec-compliance.md §S8.6).
-                if ch == '-' {
+                // followed by a digit. Gate on `!cur_started` so the check
+                // fires only at **segment start** — a `-` that follows a
+                // quoted fragment in the same segment (e.g. `${"a"-foo}`
+                // resolving the key `"a-foo"` via quoted/unquoted concat) is
+                // not policed, mirroring how the existing `${"a"x}` flow
+                // builds `"ax"`. Digit-leading segments are not policed here
+                // either (consistent with the value-position rule and
+                // rs.hocon's unquoted-only token model — see
+                // docs/spec-compliance.md §S8.6).
+                if ch == '-' && !cur_started {
                     let next = chars.get(*pos + 1).copied().unwrap_or('\0');
                     if !next.is_ascii_digit() {
                         let after = if next == '\0' {

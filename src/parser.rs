@@ -281,7 +281,7 @@ impl<'a> Parser<'a> {
                         let mut seg_chars = part.chars();
                         if seg_chars.next() == Some('-') {
                             let after = seg_chars.next();
-                            if !after.map_or(false, |c| c.is_ascii_digit()) {
+                            if !after.is_some_and(|c| c.is_ascii_digit()) {
                                 let after_str = match after {
                                     Some(c) => format!("{:?}", c),
                                     None => String::from("EOF"),

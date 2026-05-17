@@ -131,6 +131,24 @@ fn s8_6_subst_path_hyphen_no_digit_rejected() {
     }
 }
 
+// Regression: the parse_subst_body S8.6 check must fire only at **segment
+// start** (gated on `!cur_started`). Quoted+unquoted concat within a segment
+// — e.g. `${"a"-foo}` building key `"a-foo"` — must remain accepted.
+// This mirrors the existing `${"a"x}` → `"ax"` concat flow.
+#[test]
+fn s8_6_subst_mid_segment_hyphen_after_quoted_allowed() {
+    let input = r#"
+"a-foo" = 1
+x = ${"a"-foo}
+"#;
+    let result = hocon::parse_with_env(input, &HashMap::new());
+    assert!(
+        result.is_ok(),
+        r#"${{"a"-foo}} must lex+resolve (quoted+unquoted concat → "a-foo"), got {:?}"#,
+        result.err()
+    );
+}
+
 #[test]
 fn s8_6_key_path_hyphen_segment_rejected() {
     // `a.-foo = 1` — the lexer sees `a.-foo` as one unquoted token; parse_key
