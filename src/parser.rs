@@ -217,10 +217,10 @@ impl<'a> Parser<'a> {
                 if let Some(first) = key.first() {
                     if first == "include" {
                         return Err(ParseError {
-                            message: format!(
-                                "'include' is reserved at the start of a key path expression; \
-                                 use \"include\" (quoted) or rename the key (HOCON.md L570)"
-                            ),
+                            message: "'include' is reserved at the start of a key path \
+                                      expression; use \"include\" (quoted) or rename the \
+                                      key (HOCON.md L570)"
+                                .to_string(),
                             line: key_pos.line,
                             col: key_pos.col,
                         });
