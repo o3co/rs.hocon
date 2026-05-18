@@ -548,7 +548,10 @@ fn parse_literal_brackets(
     *col += 1;
     // Next char must be `]` (no whitespace inside the brackets).
     if *pos >= chars.len() || chars[*pos] != ']' {
-        let got = chars.get(*pos).map(|c| c.escape_debug().to_string()).unwrap_or_else(|| "EOF".into());
+        let got = chars
+            .get(*pos)
+            .map(|c| c.escape_debug().to_string())
+            .unwrap_or_else(|| "EOF".into());
         return Err(ParseError {
             message: format!(
                 "expected ']' after '[' in substitution list suffix, got {}",
@@ -795,7 +798,11 @@ fn parse_subst_body(
         });
     }
 
-    Ok(SubstPayload { segments, optional, list_suffix })
+    Ok(SubstPayload {
+        segments,
+        optional,
+        list_suffix,
+    })
 }
 
 fn is_unquoted_start(ch: char) -> bool {

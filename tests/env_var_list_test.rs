@@ -20,8 +20,7 @@ fn fixture_dir() -> PathBuf {
 fn expected_dir() -> PathBuf {
     // xx.hocon expected outputs sit two repo-siblings up from this crate root:
     //   <agentscope>/repos/rs.hocon  →  <agentscope>/repos/xx.hocon
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../xx.hocon/expected/hocon/env-var-list")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../xx.hocon/expected/hocon/env-var-list")
 }
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -50,7 +49,7 @@ fn parse_env_sidecar(path: &std::path::Path) -> HashMap<String, String> {
         .unwrap_or_else(|e| panic!("failed to read env sidecar {}: {}", path.display(), e));
     let mut map = HashMap::new();
     for line in content.lines() {
-        let trimmed = line.trim_start_matches(|c| c == ' ' || c == '\t');
+        let trimmed = line.trim_start_matches([' ', '\t']);
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
@@ -148,7 +147,7 @@ fn config_to_json(config: &hocon::Config) -> serde_json::Value {
 
 fn parse_fixture_with_env(name: &str) -> Result<hocon::Config, hocon::HoconError> {
     let env = parse_env_sidecar(&env_path(name));
-    hocon::parse_file_with_env(&fixture_path(name), &env)
+    hocon::parse_file_with_env(fixture_path(name), &env)
 }
 
 fn load_expected_json(name: &str) -> serde_json::Value {
@@ -166,7 +165,8 @@ fn assert_fixture_matches(name: &str) {
     let got = config_to_json(&cfg);
     let expected = load_expected_json(name);
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "s13c {}: output mismatch\n  got:      {}\n  expected: {}",
         name,
         serde_json::to_string_pretty(&got).unwrap(),
