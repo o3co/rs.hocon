@@ -70,7 +70,7 @@ impl<'a> SubstitutionResolver<'a> {
         match v {
             ResolverValue::Subst(s) => self.resolve_subst(s, scope),
             ResolverValue::Concat(c) => self
-                .resolve_concat(&c.nodes, &c.separator_flags, scope)
+                .resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
                 .map(Some),
             ResolverValue::Append(a) => self.resolve_append(a, scope).map(Some),
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
@@ -327,6 +327,8 @@ impl<'a> SubstitutionResolver<'a> {
         &mut self,
         nodes: &[ResolverValue],
         separator_flags: &[bool],
+        line: usize,
+        col: usize,
         scope: &ResObj,
     ) -> Result<HoconValue, ResolveError> {
         let mut resolved: Vec<(HoconValue, bool)> = Vec::new();
@@ -396,7 +398,9 @@ impl<'a> SubstitutionResolver<'a> {
 
             let mut iter = non_sep.into_iter();
             let first = iter.next().unwrap();
-            return iter.try_fold(first, join_pair).map(Ok)?;
+            return iter
+                .try_fold(first, |l, r| join_pair(l, r, line, col))
+                .map(Ok)?;
         }
 
         // Scalar-only concat: include separators so whitespace contributes to the result
@@ -435,7 +439,12 @@ impl<'a> SubstitutionResolver<'a> {
 ///
 /// Produces `Err(ResolveError)` for every spec-disallowed type pair
 /// (S10.4 array/object mix, S10.13 scalar/structured mix, S10.19 subst-resolved).
-fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
+fn join_pair(
+    left: HoconValue,
+    right: HoconValue,
+    line: usize,
+    col: usize,
+) -> Result<HoconValue, ResolveError> {
     match (left, right) {
         // Object + Object → deep-merge (S10.3)
         (HoconValue::Object(lf), HoconValue::Object(rf)) => Ok(deep_merge_hocon_objects(lf, rf)),
@@ -447,7 +456,13 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
                     arr.extend(converted);
                     Ok(HoconValue::Array(arr))
                 }
-                None => Err(ResolveError::concat_type_mismatch("array", "object")),
+                None => Err(ResolveError::concat_type_mismatch(
+                    "array",
+                    "object",
+                    line,
+                    col,
+                    String::new(),
+                )),
             }
         }
 
@@ -458,7 +473,13 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
                     converted.extend(right_arr);
                     Ok(HoconValue::Array(converted))
                 }
-                None => Err(ResolveError::concat_type_mismatch("object", "array")),
+                None => Err(ResolveError::concat_type_mismatch(
+                    "object",
+                    "array",
+                    line,
+                    col,
+                    String::new(),
+                )),
             }
         }
 
@@ -469,14 +490,22 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
         }
 
         // Array + Scalar → error per S10.13 (spec L373: arrays invalid in string concat)
-        (HoconValue::Array(_), scalar) => {
-            Err(ResolveError::concat_type_mismatch("array", type_name(&scalar)))
-        }
+        (HoconValue::Array(_), scalar) => Err(ResolveError::concat_type_mismatch(
+            "array",
+            type_name(&scalar),
+            line,
+            col,
+            String::new(),
+        )),
 
         // Scalar + Array → error per S10.13
-        (scalar, HoconValue::Array(_)) => {
-            Err(ResolveError::concat_type_mismatch(type_name(&scalar), "array"))
-        }
+        (scalar, HoconValue::Array(_)) => Err(ResolveError::concat_type_mismatch(
+            type_name(&scalar),
+            "array",
+            line,
+            col,
+            String::new(),
+        )),
 
         // Scalar pairs: reject if either side is an Object (S10.13); string-concat otherwise
         (left, right) => {
@@ -484,6 +513,9 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
                 return Err(ResolveError::concat_type_mismatch(
                     type_name(&left),
                     type_name(&right),
+                    line,
+                    col,
+                    String::new(),
                 ));
             }
             let s = format!("{}{}", stringify_value(&left), stringify_value(&right));
@@ -554,6 +586,8 @@ mod tests {
         let err = join_pair(
             HoconValue::Scalar(ScalarValue::null()),
             HoconValue::Array(vec![]),
+            0,
+            0,
         )
         .unwrap_err();
         assert!(
