@@ -1,7 +1,7 @@
-/// Phase 5 spec-compliance tests — per-impl 🤷 mop-up (17 items).
+/// Phase 5 spec-compliance tests — per-impl mop-up (17 items).
 ///
 /// Items covered:
-///   S10.2, S10.15, S10.17
+///   S10.2  ✅, S10.15  ✅ (fixed by Phase 6 #3b S10.13 tightening), S10.17  ✅
 ///   S13.15, S13a.9, S13a.10, S13a.14
 ///   S14a.7, S14a.10, S14a.11
 ///   S18.3, S18.4
@@ -38,39 +38,19 @@ fn s10_2_spec_array_concat() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S10.15  Quoted whitespace between obj/array substitutions is an error (L442)
-// Status: ❌
+// Status: ✅ (incidentally fixed by Phase 6 #3b S10.13 tightening)
+//
+// The S10.13 fix raises an error whenever a scalar (including the quoted " ")
+// appears between structured values. `${a} " " ${b}` with objects/arrays for
+// a and b now fails at join_pair(object/array, " ") with a type-mismatch error.
+// The S10.15 spec behavior (error on quoted whitespace between structured substs)
+// is therefore satisfied as a side effect, even though the error fires for the
+// S10.13 reason rather than a dedicated S10.15 whitespace check.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pin: impl does not error; for the object case it stringifies the objects and
-/// concatenates them with the quoted whitespace into a string value.
+/// S10.15 (objects): quoted whitespace between object substitutions now errors.
 #[test]
-fn s10_15_pin_quoted_ws_between_obj_substs_no_error() {
-    let r = hocon::parse_with_env(
-        r#"
-        a = {x:1}
-        b = {y:2}
-        c = ${a} " " ${b}
-    "#,
-        &HashMap::new(),
-    );
-    // impl succeeds (does not error)
-    assert!(
-        r.is_ok(),
-        "[pin] S10.15: impl currently succeeds (should error per spec L442)"
-    );
-    let cfg = r.unwrap();
-    // c becomes a string containing the debug repr of the objects
-    let c = cfg.get_string("c").unwrap();
-    assert!(
-        c.contains("Object"),
-        "[pin] S10.15: c should be a string with 'Object' in it (impl stringifies obj), got {:?}",
-        c
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S10.15 (L442): quoted whitespace between object/array substitutions must be an error; impl currently stringifies instead"]
-fn s10_15_spec_quoted_ws_between_obj_substs_is_error() {
+fn s10_15_quoted_ws_between_obj_substs_is_error() {
     let r = hocon::parse_with_env(
         r#"
         a = {x:1}
@@ -80,14 +60,14 @@ fn s10_15_spec_quoted_ws_between_obj_substs_is_error() {
         &HashMap::new(),
     );
     assert!(
-        r.is_err(),
+        matches!(r, Err(hocon::HoconError::Resolve(_))),
         "S10.15: quoted whitespace between object substitutions must produce an error (spec L442)"
     );
 }
 
-/// Pin: for array case, impl does not error; inserts whitespace as extra elements.
+/// S10.15 (arrays): quoted whitespace between array substitutions now errors.
 #[test]
-fn s10_15_pin_quoted_ws_between_arr_substs_no_error() {
+fn s10_15_quoted_ws_between_arr_substs_is_error() {
     let r = hocon::parse_with_env(
         r#"
         a = [1]
@@ -97,32 +77,7 @@ fn s10_15_pin_quoted_ws_between_arr_substs_no_error() {
         &HashMap::new(),
     );
     assert!(
-        r.is_ok(),
-        "[pin] S10.15: impl currently succeeds for array case (should error per spec L442)"
-    );
-    let cfg = r.unwrap();
-    let list = cfg.get_list("c").unwrap();
-    // impl inserts the quoted " " as a separate string element along with unquoted spaces
-    assert!(
-        list.len() > 2,
-        "[pin] S10.15: c list should have more than 2 elements due to whitespace leak, got {}",
-        list.len()
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S10.15 (L442): quoted whitespace between array substitutions must be an error; impl inserts whitespace as extra elements instead"]
-fn s10_15_spec_quoted_ws_between_arr_substs_is_error() {
-    let r = hocon::parse_with_env(
-        r#"
-        a = [1]
-        b = [2]
-        c = ${a} " " ${b}
-    "#,
-        &HashMap::new(),
-    );
-    assert!(
-        r.is_err(),
+        matches!(r, Err(hocon::HoconError::Resolve(_))),
         "S10.15: quoted whitespace between array substitutions must produce an error (spec L442)"
     );
 }

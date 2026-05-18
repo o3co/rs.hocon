@@ -875,39 +875,28 @@ fn s10_14_whitespace_around_arr_subst_ignored() {
 }
 
 // --- S10.19: subst-resolved obj + literal array → error (HOCON L385-389) ----
+// Closes #68. Formerly pinned as silent-accept; fixed in Phase 6 #3b.
 #[test]
-fn s10_19_subst_obj_concat_literal_array_pin() {
-    // BUG: ${b} resolves to object; concatenating with [1,2] must be rejected.
+fn s10_19_subst_obj_concat_literal_array_is_error() {
+    // ${b} resolves to object; concatenating with [1,2] must be rejected (S10.19)
     assert!(
-        parse("b = {x:1}\na = ${b} [1,2]").is_ok(),
-        "[pin] subst-obj + literal array currently accepted — update when fixed"
+        matches!(
+            parse("b = {x:1}\na = ${b} [1,2]"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "subst-resolved object + literal array must raise ResolveError per HOCON L385-389"
     );
 }
 
 #[test]
-#[ignore = "spec violation: subst-resolved object concatenated with literal array must error per HOCON L385-389, see #68"]
-fn s10_19_subst_obj_concat_literal_array_spec() {
+fn s10_19_subst_arr_concat_literal_obj_is_error() {
+    // ${b} resolves to array; concatenating with {x:1} must be rejected (S10.19)
     assert!(
-        parse("b = {x:1}\na = ${b} [1,2]").is_err(),
-        "subst resolving to object + literal array must be a resolve-time error per HOCON L385-389"
-    );
-}
-
-#[test]
-fn s10_19_subst_arr_concat_literal_obj_pin() {
-    // BUG: ${b} resolves to array; concatenating with {x:1} must be rejected.
-    assert!(
-        parse("b = [1,2]\na = ${b} {x:1}").is_ok(),
-        "[pin] subst-array + literal object currently accepted — update when fixed"
-    );
-}
-
-#[test]
-#[ignore = "spec violation: subst-resolved array concatenated with literal object must error per HOCON L385-389, see #68"]
-fn s10_19_subst_arr_concat_literal_obj_spec() {
-    assert!(
-        parse("b = [1,2]\na = ${b} {x:1}").is_err(),
-        "subst resolving to array + literal object must be a resolve-time error per HOCON L385-389"
+        matches!(
+            parse("b = [1,2]\na = ${b} {x:1}"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "subst-resolved array + literal object must raise ResolveError per HOCON L385-389"
     );
 }
 

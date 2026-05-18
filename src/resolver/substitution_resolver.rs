@@ -364,10 +364,14 @@ impl<'a> SubstitutionResolver<'a> {
         //
         // join_pair type-pair cases (separators are folded as scalars):
         //   Object + Object → deep-merge, skip is_sep between them (S10.3)
-        //   Array  + Object → numeric_object_to_array; if Some concat arrays (S15.3)
-        //   Object + Array  → numeric_object_to_array; if Some concat arrays (S15.3)
+        //   Array  + Object → numeric_object_to_array; if Some → concat; if None → Err (S10.4)
+        //   Object + Array  → symmetric (S10.4)
         //   Array  + Array  → array concat
-        //   Scalar + *      → string concat (separator whitespace contributes its raw value)
+        //   Array  + Scalar → Err (S10.13)
+        //   Scalar + Array  → Err (S10.13)
+        //   Scalar + Object → Err (S10.13)
+        //   Object + Scalar → Err (S10.13)
+        //   Scalar + Scalar → string concat (separator whitespace contributes its raw value)
 
         // Determine whether we are in an object/array concat (where separators are
         // skipped) or a scalar concat (where separators contribute their text).
@@ -424,44 +428,43 @@ impl<'a> SubstitutionResolver<'a> {
 
 /// Pairwise join for the left-to-right concat fold.
 ///
-/// Implements the `join_pair(left, right)` spec pseudocode:
+/// Implements the `join_pair(left, right)` spec pseudocode per S10/S15:
 /// - Object + Object → deep-merge (S10.3)
-/// - Array  + Object → attempt numeric_object_to_array; if Some → array-array concat
-/// - Object + Array  → attempt numeric_object_to_array; if Some → array-array concat
+/// - Array  + Object → attempt numeric_object_to_array; if Some → array-array concat;
+///                     if None → Err (S10.4 / S10.19)
+/// - Object + Array  → symmetric (S10.4 / S10.19)
 /// - Array  + Array  → array-array concat
-/// - other pairs     → string concat (scalars coerced to string)
+/// - Array  + Scalar → Err (S10.13)
+/// - Scalar + Array  → Err (S10.13)
+/// - Scalar + Object → Err (S10.13)
+/// - Object + Scalar → Err (S10.13)
+/// - Scalar + Scalar → string concat per S10
 ///
-/// The `Result` wrapper exists so it can be used directly with `try_fold`.
-/// This function currently never produces an `Err` — type-mismatch cases (e.g.
-/// a non-convertible Object next to an Array) push the unconverted Object into
-/// the Array, which preserves the existing "mixed concat" behaviour rather than
-/// erroring, consistent with how the original single-pass loop behaved.
+/// Produces `Err(ResolveError)` for every spec-disallowed type pair.
 fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
     match (left, right) {
         // Object + Object → deep-merge (S10.3)
         (HoconValue::Object(lf), HoconValue::Object(rf)) => Ok(deep_merge_hocon_objects(lf, rf)),
 
-        // Array + Object → S15.3: try numeric-keyed object conversion
+        // Array + Object → S15.3: try numeric-keyed object conversion; error if None (S10.4)
         (HoconValue::Array(mut arr), obj @ HoconValue::Object(_)) => {
             match numeric_object_to_array(&obj) {
-                Some(converted) => arr.extend(converted),
-                None => arr.push(obj),
+                Some(converted) => {
+                    arr.extend(converted);
+                    Ok(HoconValue::Array(arr))
+                }
+                None => Err(ResolveError::concat_type_mismatch("array", "object")),
             }
-            Ok(HoconValue::Array(arr))
         }
 
-        // Object + Array → S15.3 symmetric: try numeric-keyed object conversion
+        // Object + Array → S15.3 symmetric; error if None (S10.4)
         (obj @ HoconValue::Object(_), HoconValue::Array(right_arr)) => {
             match numeric_object_to_array(&obj) {
                 Some(mut converted) => {
                     converted.extend(right_arr);
                     Ok(HoconValue::Array(converted))
                 }
-                None => {
-                    let mut arr = vec![obj];
-                    arr.extend(right_arr);
-                    Ok(HoconValue::Array(arr))
-                }
+                None => Err(ResolveError::concat_type_mismatch("object", "array")),
             }
         }
 
@@ -471,25 +474,36 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
             Ok(HoconValue::Array(left_arr))
         }
 
-        // Array + Scalar → push scalar into array (preserves prior single-pass behaviour
-        // where scalar elements were appended to an in-progress array concat).
-        (HoconValue::Array(mut arr), scalar) => {
-            arr.push(scalar);
-            Ok(HoconValue::Array(arr))
+        // Array + Scalar → error per S10.13 (spec L373: arrays invalid in string concat)
+        (HoconValue::Array(_), scalar) => {
+            Err(ResolveError::concat_type_mismatch("array", type_name(&scalar)))
         }
 
-        // Scalar + Array → prepend array to scalar (push scalar as first element).
-        (scalar, HoconValue::Array(right_arr)) => {
-            let mut arr = vec![scalar];
-            arr.extend(right_arr);
-            Ok(HoconValue::Array(arr))
+        // Scalar + Array → error per S10.13
+        (scalar, HoconValue::Array(_)) => {
+            Err(ResolveError::concat_type_mismatch(type_name(&scalar), "array"))
         }
 
-        // Scalar pairs → string concat
+        // Scalar pairs: reject if either side is an Object (S10.13); string-concat otherwise
         (left, right) => {
+            if matches!(left, HoconValue::Object(_)) || matches!(right, HoconValue::Object(_)) {
+                return Err(ResolveError::concat_type_mismatch(
+                    type_name(&left),
+                    type_name(&right),
+                ));
+            }
             let s = format!("{}{}", stringify_value(&left), stringify_value(&right));
             Ok(HoconValue::Scalar(ScalarValue::string(s)))
         }
+    }
+}
+
+/// Return the type-name string for a HoconValue, used in error messages.
+fn type_name(v: &HoconValue) -> &'static str {
+    match v {
+        HoconValue::Object(_) => "object",
+        HoconValue::Array(_) => "array",
+        HoconValue::Scalar(_) => "scalar",
     }
 }
 
