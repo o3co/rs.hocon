@@ -199,9 +199,34 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            // S12.5 (HOCON.md L570): record whether the first key token is quoted
+            // so we can enforce the `include` reservation below.
+            let first_key_is_quoted = self.peek_kind() == TokenKind::QuotedString;
+
             // key
             let key_pos = self.current_pos();
             let key = self.parse_key()?;
+
+            // S12.5: `include` is reserved as the first *unquoted* path element in a key.
+            // The bare form (`include = 1`, `include += [1]`, `include { ... }`) is already
+            // rejected via parse_include() above (L191 branch). The dotted form
+            // (`include.foo = 1`) falls through here because the lexer emits
+            // `include.foo` as a single Unquoted token that does not equal the bare
+            // 7-char string "include".
+            if !first_key_is_quoted {
+                if let Some(first) = key.first() {
+                    if first == "include" {
+                        return Err(ParseError {
+                            message: format!(
+                                "'include' is reserved at the start of a key path expression; \
+                                 use \"include\" (quoted) or rename the key (HOCON.md L570)"
+                            ),
+                            line: key_pos.line,
+                            col: key_pos.col,
+                        });
+                    }
+                }
+            }
 
             // value separator (optional)
             self.skip(&[TokenKind::Newline]);
