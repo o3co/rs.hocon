@@ -146,6 +146,11 @@ pub(crate) fn segments_to_key(segments: &[Segment]) -> String {
         .iter()
         .map(|seg| {
             let s = &seg.text;
+            // Quote a segment when raw text would create cache-key ambiguity.
+            // Brackets `[` `]` are included so a quoted-segment `${"X[]"}` produces
+            // `"X[]"` while the list-suffix-derived key `X` + `[]` produces `X[]` —
+            // distinct cache slots. Without this, the two collide (Copilot review
+            // on rs.hocon#88 surfaced the regression after the initial C1 fix).
             if s.is_empty()
                 || s.contains('.')
                 || s.contains('"')
@@ -153,6 +158,8 @@ pub(crate) fn segments_to_key(segments: &[Segment]) -> String {
                 || s != s.trim()
                 || s.contains(' ')
                 || s.contains('\t')
+                || s.contains('[')
+                || s.contains(']')
             {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{}\"", escaped)

@@ -424,20 +424,20 @@ same item descriptions verbatim.
 ### S13c. List values from environment variables
 
 - **S13c.1** `${X[]}` looks up `X_0`, `X_1`, ... env vars — §List values from env (L900)
-  tests: —
-  status: ❌ — not implemented; src/lexer.rs:429 (`is_unquoted_subst_char`) rejects `[` / `]` inside `${...}` body, so `${X[]}` is unparseable
+  tests: `tests/env_var_list_test.rs::s13c_ev01_basic`, `s13c_ev02_stops_at_gap`
+  status: ✅ — implemented in Phase 6 #3g (2026-05-18); lexer `'[' =>` arm in `parse_subst_body` + `resolve_env_list` helper
 - **S13c.2** Stops at first missing index — §List values from env (L905)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev02_stops_at_gap`
+  status: ✅
 - **S13c.3** `${X[]}` no elements → required error — §List values from env (L910)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev03_required_no_elements_errors`
+  status: ✅
 - **S13c.4** `${?X[]}` no elements → undefined / removed — §List values from env (L912)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev04_optional_no_elements`
+  status: ✅
 - **S13c.5** `[]` suffix supported only for env vars (not config / sys props) — §List values from env (L902)
-  tests: —
-  status: ❌ — not implemented (see S13c.1); the constraint is moot when the `[]` suffix itself is rejected by the lexer
+  tests: `tests/env_var_list_test.rs::s13c_s5_required_no_scalar_fallback`, `s13c_s5_optional_no_scalar_fallback`
+  status: ✅ — scalar env fallback is suppressed when `list_suffix=true`; config-lookup returns early (E6)
 
 ## S14. Includes
 
@@ -784,3 +784,18 @@ same item descriptions verbatim.
 - **S26.4** Env vars always become strings (with auto type conversion) — §Substitution fallback (L1563)
   tests: src/resolver/mod.rs:172 (uses_env_var_when_present)
   status: ✅
+
+---
+
+## Extra-spec conventions (E-items)
+
+Cross-implementation behaviors not enumerated by the Lightbend HOCON spec, tracked in
+[`xx.hocon/docs/extra-spec-conventions.md`](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md).
+rs.hocon status per-item:
+
+- **E6** `${X[]}` config-defined wins — `[]` suffix is a no-op when X is a config key
+  tests: `tests/env_var_list_test.rs::s13c_ev05_config_defined_wins`
+  status: ✅ — config lookup returns early before `list_suffix` branch; env vars `X_0`, `X_1`, … are not consulted (Phase 6 #3g, 2026-05-18)
+- **E7** ASCII SPACE (0x20) or TAB (0x09) between path expression and `[]` is allowed (`${X []}` / `${?X []}`); wider whitespace (NBSP, CR, Zs, Zl, BOM, …) is REJECTED to match the narrow extra-spec convention
+  tests: `tests/env_var_list_test.rs::s13c_ev09_whitespace_before_suffix`, `tests/lexer_test.rs::lex_subst_list_suffix_e7_space`, `lex_subst_list_suffix_e7_tab`; negatives via `tests/env_var_list_test.rs::s13c_lex_nbsp_before_suffix_errors`, `_cr_before_suffix_errors`, `_zs_em_space_before_suffix_errors`
+  status: ✅ — `parse_subst_body` `'['` arm validates `pending_ws` against `{' ', '\t'}` and rejects other HOCON whitespace (Phase 6 #3g, 2026-05-18; tightened in Copilot review fix on rs.hocon#88)

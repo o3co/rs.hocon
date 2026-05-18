@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **S13c — `${X[]}` / `${?X[]}` env-var list expansion** (Phase 6 #3g): substitution
+  bodies now accept a literal `[]` suffix signalling env-var-list expansion. The lexer
+  `parse_subst_body` recognises the `[]` suffix (E7: ASCII space/tab before `[` is
+  tolerated); the resolver's new `resolve_env_list` helper scans `NAME_0`, `NAME_1`, …
+  until the first absent key and returns an `Array` of strings. Empty-string elements
+  are preserved (stop on absent key, not empty value). Required substitution with no
+  `_0` element raises `ResolveError`; optional form drops the key.
+  - **E6 compliance** (config-defined wins): when the substitution path resolves to a
+    config value, the `[]` suffix is a no-op — env vars `NAME_*` are not consulted.
+  - **E7 compliance** (whitespace before `[]`): `${X []}` and `${X\t[]}` parse
+    identically to `${X[]}`.
+  - **S13c.5 enforcement**: scalar env fallback (`NAME` without suffix) is suppressed
+    when `list_suffix=true` — only `NAME_0`, `NAME_1`, … are consulted.
+  - Conformance tests: `tests/env_var_list_test.rs` with fixtures ev01–ev11 from
+    `xx.hocon/testdata/hocon/env-var-list/`.
+
+### Changed
+
+- **BREAKING (rare)**: `SubstPayload` gains a new public field `list_suffix: bool`
+  and is now `#[non_exhaustive]`. `SubstPayload` IS publicly re-exported from
+  the crate root (see `lib.rs`), so downstream crates that constructed it via
+  struct literal or pattern-matched all fields exhaustively need to update.
+  Migration: add `list_suffix: false` to existing struct literals (or use
+  `Default` once it's added in a future release), and add `..` to exhaustive
+  patterns. Most consumers should be unaffected — `SubstPayload` is primarily
+  an internal pipeline value produced by the lexer and consumed by the resolver.
+
+  `AstNode::Substitution` also gains `list_suffix: bool` and is now
+  `#[non_exhaustive]`, but the `parser` module is `pub(crate)` so this is NOT
+  a public-API change. (Internal callers in `structure_builder.rs` are updated
+  in this same commit.)
+
+  Rationale for taking `#[non_exhaustive]` in this release: future field
+  additions on these types would otherwise each be breaking; installing the
+  discipline now (in the same minor release that adds the first such field)
+  amortizes the migration cost to a single update.
+
 ## [1.2.0] - 2026-05-18
 
 ### Changed

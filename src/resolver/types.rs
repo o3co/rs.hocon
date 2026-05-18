@@ -43,6 +43,8 @@ pub(crate) enum ResolverValue {
 pub(crate) struct SubstPlaceholder {
     pub segments: Vec<Segment>,
     pub optional: bool,
+    /// Propagated from `AstNode::Substitution::list_suffix`; true for `${X[]}` / `${?X[]}`.
+    pub list_suffix: bool,
     pub line: usize,
     pub col: usize,
     pub prefix_len: usize,

@@ -93,7 +93,17 @@ impl<'a> SubstitutionResolver<'a> {
         s: &SubstPlaceholder,
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
-        let key = segments_to_key(&s.segments);
+        // Cache key includes list_suffix to prevent `${X}` and `${X[]}` collisions:
+        // both resolve via different code paths (scalar fallback vs resolve_env_list)
+        // and can produce different values, so they must occupy distinct cache slots.
+        // Convergent with ts.hocon fix (same bug pattern). go.hocon is unaffected
+        // because its cache is only used for self-ref recovery, not general memo.
+        // Pin: tests/env_var_list_test.rs cache-disambiguation regression.
+        let key = if s.list_suffix {
+            format!("{}[]", segments_to_key(&s.segments))
+        } else {
+            segments_to_key(&s.segments)
+        };
 
         if let Some(cached) = self.cache.get(&key) {
             return Ok(Some(cached.clone()));
@@ -197,6 +207,17 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
+        // S13c: env-var list expansion — `${X[]}` / `${?X[]}`.
+        // When list_suffix=true and config lookup missed, delegate entirely to
+        // resolve_env_list. The scalar env fallback below is SUPPRESSED (S13c.5).
+        if s.list_suffix {
+            let result = self.resolve_env_list(s, key)?;
+            if let Some(ref r) = result {
+                self.cache.insert(key.to_string(), r.clone());
+            }
+            return Ok(result);
+        }
+
         // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior
         let env_key = s
             .segments
@@ -228,6 +249,74 @@ impl<'a> SubstitutionResolver<'a> {
 
         Err(ResolveError {
             message: format!("could not resolve substitution: ${{{}}}", key),
+            path: key.to_string(),
+            line: s.line,
+            col: s.col,
+        })
+    }
+
+    /// Resolve env-var-list expansion for `${X[]}` / `${?X[]}` (S13c).
+    ///
+    /// Candidates are tried in order: fully-qualified base first, then bare
+    /// (prefix-stripped) base (matching the scalar env fallback order).
+    /// First candidate whose `<base>_0` key is present in the env wins entirely —
+    /// no cross-base merging. Empty-string values are preserved (ev10).
+    ///
+    /// Returns:
+    /// - `Ok(Some(HoconValue::Array(...)))` — one or more elements found.
+    /// - `Ok(None)` — no elements found AND `s.optional`.
+    /// - `Err(ResolveError)` — no elements found AND `!s.optional`.
+    fn resolve_env_list(
+        &self,
+        s: &SubstPlaceholder,
+        key: &str,
+    ) -> Result<Option<HoconValue>, ResolveError> {
+        // Build candidate base names (same order as scalar env fallback).
+        let full_base = s
+            .segments
+            .iter()
+            .map(|seg| seg.text.as_str())
+            .collect::<Vec<_>>()
+            .join(".");
+        let mut candidates: Vec<String> = vec![full_base];
+        if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
+            let bare_base = s.segments[s.prefix_len..]
+                .iter()
+                .map(|seg| seg.text.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            candidates.push(bare_base);
+        }
+
+        for base in &candidates {
+            let probe = format!("{}_0", base);
+            if self.env.contains_key(&probe) {
+                // This base has _0 — scan _0, _1, … until first absent key.
+                let mut elements: Vec<HoconValue> = Vec::new();
+                let mut i: usize = 0;
+                loop {
+                    let k = format!("{}_{}", base, i);
+                    match self.env.get(&k) {
+                        Some(v) => {
+                            elements.push(HoconValue::Scalar(ScalarValue::string(v.clone())));
+                            i += 1;
+                        }
+                        None => break,
+                    }
+                }
+                return Ok(Some(HoconValue::Array(elements)));
+            }
+        }
+
+        // No candidate base had _0.
+        if s.optional {
+            return Ok(None);
+        }
+        Err(ResolveError {
+            message: format!(
+                "could not resolve substitution: ${{{key}}} (no environment variable {}_0 found)",
+                candidates[0]
+            ),
             path: key.to_string(),
             line: s.line,
             col: s.col,
