@@ -16,6 +16,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Fixtures that are intentionally missing a sidecar because the Lightbend reference
+/// implementation silently accepts them (quirk, not a conformance gap).
+/// Source: xx.hocon GenerateExpected.java:150-155 for ce05.
+const KNOWN_LIGHTBEND_QUIRKS: &[&str] = &["ce05-object-plus-scalar"];
+
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 fn fixture_dir() -> PathBuf {
@@ -130,12 +135,19 @@ fn run_fixture(stem: &str) {
     let has_json = jp.exists();
 
     if !has_error && !has_json {
-        // No expected output registered; skip with a note.
-        eprintln!(
-            "note: concat-errors/{}.conf has no expected sidecar — skipping validation",
-            stem
+        if KNOWN_LIGHTBEND_QUIRKS.contains(&stem) {
+            eprintln!(
+                "note: concat-errors/{}.conf is a known Lightbend quirk — skipping validation",
+                stem
+            );
+            return;
+        }
+        panic!(
+            "concat-errors/{stem}.conf has no expected sidecar (.error or -expected.json).\n\
+             Run `make testdata` first to fetch expected sidecars from xx.hocon.\n\
+             If this fixture is intentionally unsupported by Lightbend, add \"{stem}\" to \
+             KNOWN_LIGHTBEND_QUIRKS in tests/concat_errors_test.rs."
         );
-        return;
     }
 
     let env: HashMap<String, String> = HashMap::new();
