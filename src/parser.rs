@@ -199,9 +199,34 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            // S12.5 (HOCON.md L570): record whether the first key token is quoted
+            // so we can enforce the `include` reservation below.
+            let first_key_is_quoted = self.peek_kind() == TokenKind::QuotedString;
+
             // key
             let key_pos = self.current_pos();
             let key = self.parse_key()?;
+
+            // S12.5: `include` is reserved as the first *unquoted* path element in a key.
+            // The bare form (`include = 1`, `include += [1]`, `include { ... }`) is already
+            // rejected via parse_include() above (L191 branch). The dotted form
+            // (`include.foo = 1`) falls through here because the lexer emits
+            // `include.foo` as a single Unquoted token that does not equal the bare
+            // 7-char string "include".
+            if !first_key_is_quoted {
+                if let Some(first) = key.first() {
+                    if first == "include" {
+                        return Err(ParseError {
+                            message: "'include' is reserved at the start of a key path \
+                                      expression; use \"include\" (quoted) or rename the \
+                                      key (HOCON.md L570)"
+                                .to_string(),
+                            line: key_pos.line,
+                            col: key_pos.col,
+                        });
+                    }
+                }
+            }
 
             // value separator (optional)
             self.skip(&[TokenKind::Newline]);
@@ -831,5 +856,61 @@ mod tests {
         } else {
             panic!("expected Include");
         }
+    }
+
+    // ── S12.5: `include` reserved at start of key path (HOCON.md L570) ────────
+
+    #[test]
+    fn include_dot_key_is_parse_error() {
+        // ir03: unquoted dotted form must be rejected
+        assert!(matches!(
+            parse_tokens(&tokenize("include.foo = 1").unwrap()),
+            Err(ParseError { .. })
+        ));
+    }
+
+    #[test]
+    fn include_nested_object_body_is_parse_error() {
+        // ir04: reservation applies uniformly inside object literals
+        assert!(matches!(
+            parse_tokens(&tokenize("a = { include.bar = 1 }").unwrap()),
+            Err(ParseError { .. })
+        ));
+    }
+
+    #[test]
+    fn quoted_include_bypasses_reservation() {
+        // ir06: "include" = 1 must succeed
+        assert!(parse_tokens(&tokenize(r#""include" = 1"#).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn quoted_include_dotted_bypasses_reservation() {
+        // ir11: "include".foo = 1 must succeed
+        assert!(parse_tokens(&tokenize(r#""include".foo = 1"#).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn include_bare_equals_is_parse_error() {
+        // ir01 regression guard (already handled via parse_include path)
+        assert!(parse_tokens(&tokenize("include = 1").unwrap()).is_err());
+    }
+
+    #[test]
+    fn include_plus_equals_is_parse_error() {
+        // ir10: += separator form
+        assert!(parse_tokens(&tokenize("include += [1]").unwrap()).is_err());
+    }
+
+    #[test]
+    fn include_object_body_is_parse_error() {
+        // ir13: object-body field write form
+        assert!(parse_tokens(&tokenize("include { x = 1 }").unwrap()).is_err());
+    }
+
+    #[test]
+    fn foo_include_non_initial_is_ok() {
+        // ir07 regression guard: non-initial include is not reserved
+        assert!(parse_tokens(&tokenize("foo.include = 1").unwrap()).is_ok());
     }
 }

@@ -296,8 +296,8 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv02/path-keys-weird-whitespace.conf (fixture)
   status: ✅
 - **S12.5** `include` may NOT begin a path expression in a key — §Paths as keys (L570)
-  tests: tests/integration_test.rs:921 (s12_5_include_as_key_pin); tests/integration_test.rs:932 (s12_5_include_as_key_spec)
-  status: ❌ (see #71)
+  tests: tests/integration_test.rs (s12_5_include_as_key_spec); tests/include_reservation_test.rs (ir01–ir14, ir03/ir04 per-impl overrides); src/parser.rs (include_dot_key_is_parse_error, include_nested_object_body_is_parse_error, quoted_include_bypasses_reservation, et al.)
+  status: ✅ (fixed in fix/s12.5-include-reservation, closes #71)
 
 ## S13. Substitutions
 
