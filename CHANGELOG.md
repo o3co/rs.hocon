@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **S12.5 — `include` reserved at start of key path** (Phase 6 #3e):
+  Unquoted `include` at the start of a key path expression (including the dotted form
+  `include.foo = 1`) is now a parse error per HOCON.md L570. The bare forms
+  (`include = 1`, `include : 1`, `include += [1]`, `include { ... }`) were already
+  rejected via the include-statement branch; this fix adds the dotted case.
+  Quoted `"include"` and non-initial `foo.include` are unaffected.
+  Closes #71.
+
 - **S10.4/S10.13/S10.19 — concat type-check tightening** (Phase 6 #3b):
   `join_pair` in the substitution resolver now returns `ResolveError` for every
   spec-disallowed value-concatenation type pair instead of silently coercing.
