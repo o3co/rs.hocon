@@ -130,3 +130,62 @@ fn surrogate_codepoint_rejected_inside_subst() {
     let msg = err.to_string();
     assert!(msg.contains("invalid unicode escape"), "msg = {}", msg);
 }
+
+// ── S13c: `[]` suffix on substitutions ───────────────────────────────────────
+
+/// Unit 2 RED: `${X[]}` lexes into a Substitution token with list_suffix=true,
+/// segments=["X"].
+#[test]
+fn lex_subst_list_suffix_basic() {
+    let tokens = hocon::tokenize("${X[]}").unwrap();
+    let t = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .expect("Substitution token");
+    let p = t.subst.as_ref().expect("SubstPayload");
+    assert!(p.list_suffix, "list_suffix must be true for ${{X[]}}");
+    assert_eq!(p.segments.len(), 1, "exactly one segment");
+    assert_eq!(p.segments[0].text, "X");
+    assert!(!p.optional);
+}
+
+/// Unit 2: `${?X[]}` — optional form with list_suffix.
+#[test]
+fn lex_subst_list_suffix_optional() {
+    let tokens = hocon::tokenize("${?X[]}").unwrap();
+    let t = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .expect("Substitution token");
+    let p = t.subst.as_ref().expect("SubstPayload");
+    assert!(p.list_suffix, "list_suffix must be true for ${{?X[]}}");
+    assert!(p.optional);
+    assert_eq!(p.segments[0].text, "X");
+}
+
+/// Unit 2: multi-segment path `${FOO.BAR[]}`.
+#[test]
+fn lex_subst_list_suffix_multipath() {
+    let tokens = hocon::tokenize("${FOO.BAR[]}").unwrap();
+    let p = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .and_then(|t| t.subst.as_ref())
+        .expect("SubstPayload");
+    assert!(p.list_suffix);
+    assert_eq!(p.segments.len(), 2);
+    assert_eq!(p.segments[0].text, "FOO");
+    assert_eq!(p.segments[1].text, "BAR");
+}
+
+/// Unit 2: plain `${X}` must NOT set list_suffix.
+#[test]
+fn lex_subst_no_list_suffix_for_plain() {
+    let tokens = hocon::tokenize("${X}").unwrap();
+    let p = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .and_then(|t| t.subst.as_ref())
+        .expect("SubstPayload");
+    assert!(!p.list_suffix, "plain ${{X}} must NOT set list_suffix");
+}
