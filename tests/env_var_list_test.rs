@@ -2,8 +2,10 @@
 //!
 //! Fixtures loaded from `tests/testdata/hocon/env-var-list/` (synced from
 //! xx.hocon via `make testdata`). Expected JSON from
-//! `tests/testdata/hocon/../../../repos/xx.hocon/expected/hocon/env-var-list/`
-//! is co-located on disk under a path resolved at runtime.
+//! `tests/testdata/expected/env-var-list/` (also synced via `make testdata`).
+//! Both directories are populated by the Makefile's tarball fetch from xx.hocon
+//! main and persisted under the crate root so CI (which only checks out
+//! rs.hocon) can resolve them without depending on a sibling xx.hocon worktree.
 //!
 //! Env injection uses `parse_file_with_env` (hermetic — no `std::env::set_var`).
 
@@ -19,9 +21,9 @@ fn fixture_dir() -> PathBuf {
 }
 
 fn expected_dir() -> PathBuf {
-    // xx.hocon expected outputs sit two repo-siblings up from this crate root:
-    //   <agentscope>/repos/rs.hocon  →  <agentscope>/repos/xx.hocon
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../xx.hocon/expected/hocon/env-var-list")
+    // Synced by `make testdata` from xx.hocon main into a crate-local path so CI
+    // (which only checks out rs.hocon, no sibling xx.hocon worktree) can find it.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/env-var-list")
 }
 
 fn fixture_path(name: &str) -> PathBuf {
