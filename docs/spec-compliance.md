@@ -643,9 +643,9 @@ same item descriptions verbatim.
   tests: tests/spec_phase5.rs (s18_3_unit_with_digit_rejected; s18_3_unit_with_hyphen_rejected; s18_3_valid_letter_only_unit_accepted)
   status: ✅
 - **S18.4** String with no unit → interpreted with default unit — §Units format (L1290)
-  tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_pin_duration_string_no_unit_errors; s18_4_spec_duration_string_no_unit_uses_default [#ignore])
-  status: ⚠️
-  notes: bytes string with no unit correctly uses byte default (`"1024"` → 1024). Duration string with no unit errors instead of using millisecond default — `parse_duration` does not match empty unit string. Number scalars (non-string) work for both getters.
+  tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_spec_duration_string_no_unit_uses_default); tests/units_default_test.rs (ud01–ud08, up01–up05, ub01–ub06, un01–un03)
+  status: ✅
+  notes: All three families (duration→ms, period→days, bytes→bytes) now treat a bare number string as the default unit. `parse_duration` and `parse_bytes` use HOCON_WS trim and integer pre-classification. `parse_bytes` truncates fractional values per Lightbend `BigDecimal.toBigInteger()`. `get_bytes` rejects negative byte sizes at the accessor (positive-only invariant). `get_period`/`get_period_option` accessors added (net-new, return `(years: i32, months: i32, days: i32)`). rs-specific: `get_duration` returns `Err` for negative inputs (`std::time::Duration` is unsigned; see CHANGELOG).
 
 ## S19. Duration format
 

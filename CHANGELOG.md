@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`get_period` / `get_period_option` accessors** (Phase 6 #3d):
+  New methods on `Config` for reading HOCON period values. Returns `(years: i32, months: i32, days: i32)`
+  tuple (no `chrono` dependency). Supported units: `d`/`day`/`days` (default),
+  `w`/`week`/`weeks` (× 7 days), `m`/`mo`/`month`/`months`, `y`/`year`/`years`.
+  Negative periods are permitted (the signed `i32` tuple supports them, matching Lightbend).
+
 ### Fixed
+
+- **S18.4 — string value with no unit → family default unit** (Phase 6 #3d):
+  All three unit families now correctly interpret a bare number string as the family default:
+  duration → milliseconds, period → days, bytes → bytes (HOCON.md L1290 / L1301 / L1321 / L1341).
+  Previously `parse_duration` returned `None` for no-unit strings, causing `get_duration` to error.
+
+  Changes:
+  - `parse_duration`: added `""` arm (ms default); switched `.trim()` → HOCON_WS trim;
+    added integer pre-classification regex `[+-]?[0-9]+` to match Lightbend `Long.parseLong`
+    vs `Double.parseDouble` per-family split.
+  - `parse_bytes`: switched `.trim()` → HOCON_WS trim; changed `.round()` → `as i64`
+    truncation to match Lightbend `BigDecimal.toBigInteger()` semantics.
+  - `get_bytes`: added negative-accessor rejection — byte sizes must be non-negative
+    (Lightbend `getBytesBigInteger` positive-only invariant; ub04).
+  - `parse_period` (new): integer-only (fractional rejected per Lightbend `Integer.parseInt`);
+    default unit days; units as above.
+  - `is_hocon_whitespace` in `src/lexer.rs` promoted to `pub(crate)` for reuse.
+
+  **rs-specific limitation** — `get_duration` returns `Err` for negative duration strings
+  (e.g. `"-500"`). `std::time::Duration` is unsigned, whereas Lightbend's `java.time.Duration`
+  is signed. The `ud06` conformance test in `tests/units_default_test.rs` asserts `is_err()`
+  with a comment documenting this divergence.
 
 - **S12.5 — `include` reserved at start of key path** (Phase 6 #3e):
   Unquoted `include` at the start of a key path expression (including the dotted form

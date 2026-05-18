@@ -478,7 +478,7 @@ impl Config {
 /// Unlike `str::trim()` (which is ASCII-only for whitespace), this respects the full
 /// HOCON_WS set (U+00A0 NBSP, U+FEFF BOM, various Unicode space separators, etc.).
 fn trim_hocon_ws(s: &str) -> &str {
-    s.trim_matches(|c| is_hocon_whitespace(c))
+    s.trim_matches(is_hocon_whitespace)
 }
 
 /// Returns `true` if `s` matches `[+-]?[0-9]+` (integer pre-classification).
