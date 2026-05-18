@@ -567,4 +567,42 @@ mod tests {
             err.message
         );
     }
+
+    /// Fix #3: concat type-mismatch errors must include non-zero line/col.
+    #[test]
+    fn concat_type_mismatch_error_has_position() {
+        // Line 2, col 5 is where the concat value starts: "a = [1] {b:1}"
+        // The value [1] {b:1} is a concat whose offending pair is array+object.
+        let input = "\na = [1] {b: 1}\n";
+        let env = std::collections::HashMap::new();
+        let err = crate::parse_with_env(input, &env).unwrap_err();
+        if let crate::HoconError::Resolve(re) = err {
+            assert!(
+                re.line != 0,
+                "concat type-mismatch error must have non-zero line, got line={}",
+                re.line
+            );
+            assert!(
+                re.col != 0,
+                "concat type-mismatch error must have non-zero col, got col={}",
+                re.col
+            );
+        } else {
+            panic!("expected ResolveError, got: {:?}", err);
+        }
+    }
+
+    /// Fix #3: scalar+object concat error must also carry position.
+    #[test]
+    fn concat_scalar_plus_object_error_has_position() {
+        let input = "a = x {b: 1}\n";
+        let env = std::collections::HashMap::new();
+        let err = crate::parse_with_env(input, &env).unwrap_err();
+        if let crate::HoconError::Resolve(re) = err {
+            assert!(re.line != 0, "line must be non-zero, got {}", re.line);
+            assert!(re.col != 0, "col must be non-zero, got {}", re.col);
+        } else {
+            panic!("expected ResolveError, got: {:?}", err);
+        }
+    }
 }
