@@ -992,8 +992,14 @@ fn s12_5_include_as_key_spec() {
         );
     }
     // Quoted form and non-initial form must still succeed.
-    assert!(parse(r#""include" = 1"#).is_ok(), "quoted include must succeed");
-    assert!(parse("foo.include = 1").is_ok(), "non-initial include must succeed");
+    assert!(
+        parse(r#""include" = 1"#).is_ok(),
+        "quoted include must succeed"
+    );
+    assert!(
+        parse("foo.include = 1").is_ok(),
+        "non-initial include must succeed"
+    );
 }
 
 // --- S13b.2: `+=` on non-array prior value → error (HOCON L732) -------------

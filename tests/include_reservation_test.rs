@@ -18,21 +18,17 @@ use std::path::PathBuf;
 /// Fixtures that are intentionally missing a sidecar because the Lightbend reference
 /// implementation silently accepts them (quirk, not a conformance gap).
 /// rs.hocon enforces strict HOCON.md compliance; see ir03_per_impl / ir04_per_impl below.
-const KNOWN_LIGHTBEND_QUIRKS: &[&str] = &[
-    "ir03-include-dot-foo-equals",
-    "ir04-include-nested-object",
-];
+const KNOWN_LIGHTBEND_QUIRKS: &[&str] =
+    &["ir03-include-dot-foo-equals", "ir04-include-nested-object"];
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/hocon/include-reservation")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/hocon/include-reservation")
 }
 
 fn expected_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected/include-reservation")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/include-reservation")
 }
 
 fn fixture_path(stem: &str) -> PathBuf {
