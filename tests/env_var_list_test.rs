@@ -7,6 +7,7 @@
 //!
 //! Env injection uses `parse_file_with_env` (hermetic — no `std::env::set_var`).
 
+use hocon::HoconValue;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -293,4 +294,136 @@ fn s13c_s5_optional_no_scalar_fallback() {
 #[test]
 fn s13c_ev08_self_ref_concat() {
     assert_fixture_matches("ev08-self-append");
+}
+
+// ── Multi-agent-review regressions ───────────────────────────────────────────
+//
+// The following tests pin three bugs caught during /multi-agent-review of this
+// branch (Codex Critical C1 + Important I1/I2; convergent with ts.hocon).
+
+/// C1: `${X}` and `${X[]}` must NOT collide in the substitution cache.
+///
+/// Before the fix, the cache key was `segments_to_key(s.segments)` only, so
+/// whichever form resolved first poisoned the cache for the other. Verified
+/// in both directions to ensure neither path wins by accident.
+#[test]
+fn s13c_cache_disambiguation_scalar_then_list() {
+    let mut env = HashMap::new();
+    env.insert("S13C_CACHE_X".to_string(), "scalar-val".to_string());
+    env.insert("S13C_CACHE_X_0".to_string(), "a".to_string());
+    env.insert("S13C_CACHE_X_1".to_string(), "b".to_string());
+    let cfg = hocon::parse_with_env("a = ${S13C_CACHE_X}\nb = ${S13C_CACHE_X[]}", &env)
+        .expect("parse_with_env");
+    assert_eq!(cfg.get_string("a").unwrap(), "scalar-val");
+    let b = cfg.get_list("b").expect("b should be list");
+    let texts: Vec<String> = b
+        .iter()
+        .map(|v| match v {
+            HoconValue::Scalar(sv) => sv.raw.clone(),
+            _ => panic!("expected scalar element in b"),
+        })
+        .collect();
+    assert_eq!(texts, vec!["a", "b"]);
+}
+
+#[test]
+fn s13c_cache_disambiguation_list_then_scalar() {
+    let mut env = HashMap::new();
+    env.insert("S13C_CACHE2_X".to_string(), "scalar-val".to_string());
+    env.insert("S13C_CACHE2_X_0".to_string(), "a".to_string());
+    env.insert("S13C_CACHE2_X_1".to_string(), "b".to_string());
+    let cfg = hocon::parse_with_env("a = ${S13C_CACHE2_X[]}\nb = ${S13C_CACHE2_X}", &env)
+        .expect("parse_with_env");
+    let a = cfg.get_list("a").expect("a should be list");
+    let texts: Vec<String> = a
+        .iter()
+        .map(|v| match v {
+            HoconValue::Scalar(sv) => sv.raw.clone(),
+            _ => panic!("expected scalar element in a"),
+        })
+        .collect();
+    assert_eq!(texts, vec!["a", "b"]);
+    assert_eq!(cfg.get_string("b").unwrap(), "scalar-val");
+}
+
+/// I1: `${X.[]}` must be rejected as empty-segment-before-suffix.
+///
+/// Before the fix, the `'[' =>` arm only checked `!cur_started && segments.is_empty()`,
+/// which missed the case where a trailing dot just reset cur_started but segments
+/// already had entries from prior segment parsing.
+#[test]
+fn s13c_lex_trailing_dot_before_suffix_errors() {
+    let env = HashMap::new();
+    let err = hocon::parse_with_env("x = ${A.[]}", &env);
+    assert!(err.is_err(), "expected ParseError for ${{A.[]}}, got Ok");
+}
+
+#[test]
+fn s13c_lex_trailing_dot_space_before_suffix_errors() {
+    let env = HashMap::new();
+    let err = hocon::parse_with_env("x = ${A . []}", &env);
+    assert!(err.is_err(), "expected ParseError for ${{A . []}}, got Ok");
+}
+
+/// I2: E7 narrow-allow-list — only ASCII SPACE / TAB allowed before `[]`.
+///
+/// Before the fix, pending_ws accumulated wider HOCON whitespace (NBSP, CR,
+/// Zs, BOM) and the `[` arm discarded it all unconditionally. The new check
+/// rejects any non-{space,tab} char in pending_ws.
+#[test]
+fn s13c_lex_nbsp_before_suffix_errors() {
+    let env = HashMap::new();
+    let err = hocon::parse_with_env("x = ${A\u{00A0}[]}", &env);
+    assert!(
+        err.is_err(),
+        "expected ParseError for ${{A\\u00A0[]}} (NBSP), got Ok"
+    );
+}
+
+#[test]
+fn s13c_lex_cr_before_suffix_errors() {
+    let env = HashMap::new();
+    let err = hocon::parse_with_env("x = ${A\r[]}", &env);
+    assert!(
+        err.is_err(),
+        "expected ParseError for ${{A\\r[]}} (CR), got Ok"
+    );
+}
+
+#[test]
+fn s13c_lex_zs_em_space_before_suffix_errors() {
+    let env = HashMap::new();
+    let err = hocon::parse_with_env("x = ${A\u{2003}[]}", &env);
+    assert!(
+        err.is_err(),
+        "expected ParseError for ${{A\\u2003[]}} (em-space), got Ok"
+    );
+}
+
+/// E7 positive sanity: ASCII space + tab should still pass.
+#[test]
+fn s13c_lex_e7_ascii_space_tab_before_suffix_ok() {
+    let mut env = HashMap::new();
+    env.insert("S13C_E7_OK_0".to_string(), "v".to_string());
+    let cfg = hocon::parse_with_env("x = ${S13C_E7_OK []}", &env)
+        .expect("space before [] should be accepted");
+    assert!(cfg.has("x"));
+    let cfg2 = hocon::parse_with_env("x = ${S13C_E7_OK\t[]}", &env)
+        .expect("tab before [] should be accepted");
+    assert!(cfg2.has("x"));
+}
+
+/// `${"a"[]}` — quoted segment followed by suffix. Sanity-pin positive.
+#[test]
+fn s13c_lex_quoted_segment_with_suffix_ok() {
+    let mut env = HashMap::new();
+    env.insert("a_0".to_string(), "v".to_string());
+    let cfg = hocon::parse_with_env(r#"x = ${"a"[]}"#, &env)
+        .expect("quoted segment + suffix should be accepted");
+    let list = cfg.get_list("x").expect("x should be list");
+    assert_eq!(list.len(), 1);
+    match &list[0] {
+        HoconValue::Scalar(sv) => assert_eq!(sv.raw, "v"),
+        _ => panic!("expected scalar element"),
+    }
 }

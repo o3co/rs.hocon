@@ -710,25 +710,44 @@ fn parse_subst_body(
             }
             '[' => {
                 // S13c: `[]` suffix — end of path expression, start of list-suffix.
-                // E7: pending_ws (horizontal WS before `[`) is discarded here.
-                // Error if no segment has been started yet (e.g. `${[]}` / `${ []}`).
-                if !cur_started && segments.is_empty() {
+                // Two convergent multi-impl checks (mirrors go.hocon + ts.hocon fixes):
+                //
+                //   (a) Empty-segment guard: error if no segment has been started AND
+                //       either there are no segments yet (`${[]}` / `${ []}`) or a
+                //       trailing dot was just consumed (`${X.[]}` / `${X . []}`).
+                //       Both reduce to `!cur_started` — uniform error.
+                //   (b) E7 narrow: pending_ws may contain only ASCII SPACE (0x20) or
+                //       TAB (0x09). Wider HOCON whitespace (NBSP, CR, Zs, BOM, …) is
+                //       accumulated by the broader inter-token WS arm below (S6 set)
+                //       but is rejected here for the `[` boundary per extra-spec E7
+                //       ("narrow allow-list intentionally avoids semantic surprise").
+                if !cur_started {
                     return Err(ParseError {
                         message: "empty segment before '[]' suffix in substitution".into(),
                         line: start_line,
                         col: *col,
                     });
                 }
-                // Flush any in-progress unquoted segment (same as the `}` path).
-                if cur_started {
-                    segments.push(Segment {
-                        text: std::mem::take(&mut cur_text),
-                        line: cur_line,
-                        col: cur_col,
-                    });
-                    cur_started = false;
+                for w in pending_ws.chars() {
+                    if w != ' ' && w != '\t' {
+                        return Err(ParseError {
+                            message: format!(
+                                "only ASCII space or tab allowed between substitution path and '[]' suffix (got {:?}, HOCON extra-spec E7)",
+                                w
+                            ),
+                            line: start_line,
+                            col: *col,
+                        });
+                    }
                 }
-                // Discard pending_ws (E7: horizontal WS between path and `[`).
+                // Flush in-progress unquoted segment (same as the `}` path).
+                segments.push(Segment {
+                    text: std::mem::take(&mut cur_text),
+                    line: cur_line,
+                    col: cur_col,
+                });
+                cur_started = false;
+                // E7-conformant pending_ws is intentionally discarded.
                 pending_ws.clear();
                 // Consume the literal `[]`.
                 parse_literal_brackets(chars, pos, col, start_line, start_col)?;

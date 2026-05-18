@@ -93,7 +93,17 @@ impl<'a> SubstitutionResolver<'a> {
         s: &SubstPlaceholder,
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
-        let key = segments_to_key(&s.segments);
+        // Cache key includes list_suffix to prevent `${X}` and `${X[]}` collisions:
+        // both resolve via different code paths (scalar fallback vs resolve_env_list)
+        // and can produce different values, so they must occupy distinct cache slots.
+        // Convergent with ts.hocon fix (same bug pattern). go.hocon is unaffected
+        // because its cache is only used for self-ref recovery, not general memo.
+        // Pin: tests/env_var_list_test.rs cache-disambiguation regression.
+        let key = if s.list_suffix {
+            format!("{}[]", segments_to_key(&s.segments))
+        } else {
+            segments_to_key(&s.segments)
+        };
 
         if let Some(cached) = self.cache.get(&key) {
             return Ok(Some(cached.clone()));
