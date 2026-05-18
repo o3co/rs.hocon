@@ -61,15 +61,14 @@ impl ResolveError {
         right_type: &str,
         line: usize,
         col: usize,
-        path: String,
     ) -> Self {
         ResolveError {
             message: format!(
                 "value concatenation requires same-kind operands per HOCON S10; \
-                 got {} + {} (S10.4/S10.13/S10.19)",
+                 got {} + {}",
                 left_type, right_type
             ),
-            path,
+            path: String::new(),
             line,
             col,
         }

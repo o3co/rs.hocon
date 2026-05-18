@@ -83,7 +83,7 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
             hocon::ScalarType::Number => {
                 if !sv.raw.contains('.') && !sv.raw.contains('e') && !sv.raw.contains('E') {
                     if let Ok(n) = sv.raw.parse::<i64>() {
-                        return serde_json::json!(n as f64);
+                        return serde_json::json!(n);
                     }
                 }
                 if let Ok(f) = sv.raw.parse::<f64>() {
@@ -94,7 +94,7 @@ fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
             hocon::ScalarType::String => serde_json::Value::String(sv.raw.clone()),
             _ => serde_json::Value::String(sv.raw.clone()),
         },
-        _ => unreachable!("unknown HoconValue variant"),
+        _ => panic!("hocon_to_json: unknown HoconValue variant: {:?}", v),
     }
 }
 

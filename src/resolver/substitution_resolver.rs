@@ -461,7 +461,6 @@ fn join_pair(
                     "object",
                     line,
                     col,
-                    String::new(),
                 )),
             }
         }
@@ -478,7 +477,6 @@ fn join_pair(
                     "array",
                     line,
                     col,
-                    String::new(),
                 )),
             }
         }
@@ -495,7 +493,6 @@ fn join_pair(
             type_name(&scalar),
             line,
             col,
-            String::new(),
         )),
 
         // Scalar + Array → error per S10.13
@@ -504,7 +501,6 @@ fn join_pair(
             "array",
             line,
             col,
-            String::new(),
         )),
 
         // Scalar pairs: reject if either side is an Object (S10.13); string-concat otherwise
@@ -515,7 +511,6 @@ fn join_pair(
                     type_name(&right),
                     line,
                     col,
-                    String::new(),
                 ));
             }
             let s = format!("{}{}", stringify_value(&left), stringify_value(&right));
@@ -537,7 +532,6 @@ fn type_name(v: &HoconValue) -> &'static str {
             crate::value::ScalarType::Boolean => "boolean",
             crate::value::ScalarType::Number => "number",
             crate::value::ScalarType::String => "string",
-            _ => "scalar",
         },
     }
 }
@@ -545,8 +539,12 @@ fn type_name(v: &HoconValue) -> &'static str {
 fn stringify_value(v: &HoconValue) -> String {
     match v {
         HoconValue::Scalar(sv) => sv.raw.clone(),
-        HoconValue::Array(_) => format!("{:?}", v),
-        HoconValue::Object(_) => format!("{:?}", v),
+        HoconValue::Array(_) => {
+            unreachable!("stringify_value invariant: type-check rejects Array in string-concat per S10.13")
+        }
+        HoconValue::Object(_) => {
+            unreachable!("stringify_value invariant: type-check rejects Object in string-concat per S10.13")
+        }
     }
 }
 
