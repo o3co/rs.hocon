@@ -977,22 +977,23 @@ fn s11_9_subst_in_key_rejected() {
 
 // --- S12.5: `include` may NOT begin a key path (HOCON L570) -----------------
 #[test]
-fn s12_5_include_as_key_pin() {
-    // BUG: `include.foo = 42` is currently accepted; spec forbids `include` as the
-    // first element of a path expression in a key position.
-    assert!(
-        parse("include.foo = 42").is_ok(),
-        "[pin] include.foo currently accepted as a key — update when fixed"
-    );
-}
-
-#[test]
-#[ignore = "spec violation: unquoted `include` must not begin a key path per HOCON L570, see #71"]
 fn s12_5_include_as_key_spec() {
-    assert!(
-        parse("include.foo = 42").is_err(),
-        "unquoted `include` at start of a key path must be a parse error per HOCON L570"
-    );
+    // Trigger variants — all must be parse errors per HOCON.md L570.
+    for input in &[
+        "include.foo = 42",
+        "include : 1",
+        "include += [1]",
+        "include { x = 1 }",
+    ] {
+        assert!(
+            parse(input).is_err(),
+            "unquoted `include` at start of a key path must be a parse error per HOCON L570 (input: {})",
+            input
+        );
+    }
+    // Quoted form and non-initial form must still succeed.
+    assert!(parse(r#""include" = 1"#).is_ok(), "quoted include must succeed");
+    assert!(parse("foo.include = 1").is_ok(), "non-initial include must succeed");
 }
 
 // --- S13b.2: `+=` on non-array prior value → error (HOCON L732) -------------
