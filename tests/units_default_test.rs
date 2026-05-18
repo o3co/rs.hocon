@@ -131,7 +131,7 @@ fn up01_period_bare() {
     let cfg = load("up01-period-bare.conf");
     assert_eq!(
         cfg.get_period("p").unwrap(),
-        (0, 0, 7),
+        hocon::Period::new(0, 0, 7),
         "up01: bare '7' must default to 7 days"
     );
 }
@@ -142,7 +142,7 @@ fn up02_period_leading_trailing_ws() {
     let cfg = load("up02-period-leading-trailing-ws.conf");
     assert_eq!(
         cfg.get_period("p").unwrap(),
-        (0, 0, 7),
+        hocon::Period::new(0, 0, 7),
         "up02: whitespace-padded '\" 7 \"' must default to 7 days"
     );
 }
@@ -157,25 +157,25 @@ fn up03_period_fractional_rejected() {
     );
 }
 
-/// up04: negative `"-7"` → (0, 0, -7) — period allows negative at accessor (Lightbend).
+/// up04: negative `"-7"` → Period { years:0, months:0, days:-7 } — period allows negative at accessor (Lightbend).
 #[test]
 fn up04_period_negative() {
     let cfg = load("up04-period-negative.conf");
     assert_eq!(
         cfg.get_period("p").unwrap(),
-        (0, 0, -7),
-        "up04: negative '-7' must yield (0, 0, -7) days (signed i32 tuple)"
+        hocon::Period::new(0, 0, -7),
+        "up04: negative '-7' must yield Period {{ years:0, months:0, days:-7 }}"
     );
 }
 
-/// up05: `"7w"` → 49 days (regression guard: explicit weeks unit).
+/// up05: `"7w"` → Period { years:0, months:0, days:49 } (regression guard: explicit weeks unit).
 #[test]
 fn up05_period_with_unit() {
     let cfg = load("up05-period-with-unit.conf");
     assert_eq!(
         cfg.get_period("p").unwrap(),
-        (0, 0, 49),
-        "up05 (regression): '7w' must yield (0, 0, 49) days"
+        hocon::Period::new(0, 0, 49),
+        "up05 (regression): '7w' must yield Period {{ years:0, months:0, days:49 }}"
     );
 }
 

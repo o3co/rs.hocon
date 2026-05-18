@@ -9,11 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Period` struct** (Phase 6 #3d — S18 review fix):
+  New public `Period { years: i32, months: i32, days: i32 }` struct, marked `#[non_exhaustive]`
+  so future fields can be added without a breaking change. Re-exported from the crate root as
+  `hocon::Period`. Constructed via `Period::new(years, months, days)`.
+
 - **`get_period` / `get_period_option` accessors** (Phase 6 #3d):
-  New methods on `Config` for reading HOCON period values. Returns `(years: i32, months: i32, days: i32)`
-  tuple (no `chrono` dependency). Supported units: `d`/`day`/`days` (default),
-  `w`/`week`/`weeks` (× 7 days), `m`/`mo`/`month`/`months`, `y`/`year`/`years`.
-  Negative periods are permitted (the signed `i32` tuple supports them, matching Lightbend).
+  New methods on `Config` for reading HOCON period values. Returns `Period` (no `chrono`
+  dependency). Supported units: `d`/`day`/`days` (default), `w`/`week`/`weeks` (× 7 days),
+  `m`/`mo`/`month`/`months`, `y`/`year`/`years`.
+  Negative periods are permitted (signed `i32` fields, matching Lightbend).
 
 ### Fixed
 
@@ -28,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     vs `Double.parseDouble` per-family split.
   - `parse_bytes`: switched `.trim()` → HOCON_WS trim; changed `.round()` → `as i64`
     truncation to match Lightbend `BigDecimal.toBigInteger()` semantics.
-  - `get_bytes`: added negative-accessor rejection — byte sizes must be non-negative
+  - `get_bytes`: added negative-accessor rejection on both the string path and the bare-number
+    path — byte sizes must be non-negative regardless of source
     (Lightbend `getBytesBigInteger` positive-only invariant; ub04).
   - `parse_period` (new): integer-only (fractional rejected per Lightbend `Integer.parseInt`);
     default unit days; units as above.
