@@ -660,25 +660,58 @@ fn s3_2_root_bare_string_rejected() {
 }
 
 // --- S10.4: mixing arrays + objects in concat → error (HOCON L385) -----------
+// Closes #65. Formerly pinned as silent-accept; fixed in Phase 6 #3b.
 #[test]
-fn s10_4_array_object_concat_pin() {
-    // BUG: current parser silently accepts [1,2] {b:3} without error.
+fn s10_4_array_object_concat_is_error() {
+    // literal array + literal object must error per HOCON L385
     assert!(
-        parse("a = [1,2] {b:3}").is_ok(),
-        "[pin] array+object concat currently produces no error — update when fixed"
+        matches!(parse("a = [1,2] {b:3}"), Err(hocon::HoconError::Resolve(_))),
+        "array+object concat must raise ResolveError per HOCON L385"
+    );
+    assert!(
+        matches!(parse("a = {b:3} [1,2]"), Err(hocon::HoconError::Resolve(_))),
+        "object+array concat must raise ResolveError per HOCON L385"
     );
 }
 
 #[test]
-#[ignore = "spec violation: array+object concat must be rejected per HOCON L385, see #65"]
-fn s10_4_array_object_concat_spec() {
+fn s10_4_subst_obj_plus_array_is_error() {
+    // S10.19: substitution-resolved object mixed with literal array → error
     assert!(
-        parse("a = [1,2] {b:3}").is_err(),
-        "mixing array and object in concat must be a parse/resolve error per HOCON L385"
+        matches!(
+            parse("obj = { b: 2 }\na = [1] ${obj}"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "array + subst-resolved-object must raise ResolveError per HOCON L385/L387"
     );
     assert!(
-        parse("a = {b:3} [1,2]").is_err(),
-        "mixing object and array in concat must be a parse/resolve error per HOCON L385"
+        matches!(
+            parse("arr = [1]\na = ${arr} { b: 2 }"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "subst-resolved-array + object must raise ResolveError per HOCON L385/L387"
+    );
+}
+
+#[test]
+fn s10_4_numeric_obj_concat_still_works() {
+    // REGRESSION GUARD (S15): numeric-keyed object → array conversion still ok
+    let cfg = parse("obj = {\"0\":\"x\",\"1\":\"y\"}\na = [1] ${obj}")
+        .expect("numeric-keyed object concat must still succeed (S15)");
+    let items = cfg.get_list("a").expect("a must be a list");
+    assert_eq!(items.len(), 3, "a must have 3 elements: [1, x, y]");
+}
+
+#[test]
+fn s10_4_empty_edge_array_plus_empty_object_is_error() {
+    // empty object still fails numeric conversion (S15.4), so must error
+    assert!(
+        matches!(parse("a = [1] {}"), Err(hocon::HoconError::Resolve(_))),
+        "array+empty-object must raise ResolveError (S15.4: empty object not converted)"
+    );
+    assert!(
+        matches!(parse("a = [] {b:1}"), Err(hocon::HoconError::Resolve(_))),
+        "empty-array+object must raise ResolveError per HOCON L385"
     );
 }
 
@@ -742,40 +775,77 @@ fn s10_8_unquoted_space_key_spec() {
 }
 
 // --- S10.13: array/object in string concat → error (HOCON L373) --------------
+// Closes #67. Formerly pinned as silent-accept; fixed in Phase 6 #3b.
 #[test]
-fn s10_13_object_in_string_concat_pin() {
-    // BUG: `hello {b:1}` is a string adjacent to an object — must be rejected.
+fn s10_13_scalar_object_concat_is_error() {
+    // scalar + object must error per HOCON L373
     assert!(
-        parse("a = hello {b:1}").is_ok(),
-        "[pin] object in string concat currently not rejected — update when fixed"
+        matches!(parse("a = hello {b:1}"), Err(hocon::HoconError::Resolve(_))),
+        "scalar+object in string concat must raise ResolveError per HOCON L373"
+    );
+    assert!(
+        matches!(parse("a = {b:1} hello"), Err(hocon::HoconError::Resolve(_))),
+        "object+scalar in string concat must raise ResolveError per HOCON L373"
     );
 }
 
 #[test]
-#[ignore = "spec violation: object in string concat must be rejected per HOCON L373, see #67"]
-fn s10_13_object_in_string_concat_spec() {
+fn s10_13_scalar_array_concat_is_error() {
+    // scalar + array or array + scalar must error per HOCON L373
     assert!(
-        parse("a = hello {b:1}").is_err(),
-        "object appearing in string concat must be rejected per HOCON L373"
+        matches!(parse("a = hello [1,2]"), Err(hocon::HoconError::Resolve(_))),
+        "scalar+array in string concat must raise ResolveError per HOCON L373"
+    );
+    assert!(
+        matches!(parse("a = [1,2] hello"), Err(hocon::HoconError::Resolve(_))),
+        "array+scalar in string concat must raise ResolveError per HOCON L373"
     );
 }
 
 #[test]
-fn s10_13_array_in_string_concat_pin() {
-    // BUG: `hello [1,2]` is a string adjacent to an array — must be rejected.
+fn s10_13_subst_resolved_array_plus_scalar_is_error() {
+    // substitution-resolved array in scalar concat → error (S10.19 variant)
     assert!(
-        parse("a = hello [1,2]").is_ok(),
-        "[pin] array in string concat currently not rejected — update when fixed"
+        matches!(
+            parse("arr = [1]\na = x ${arr}"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "scalar + subst-resolved-array must raise ResolveError per HOCON L373/L387"
     );
 }
 
 #[test]
-#[ignore = "spec violation: array in string concat must be rejected per HOCON L373, see #67"]
-fn s10_13_array_in_string_concat_spec() {
+fn s10_13_subst_resolved_object_plus_scalar_is_error() {
+    // substitution-resolved object in scalar concat → error (S10.19 variant)
     assert!(
-        parse("a = hello [1,2]").is_err(),
-        "array appearing in string concat must be rejected per HOCON L373"
+        matches!(
+            parse("obj = { b: 1 }\na = x ${obj}"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "scalar + subst-resolved-object must raise ResolveError per HOCON L373/L387"
     );
+}
+
+// --- S10.4 optional-substitution interaction (S10.19 + spec §Optional omission) --
+#[test]
+fn s10_4_optional_missing_mid_concat_is_error() {
+    // missing piece is omitted, leaving [1] + {b:2} → array+object → error
+    assert!(
+        matches!(
+            parse("a = [1] ${?missing} { b: 2 }"),
+            Err(hocon::HoconError::Resolve(_))
+        ),
+        "optional-omission must not shield type-mismatch between neighbours (S10.4)"
+    );
+}
+
+#[test]
+fn s10_4_optional_missing_only_piece_ok() {
+    // only remaining piece is [1] → no error, value is [1]
+    let cfg = parse("a = [1] ${?missing}")
+        .expect("optional omission of trailing piece must leave a=[1] with no error");
+    let items = cfg.get_list("a").expect("a must be a list");
+    assert_eq!(items.len(), 1, "a must have 1 element");
 }
 
 // --- S10.14: whitespace around obj/array substitutions is ignored (HOCON L440) --
