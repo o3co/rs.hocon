@@ -51,6 +51,26 @@ impl fmt::Display for ResolveError {
     }
 }
 
+impl ResolveError {
+    /// Construct a type-mismatch error for value-concat (S10.4/S10.13/S10.19).
+    ///
+    /// Called from `join_pair` which operates on resolved values without span
+    /// info; `line` and `col` are 0 and `path` is empty to indicate the error
+    /// arose inside the concat fold rather than at a substitution site.
+    pub(crate) fn concat_type_mismatch(left_type: &str, right_type: &str) -> Self {
+        ResolveError {
+            message: format!(
+                "value concatenation requires same-kind operands per HOCON S10; \
+                 got {} + {} (S10.4/S10.13/S10.19)",
+                left_type, right_type
+            ),
+            path: String::new(),
+            line: 0,
+            col: 0,
+        }
+    }
+}
+
 impl std::error::Error for ResolveError {}
 
 /// Error returned by [`Config`](crate::Config) getters when a key is missing
