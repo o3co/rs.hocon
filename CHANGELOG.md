@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **S13c — `${X[]}` / `${?X[]}` env-var list expansion** (Phase 6 #3g): substitution
+  bodies now accept a literal `[]` suffix signalling env-var-list expansion. The lexer
+  `parse_subst_body` recognises the `[]` suffix (E7: ASCII space/tab before `[` is
+  tolerated); the resolver's new `resolve_env_list` helper scans `NAME_0`, `NAME_1`, …
+  until the first absent key and returns an `Array` of strings. Empty-string elements
+  are preserved (stop on absent key, not empty value). Required substitution with no
+  `_0` element raises `ResolveError`; optional form drops the key.
+  - **E6 compliance** (config-defined wins): when the substitution path resolves to a
+    config value, the `[]` suffix is a no-op — env vars `NAME_*` are not consulted.
+  - **E7 compliance** (whitespace before `[]`): `${X []}` and `${X\t[]}` parse
+    identically to `${X[]}`.
+  - **S13c.5 enforcement**: scalar env fallback (`NAME` without suffix) is suppressed
+    when `list_suffix=true` — only `NAME_0`, `NAME_1`, … are consulted.
+  - Conformance tests: `tests/env_var_list_test.rs` with fixtures ev01–ev11 from
+    `xx.hocon/testdata/hocon/env-var-list/`.
+
+### Changed
+
+- **`SubstPayload` and `AstNode::Substitution` are now `#[non_exhaustive]`** (API
+  discipline). A new `list_suffix: bool` field was added in this release; annotating
+  these types `#[non_exhaustive]` ensures that future new fields on these types will
+  not be breaking changes for downstream crates that pattern-match or construct them.
+  **This is not a current breaking change**: `SubstPayload` and `AstNode` are in the
+  public API surface but were not previously `#[non_exhaustive]`; adding the
+  annotation is itself a minor change. Downstream code that fully destructures
+  `SubstPayload` struct literals must add `..` or update field lists from this
+  version onward.
+
 ## [1.2.0] - 2026-05-18
 
 ### Changed

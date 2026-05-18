@@ -424,20 +424,20 @@ same item descriptions verbatim.
 ### S13c. List values from environment variables
 
 - **S13c.1** `${X[]}` looks up `X_0`, `X_1`, ... env vars — §List values from env (L900)
-  tests: —
-  status: ❌ — not implemented; src/lexer.rs:429 (`is_unquoted_subst_char`) rejects `[` / `]` inside `${...}` body, so `${X[]}` is unparseable
+  tests: `tests/env_var_list_test.rs::s13c_ev01_basic`, `s13c_ev02_stops_at_gap`
+  status: ✅ — implemented in Phase 6 #3g (2026-05-18); lexer `'[' =>` arm in `parse_subst_body` + `resolve_env_list` helper
 - **S13c.2** Stops at first missing index — §List values from env (L905)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev02_stops_at_gap`
+  status: ✅
 - **S13c.3** `${X[]}` no elements → required error — §List values from env (L910)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev03_required_no_elements_errors`
+  status: ✅
 - **S13c.4** `${?X[]}` no elements → undefined / removed — §List values from env (L912)
-  tests: —
-  status: ❌ — not implemented (see S13c.1)
+  tests: `tests/env_var_list_test.rs::s13c_ev04_optional_no_elements`
+  status: ✅
 - **S13c.5** `[]` suffix supported only for env vars (not config / sys props) — §List values from env (L902)
-  tests: —
-  status: ❌ — not implemented (see S13c.1); the constraint is moot when the `[]` suffix itself is rejected by the lexer
+  tests: `tests/env_var_list_test.rs::s13c_s5_required_no_scalar_fallback`, `s13c_s5_optional_no_scalar_fallback`
+  status: ✅ — scalar env fallback is suppressed when `list_suffix=true`; config-lookup returns early (E6)
 
 ## S14. Includes
 
