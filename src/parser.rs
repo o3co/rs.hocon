@@ -832,4 +832,60 @@ mod tests {
             panic!("expected Include");
         }
     }
+
+    // ── S12.5: `include` reserved at start of key path (HOCON.md L570) ────────
+
+    #[test]
+    fn include_dot_key_is_parse_error() {
+        // ir03: unquoted dotted form must be rejected
+        assert!(matches!(
+            parse_tokens(&tokenize("include.foo = 1").unwrap()),
+            Err(ParseError { .. })
+        ));
+    }
+
+    #[test]
+    fn include_nested_object_body_is_parse_error() {
+        // ir04: reservation applies uniformly inside object literals
+        assert!(matches!(
+            parse_tokens(&tokenize("a = { include.bar = 1 }").unwrap()),
+            Err(ParseError { .. })
+        ));
+    }
+
+    #[test]
+    fn quoted_include_bypasses_reservation() {
+        // ir06: "include" = 1 must succeed
+        assert!(parse_tokens(&tokenize(r#""include" = 1"#).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn quoted_include_dotted_bypasses_reservation() {
+        // ir11: "include".foo = 1 must succeed
+        assert!(parse_tokens(&tokenize(r#""include".foo = 1"#).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn include_bare_equals_is_parse_error() {
+        // ir01 regression guard (already handled via parse_include path)
+        assert!(parse_tokens(&tokenize("include = 1").unwrap()).is_err());
+    }
+
+    #[test]
+    fn include_plus_equals_is_parse_error() {
+        // ir10: += separator form
+        assert!(parse_tokens(&tokenize("include += [1]").unwrap()).is_err());
+    }
+
+    #[test]
+    fn include_object_body_is_parse_error() {
+        // ir13: object-body field write form
+        assert!(parse_tokens(&tokenize("include { x = 1 }").unwrap()).is_err());
+    }
+
+    #[test]
+    fn foo_include_non_initial_is_ok() {
+        // ir07 regression guard: non-initial include is not reserved
+        assert!(parse_tokens(&tokenize("foo.include = 1").unwrap()).is_ok());
+    }
 }
