@@ -25,10 +25,19 @@ pub struct Segment {
     pub col: usize,
 }
 
+/// Payload carried by a `${...}` or `${?...}` substitution token.
+///
+/// `#[non_exhaustive]` ensures that adding new fields here (e.g. future spec
+/// extensions) does not break downstream crates that pattern-match or
+/// construct this struct.
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct SubstPayload {
     pub segments: Vec<Segment>,
     pub optional: bool,
+    /// True when the substitution body carries a `[]` suffix, signalling
+    /// env-var-list expansion (`${X[]}` / `${?X[]}`).
+    pub list_suffix: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -713,7 +722,7 @@ fn parse_subst_body(
         });
     }
 
-    Ok(SubstPayload { segments, optional })
+    Ok(SubstPayload { segments, optional, list_suffix: false })
 }
 
 fn is_unquoted_start(ch: char) -> bool {

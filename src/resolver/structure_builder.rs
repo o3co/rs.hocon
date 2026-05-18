@@ -170,10 +170,13 @@ impl<'a> StructureBuilder<'a> {
             AstNode::Substitution {
                 segments,
                 optional,
+                list_suffix,
                 pos,
+                ..
             } => Ok(ResolverValue::Subst(SubstPlaceholder {
                 segments,
                 optional,
+                list_suffix,
                 line: pos.line,
                 col: pos.col,
                 prefix_len: 0,

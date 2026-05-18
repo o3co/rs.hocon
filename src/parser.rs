@@ -30,9 +30,19 @@ pub enum AstNode {
         nodes: Vec<AstNode>,
         pos: Pos,
     },
+    /// A `${...}` or `${?...}` substitution node.
+    ///
+    /// `#[non_exhaustive]` on the variant means callers that pattern-match
+    /// must use `..` for any fields they do not bind — ensures that adding
+    /// new fields (e.g. `list_suffix`) does not silently break downstream
+    /// exhaustive matches.
+    #[non_exhaustive]
     Substitution {
         segments: Vec<Segment>,
         optional: bool,
+        /// True when the substitution carries a `[]` suffix for env-var-list
+        /// expansion (`${X[]}` / `${?X[]}`).
+        list_suffix: bool,
         pos: Pos,
     },
     Include {
@@ -515,16 +525,17 @@ impl<'a> Parser<'a> {
                     self.parse_array()?
                 }
                 TokenKind::Substitution => {
-                    let (optional, segs) = self
+                    let (optional, segs, list_suffix) = self
                         .tokens
                         .get(self.pos)
                         .and_then(|t| t.subst.as_ref())
-                        .map(|p| (p.optional, p.segments.clone()))
-                        .unwrap_or((false, Vec::new()));
+                        .map(|p| (p.optional, p.segments.clone(), p.list_suffix))
+                        .unwrap_or((false, Vec::new(), false));
                     let (_, _value, line, col) = self.advance_get();
                     AstNode::Substitution {
                         segments: segs,
                         optional,
+                        list_suffix,
                         pos: Pos { line, col },
                     }
                 }
