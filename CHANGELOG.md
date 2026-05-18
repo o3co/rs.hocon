@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **S10.4/S10.13/S10.19 — concat type-check tightening** (Phase 6 #3b):
+  `join_pair` in the substitution resolver now returns `ResolveError` for every
+  spec-disallowed value-concatenation type pair instead of silently coercing.
+  Closes #65, #67, #68.
+  - **S10.4** (`array + object` / `object + array`): after the S15 numeric-object-to-array
+    bridge attempt returns `None`, the pair is now rejected as a type error per HOCON L385.
+    Previously, the unconverted object was pushed into the array.
+  - **S10.13** (`array + scalar` / `scalar + array` / `scalar + object` / `object + scalar`):
+    all four pairs now raise `ResolveError` per HOCON L373. The go.hocon-style
+    "append scalar to array" path is removed from rs.hocon.
+  - **S10.19** (substitution-resolved object/array mixed with the other structured type):
+    handled by the same `join_pair` fix — `joinPair` operates on resolved values, so
+    the substitution-resolved case is identical to the literal case.
+  - **S10.15** (quoted whitespace between structured substitutions): incidentally fixed as
+    a side effect — a quoted `" "` scalar between two object/array substitutions now
+    triggers the S10.13 scalar+structured error.
+  - The S15 numeric-object-to-array bridge (`{"0":"a","1":"b"} concat [1]`) is preserved.
+  - Conformance fixtures: `xx.hocon testdata/hocon/concat-errors/ce01–ce15` wired in
+    `tests/concat_errors_test.rs`.
+
 ### Added
 
 - **S13c — `${X[]}` / `${?X[]}` env-var list expansion** (Phase 6 #3g): substitution
