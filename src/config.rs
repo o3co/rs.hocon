@@ -4,6 +4,32 @@ use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarType};
 use indexmap::IndexMap;
 
+/// A calendar period with year, month, and day components.
+///
+/// Returned by [`Config::get_period`] and [`Config::get_period_option`].
+/// All fields are `i32` to support negative periods (matching Lightbend behaviour).
+///
+/// The struct is `#[non_exhaustive]` so that new fields (e.g. weeks, hours) can
+/// be added in a future minor version without a breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct Period {
+    pub years: i32,
+    pub months: i32,
+    pub days: i32,
+}
+
+impl Period {
+    /// Construct a `Period` from year, month, and day components.
+    pub fn new(years: i32, months: i32, days: i32) -> Self {
+        Self {
+            years,
+            months,
+            days,
+        }
+    }
+}
+
 /// A parsed HOCON configuration object.
 ///
 /// `Config` wraps an ordered map of top-level keys to [`HoconValue`]s and
@@ -254,24 +280,23 @@ impl Config {
         })?;
         match v {
             HoconValue::Scalar(sv) => {
-                // Bare integer number: return as-is (assumed bytes)
-                if sv.value_type == ScalarType::Number {
-                    if let Ok(n) = sv.raw.parse::<i64>() {
-                        return Ok(n);
-                    }
-                    // Bare float without unit (e.g. "1.5") is not valid for bytes
-                    return Err(ConfigError {
+                let n: i64 = if sv.value_type == ScalarType::Number {
+                    // Bare integer number: return as-is (assumed bytes).
+                    // Bare float without unit (e.g. "1.5") is not valid for bytes.
+                    sv.raw.parse::<i64>().map_err(|_| ConfigError {
                         message: format!("expected byte size at {}", path),
                         path: path.to_string(),
-                    });
-                }
-                // String type: try byte-size string (e.g. "512 MB", "1.5 KiB")
-                let n = parse_bytes(&sv.raw).ok_or_else(|| ConfigError {
-                    message: format!("invalid byte size at {}: {}", path, sv.raw),
-                    path: path.to_string(),
-                })?;
+                    })?
+                } else {
+                    // String type: try byte-size string (e.g. "512 MB", "1.5 KiB")
+                    parse_bytes(&sv.raw).ok_or_else(|| ConfigError {
+                        message: format!("invalid byte size at {}: {}", path, sv.raw),
+                        path: path.to_string(),
+                    })?
+                };
                 // ub04: Lightbend `getBytesBigInteger` rejects negative byte sizes.
                 // Bytes represent a resource size and must be non-negative.
+                // This guard applies to BOTH the bare-numeric and string paths.
                 if n < 0 {
                     return Err(ConfigError {
                         message: format!("negative byte size at {}: {}", path, sv.raw),
@@ -292,7 +317,7 @@ impl Config {
         self.get_bytes(path).ok()
     }
 
-    /// Return the value at `path` as a calendar period `(years, months, days)`.
+    /// Return the value at `path` as a calendar [`Period`].
     ///
     /// Accepts HOCON period strings (e.g. `"7d"`, `"2w"`, `"3m"`, `"1y"`) or a bare
     /// integer string, which is taken as days per HOCON.md L1321.
@@ -301,21 +326,17 @@ impl Config {
     /// `m`/`mo`/`month`/`months`, `y`/`year`/`years`.
     ///
     /// Negative values are permitted (matches Lightbend behaviour).
-    ///
-    /// Return type is `(years, months, days)` using `i32` to support negative periods.
-    /// A `chrono` dependency is intentionally avoided; callers that need a typed `Period`
-    /// can decompose the tuple as needed.
-    pub fn get_period(&self, path: &str) -> Result<(i32, i32, i32), ConfigError> {
+    pub fn get_period(&self, path: &str) -> Result<Period, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Scalar(sv)) => {
-                if let Some(p) = parse_period(&sv.raw) {
-                    return Ok(p);
+                if let Some((y, mo, d)) = parse_period(&sv.raw) {
+                    return Ok(Period::new(y, mo, d));
                 }
                 // Bare integer scalar (non-string): treat as days default (S18.1 parallel).
                 if sv.value_type == ScalarType::Number {
                     if let Ok(n) = sv.raw.parse::<i32>() {
-                        return Ok((0, 0, n));
+                        return Ok(Period::new(0, 0, n));
                     }
                 }
                 Err(ConfigError {
@@ -331,7 +352,7 @@ impl Config {
     }
 
     /// Like [`get_period`](Self::get_period) but returns `None` instead of an error.
-    pub fn get_period_option(&self, path: &str) -> Option<(i32, i32, i32)> {
+    pub fn get_period_option(&self, path: &str) -> Option<Period> {
         self.get_period(path).ok()
     }
 
@@ -1148,7 +1169,26 @@ mod tests {
         let cfg = crate::parse_with_env(r#"b = "-1""#, &HashMap::new()).unwrap();
         assert!(
             cfg.get_bytes("b").is_err(),
-            "ub04: negative byte size must error at accessor"
+            "ub04: negative byte size must error at accessor (string path)"
+        );
+    }
+    #[test]
+    fn get_bytes_negative_bare_number_rejects() {
+        use std::collections::HashMap;
+        // b = -1 (unquoted number scalar) — previously bypassed the guard and returned Ok(-1).
+        let cfg = crate::parse_with_env(r#"b = -1"#, &HashMap::new()).unwrap();
+        assert!(
+            cfg.get_bytes("b").is_err(),
+            "ub04-bare: bare numeric -1 must error at accessor (both paths must hit guard)"
+        );
+    }
+    #[test]
+    fn get_bytes_option_negative_bare_number_is_none() {
+        use std::collections::HashMap;
+        let cfg = crate::parse_with_env(r#"b = -1"#, &HashMap::new()).unwrap();
+        assert!(
+            cfg.get_bytes_option("b").is_none(),
+            "ub04-bare-option: get_bytes_option must return None for bare numeric -1"
         );
     }
 
