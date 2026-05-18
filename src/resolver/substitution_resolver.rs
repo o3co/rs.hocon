@@ -493,11 +493,20 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
 }
 
 /// Return the type-name string for a HoconValue, used in error messages.
+///
+/// For scalars, returns the specific subtype name ("null", "boolean", "number",
+/// "string") per spec §"Required content in the error message".
 fn type_name(v: &HoconValue) -> &'static str {
     match v {
         HoconValue::Object(_) => "object",
         HoconValue::Array(_) => "array",
-        HoconValue::Scalar(_) => "scalar",
+        HoconValue::Scalar(sv) => match sv.value_type {
+            crate::value::ScalarType::Null => "null",
+            crate::value::ScalarType::Boolean => "boolean",
+            crate::value::ScalarType::Number => "number",
+            crate::value::ScalarType::String => "string",
+            _ => "scalar",
+        },
     }
 }
 
