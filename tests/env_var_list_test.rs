@@ -346,6 +346,61 @@ fn s13c_cache_disambiguation_list_then_scalar() {
     assert_eq!(cfg.get_string("b").unwrap(), "scalar-val");
 }
 
+/// Bracket-quoted cache disambiguation (Copilot rs#88 round-1 finding).
+///
+/// `${"X[]"}` is a quoted segment whose literal text is `X[]`; resolved via
+/// env lookup of the bare key `X[]` (no `_N` suffix expansion). `${X[]}` is the
+/// list-suffix form on bare path `X`; resolved via env scan of `X_0, X_1, …`.
+/// These two MUST occupy distinct cache slots — before the round-2 fix
+/// (`segments_to_key` quote trigger gained `[` and `]`), both produced the
+/// raw cache key `X[]` because `segments_to_key` didn't escape brackets.
+/// Now `${"X[]"}` keys as `"X[]"` (quoted) and `${X[]}` keys as `X[]` (raw +
+/// list_suffix `[]` append). This test pins both directions so the regression
+/// would surface if either the bracket trigger or the `[]` append is removed.
+#[test]
+fn s13c_cache_disambiguation_quoted_brackets_then_list() {
+    let mut env = HashMap::new();
+    env.insert("X[]".to_string(), "literal-bracket-key".to_string());
+    env.insert("X_0".to_string(), "first".to_string());
+    env.insert("X_1".to_string(), "second".to_string());
+    let cfg = hocon::parse_with_env("a = ${\"X[]\"}\nb = ${X[]}", &env).expect("parse_with_env");
+    assert_eq!(cfg.get_string("a").unwrap(), "literal-bracket-key");
+    let b = cfg
+        .get_list("b")
+        .expect("b should be list, not the cached scalar");
+    let texts: Vec<String> = b
+        .iter()
+        .map(|v| match v {
+            HoconValue::Scalar(sv) => sv.raw.clone(),
+            _ => panic!("expected scalar element in b"),
+        })
+        .collect();
+    assert_eq!(texts, vec!["first", "second"]);
+}
+
+#[test]
+fn s13c_cache_disambiguation_list_then_quoted_brackets() {
+    let mut env = HashMap::new();
+    env.insert("X[]".to_string(), "literal-bracket-key".to_string());
+    env.insert("X_0".to_string(), "first".to_string());
+    env.insert("X_1".to_string(), "second".to_string());
+    let cfg = hocon::parse_with_env("a = ${X[]}\nb = ${\"X[]\"}", &env).expect("parse_with_env");
+    let a = cfg.get_list("a").expect("a should be list");
+    let texts: Vec<String> = a
+        .iter()
+        .map(|v| match v {
+            HoconValue::Scalar(sv) => sv.raw.clone(),
+            _ => panic!("expected scalar element in a"),
+        })
+        .collect();
+    assert_eq!(texts, vec!["first", "second"]);
+    assert_eq!(
+        cfg.get_string("b").unwrap(),
+        "literal-bracket-key",
+        "b should be scalar, not the cached list"
+    );
+}
+
 /// `${X.[]}` must be rejected as empty-segment-before-suffix at parse time.
 ///
 /// The empty-segment guard at the `'[' =>` arm fires when `!cur_started` (no
