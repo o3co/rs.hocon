@@ -27,15 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`SubstPayload` and `AstNode::Substitution` are now `#[non_exhaustive]`** (API
-  discipline). A new `list_suffix: bool` field was added in this release; annotating
-  these types `#[non_exhaustive]` ensures that future new fields on these types will
-  not be breaking changes for downstream crates that pattern-match or construct them.
-  **This is not a current breaking change**: `SubstPayload` and `AstNode` are in the
-  public API surface but were not previously `#[non_exhaustive]`; adding the
-  annotation is itself a minor change. Downstream code that fully destructures
-  `SubstPayload` struct literals must add `..` or update field lists from this
-  version onward.
+- **BREAKING (rare)**: `SubstPayload` gains a new public field `list_suffix: bool`
+  and is now `#[non_exhaustive]`. `SubstPayload` IS publicly re-exported from
+  the crate root (see `lib.rs`), so downstream crates that constructed it via
+  struct literal or pattern-matched all fields exhaustively need to update.
+  Migration: add `list_suffix: false` to existing struct literals (or use
+  `Default` once it's added in a future release), and add `..` to exhaustive
+  patterns. Most consumers should be unaffected — `SubstPayload` is primarily
+  an internal pipeline value produced by the lexer and consumed by the resolver.
+
+  `AstNode::Substitution` also gains `list_suffix: bool` and is now
+  `#[non_exhaustive]`, but the `parser` module is `pub(crate)` so this is NOT
+  a public-API change. (Internal callers in `structure_builder.rs` are updated
+  in this same commit.)
+
+  Rationale for taking `#[non_exhaustive]` in this release: future field
+  additions on these types would otherwise each be breaking; installing the
+  discipline now (in the same minor release that adds the first such field)
+  amortizes the migration cost to a single update.
 
 ## [1.2.0] - 2026-05-18
 

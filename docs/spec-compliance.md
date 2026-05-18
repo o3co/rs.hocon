@@ -796,6 +796,6 @@ rs.hocon status per-item:
 - **E6** `${X[]}` config-defined wins — `[]` suffix is a no-op when X is a config key
   tests: `tests/env_var_list_test.rs::s13c_ev05_config_defined_wins`
   status: ✅ — config lookup returns early before `list_suffix` branch; env vars `X_0`, `X_1`, … are not consulted (Phase 6 #3g, 2026-05-18)
-- **E7** Whitespace between path expression and `[]` is allowed (`${X []}` / `${?X []}`)
-  tests: `tests/env_var_list_test.rs::s13c_ev09_whitespace_before_suffix`, `tests/lexer_test.rs::lex_subst_list_suffix_e7_space`, `lex_subst_list_suffix_e7_tab`
-  status: ✅ — `pending_ws` buffer in `parse_subst_body` `'['` arm discards horizontal WS before `[]` (Phase 6 #3g, 2026-05-18)
+- **E7** ASCII SPACE (0x20) or TAB (0x09) between path expression and `[]` is allowed (`${X []}` / `${?X []}`); wider whitespace (NBSP, CR, Zs, Zl, BOM, …) is REJECTED to match the narrow extra-spec convention
+  tests: `tests/env_var_list_test.rs::s13c_ev09_whitespace_before_suffix`, `tests/lexer_test.rs::lex_subst_list_suffix_e7_space`, `lex_subst_list_suffix_e7_tab`; negatives via `tests/env_var_list_test.rs::s13c_lex_nbsp_before_suffix_errors`, `_cr_before_suffix_errors`, `_zs_em_space_before_suffix_errors`
+  status: ✅ — `parse_subst_body` `'['` arm validates `pending_ws` against `{' ', '\t'}` and rejects other HOCON whitespace (Phase 6 #3g, 2026-05-18; tightened in Copilot review fix on rs.hocon#88)

@@ -133,8 +133,7 @@ fn surrogate_codepoint_rejected_inside_subst() {
 
 // ── S13c: `[]` suffix on substitutions ───────────────────────────────────────
 
-/// Unit 2 RED: `${X[]}` lexes into a Substitution token with list_suffix=true,
-/// segments=["X"].
+/// `${X[]}` lexes into a Substitution token with list_suffix=true, segments=["X"].
 #[test]
 fn lex_subst_list_suffix_basic() {
     let tokens = hocon::tokenize("${X[]}").unwrap();
@@ -260,11 +259,12 @@ fn lex_subst_list_suffix_whitespace_inside_brackets_errors() {
     );
 }
 
-/// `${X[][]}` — double suffix is a lex error (second `[` is unexpected after `}`).
+/// `${X[][]}` — double suffix is a lex error. After the literal `[]` suffix
+/// is consumed, the `[` arm in `parse_subst_body` expects the closing `}` and
+/// errors with "expected '}' after '[]' in substitution" because the next char
+/// is `[`, not `}`. (Lex error fires inside parse_subst_body, not afterwards.)
 #[test]
 fn lex_subst_list_suffix_double_suffix_errors() {
-    // After `${X[]}` the tokenizer emits Substitution and advances past `}`.
-    // The trailing `[]` is then an unexpected `[` in value position → ParseError.
     let result = hocon::tokenize("x = ${X[][]}");
     assert!(result.is_err(), "${{X[][]}} must be a lex/parse error");
 }

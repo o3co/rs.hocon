@@ -540,7 +540,6 @@ fn parse_literal_brackets(
     pos: &mut usize,
     col: &mut usize,
     start_line: usize,
-    start_col: usize,
 ) -> Result<(), ParseError> {
     // Consume `[`.
     debug_assert!(*pos < chars.len() && chars[*pos] == '[');
@@ -563,7 +562,6 @@ fn parse_literal_brackets(
     }
     *pos += 1;
     *col += 1;
-    let _ = start_col; // used only in the caller's error context
     Ok(())
 }
 
@@ -750,7 +748,7 @@ fn parse_subst_body(
                 // E7-conformant pending_ws is intentionally discarded.
                 pending_ws.clear();
                 // Consume the literal `[]`.
-                parse_literal_brackets(chars, pos, col, start_line, start_col)?;
+                parse_literal_brackets(chars, pos, col, start_line)?;
                 list_suffix = true;
                 // After `[]` the only legal next char is `}`.
                 if *pos >= chars.len() || chars[*pos] != '}' {

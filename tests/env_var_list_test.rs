@@ -177,8 +177,7 @@ fn assert_fixture_matches(name: &str) {
     );
 }
 
-// ── Unit 5 RED: ev01 basic expansion ─────────────────────────────────────────
-// (This will fail until Unit 5 GREEN adds resolve_env_list to the resolver.)
+// ── ev01: basic env-var list expansion ───────────────────────────────────────
 
 /// ev01: `x = ${S13C_EV01_MY_LIST[]}` with _0=a, _1=b → `{"x": ["a","b"]}`.
 #[test]
@@ -186,8 +185,7 @@ fn s13c_ev01_basic() {
     assert_fixture_matches("ev01-basic");
 }
 
-// ── Unit 6: remaining success fixtures ───────────────────────────────────────
-// (These will also fail at RED; added here so their RED is captured in one commit.)
+// ── Remaining success fixtures (ev02, ev04–ev11) ─────────────────────────────
 
 /// ev02: stops at gap (_0 present, _1 absent, _2 present → only ["a"]).
 #[test]
@@ -348,37 +346,54 @@ fn s13c_cache_disambiguation_list_then_scalar() {
     assert_eq!(cfg.get_string("b").unwrap(), "scalar-val");
 }
 
-/// I1: `${X.[]}` must be rejected as empty-segment-before-suffix.
+/// `${X.[]}` must be rejected as empty-segment-before-suffix at parse time.
 ///
-/// Before the fix, the `'[' =>` arm only checked `!cur_started && segments.is_empty()`,
-/// which missed the case where a trailing dot just reset cur_started but segments
-/// already had entries from prior segment parsing.
+/// The empty-segment guard at the `'[' =>` arm fires when `!cur_started` (no
+/// segment text is being accumulated), uniformly handling both `${[]}` (no
+/// segments at all) and `${X.[]}` (trailing dot just reset cur_started but
+/// segments already has entries from prior parsing).
+///
+/// Tests assert specifically `Err(HoconError::Parse(_))` rather than any error
+/// because an empty env map could otherwise let resolution fail with
+/// HoconError::Resolve and mask a lexer regression (Copilot review on rs#88).
 #[test]
 fn s13c_lex_trailing_dot_before_suffix_errors() {
     let env = HashMap::new();
     let err = hocon::parse_with_env("x = ${A.[]}", &env);
-    assert!(err.is_err(), "expected ParseError for ${{A.[]}}, got Ok");
+    assert!(
+        matches!(err, Err(hocon::HoconError::Parse(_))),
+        "expected HoconError::Parse for ${{A.[]}}, got {:?}",
+        err
+    );
 }
 
 #[test]
 fn s13c_lex_trailing_dot_space_before_suffix_errors() {
     let env = HashMap::new();
     let err = hocon::parse_with_env("x = ${A . []}", &env);
-    assert!(err.is_err(), "expected ParseError for ${{A . []}}, got Ok");
+    assert!(
+        matches!(err, Err(hocon::HoconError::Parse(_))),
+        "expected HoconError::Parse for ${{A . []}}, got {:?}",
+        err
+    );
 }
 
-/// I2: E7 narrow-allow-list — only ASCII SPACE / TAB allowed before `[]`.
+/// E7 narrow-allow-list — only ASCII SPACE / TAB allowed before `[]`.
 ///
-/// Before the fix, pending_ws accumulated wider HOCON whitespace (NBSP, CR,
-/// Zs, BOM) and the `[` arm discarded it all unconditionally. The new check
-/// rejects any non-{space,tab} char in pending_ws.
+/// The `[` arm validates pending_ws and rejects any non-{space,tab} char.
+/// General subst-body inter-segment whitespace is broader (S6 set: NBSP, CR,
+/// Zs, BOM, …) but at the `[` arm we are strict per extra-spec E7.
+///
+/// Tests assert specifically `Err(HoconError::Parse(_))` for the same reason as
+/// the trailing-dot tests above (Copilot review on rs#88).
 #[test]
 fn s13c_lex_nbsp_before_suffix_errors() {
     let env = HashMap::new();
     let err = hocon::parse_with_env("x = ${A\u{00A0}[]}", &env);
     assert!(
-        err.is_err(),
-        "expected ParseError for ${{A\\u00A0[]}} (NBSP), got Ok"
+        matches!(err, Err(hocon::HoconError::Parse(_))),
+        "expected HoconError::Parse for ${{A\\u00A0[]}} (NBSP), got {:?}",
+        err
     );
 }
 
@@ -387,8 +402,9 @@ fn s13c_lex_cr_before_suffix_errors() {
     let env = HashMap::new();
     let err = hocon::parse_with_env("x = ${A\r[]}", &env);
     assert!(
-        err.is_err(),
-        "expected ParseError for ${{A\\r[]}} (CR), got Ok"
+        matches!(err, Err(hocon::HoconError::Parse(_))),
+        "expected HoconError::Parse for ${{A\\r[]}} (CR), got {:?}",
+        err
     );
 }
 
@@ -397,8 +413,9 @@ fn s13c_lex_zs_em_space_before_suffix_errors() {
     let env = HashMap::new();
     let err = hocon::parse_with_env("x = ${A\u{2003}[]}", &env);
     assert!(
-        err.is_err(),
-        "expected ParseError for ${{A\\u2003[]}} (em-space), got Ok"
+        matches!(err, Err(hocon::HoconError::Parse(_))),
+        "expected HoconError::Parse for ${{A\\u2003[]}} (em-space), got {:?}",
+        err
     );
 }
 
