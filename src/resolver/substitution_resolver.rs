@@ -457,10 +457,7 @@ fn join_pair(
                     Ok(HoconValue::Array(arr))
                 }
                 None => Err(ResolveError::concat_type_mismatch(
-                    "array",
-                    "object",
-                    line,
-                    col,
+                    "array", "object", line, col,
                 )),
             }
         }
@@ -473,10 +470,7 @@ fn join_pair(
                     Ok(HoconValue::Array(converted))
                 }
                 None => Err(ResolveError::concat_type_mismatch(
-                    "object",
-                    "array",
-                    line,
-                    col,
+                    "object", "array", line, col,
                 )),
             }
         }
@@ -540,10 +534,14 @@ fn stringify_value(v: &HoconValue) -> String {
     match v {
         HoconValue::Scalar(sv) => sv.raw.clone(),
         HoconValue::Array(_) => {
-            unreachable!("stringify_value invariant: type-check rejects Array in string-concat per S10.13")
+            unreachable!(
+                "stringify_value invariant: type-check rejects Array in string-concat per S10.13"
+            )
         }
         HoconValue::Object(_) => {
-            unreachable!("stringify_value invariant: type-check rejects Object in string-concat per S10.13")
+            unreachable!(
+                "stringify_value invariant: type-check rejects Object in string-concat per S10.13"
+            )
         }
     }
 }
