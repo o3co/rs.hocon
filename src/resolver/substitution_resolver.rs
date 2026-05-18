@@ -508,3 +508,54 @@ fn stringify_value(v: &HoconValue) -> String {
         HoconValue::Object(_) => format!("{:?}", v),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::{ScalarType, ScalarValue};
+
+    /// Fix #2: type_name must return scalar subtype names (not "scalar").
+    #[test]
+    fn type_name_null_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::null());
+        assert_eq!(type_name(&v), "null");
+    }
+
+    #[test]
+    fn type_name_boolean_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::boolean(true));
+        assert_eq!(type_name(&v), "boolean");
+    }
+
+    #[test]
+    fn type_name_number_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::number("42".to_string()));
+        assert_eq!(type_name(&v), "number");
+    }
+
+    #[test]
+    fn type_name_string_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::string("hello".to_string()));
+        assert_eq!(type_name(&v), "string");
+    }
+
+    #[test]
+    fn concat_error_message_contains_null_not_scalar() {
+        // a = null [1] → null + array → error message must say "null", not "scalar"
+        let err = join_pair(
+            HoconValue::Scalar(ScalarValue::null()),
+            HoconValue::Array(vec![]),
+        )
+        .unwrap_err();
+        assert!(
+            err.message.contains("null"),
+            "expected 'null' in error message, got: {}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("scalar"),
+            "error message must not say 'scalar', got: {}",
+            err.message
+        );
+    }
+}
