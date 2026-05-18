@@ -531,6 +531,39 @@ fn is_unquoted_subst_char(ch: char) -> bool {
     )
 }
 
+/// Consume the literal two-character sequence `[]` at the current position.
+///
+/// Called by `parse_subst_body` when the `[` arm fires. Expects `chars[*pos] == '['`
+/// on entry. Strict: no whitespace inside the brackets (`${X[ ]}` is a lex error).
+fn parse_literal_brackets(
+    chars: &[char],
+    pos: &mut usize,
+    col: &mut usize,
+    start_line: usize,
+    start_col: usize,
+) -> Result<(), ParseError> {
+    // Consume `[`.
+    debug_assert!(*pos < chars.len() && chars[*pos] == '[');
+    *pos += 1;
+    *col += 1;
+    // Next char must be `]` (no whitespace inside the brackets).
+    if *pos >= chars.len() || chars[*pos] != ']' {
+        let got = chars.get(*pos).map(|c| c.escape_debug().to_string()).unwrap_or_else(|| "EOF".into());
+        return Err(ParseError {
+            message: format!(
+                "expected ']' after '[' in substitution list suffix, got {}",
+                got
+            ),
+            line: start_line,
+            col: *col,
+        });
+    }
+    *pos += 1;
+    *col += 1;
+    let _ = start_col; // used only in the caller's error context
+    Ok(())
+}
+
 /// Parse the body of a `${...}` substitution (called after `${` has been consumed).
 /// Returns the `SubstPayload` or a `ParseError`.
 fn parse_subst_body(
@@ -562,6 +595,8 @@ fn parse_subst_body(
     let mut segments: Vec<Segment> = Vec::new();
     // Track last-seen DOT position for trailing-dot error reporting.
     let mut last_dot: Option<(usize, usize)> = None;
+    // Set to true when a `[]` suffix is encountered (S13c env-var-list).
+    let mut list_suffix = false;
 
     loop {
         if *pos >= chars.len() {
@@ -670,6 +705,43 @@ fn parse_subst_body(
                 *pos += 1;
                 *col += 1;
             }
+            '[' => {
+                // S13c: `[]` suffix — end of path expression, start of list-suffix.
+                // E7: pending_ws (horizontal WS before `[`) is discarded here.
+                // Error if no segment has been started yet (e.g. `${[]}` / `${ []}`).
+                if !cur_started && segments.is_empty() {
+                    return Err(ParseError {
+                        message: "empty segment before '[]' suffix in substitution".into(),
+                        line: start_line,
+                        col: *col,
+                    });
+                }
+                // Flush any in-progress unquoted segment (same as the `}` path).
+                if cur_started {
+                    segments.push(Segment {
+                        text: std::mem::take(&mut cur_text),
+                        line: cur_line,
+                        col: cur_col,
+                    });
+                    cur_started = false;
+                }
+                // Discard pending_ws (E7: horizontal WS between path and `[`).
+                pending_ws.clear();
+                // Consume the literal `[]`.
+                parse_literal_brackets(chars, pos, col, start_line, start_col)?;
+                list_suffix = true;
+                // After `[]` the only legal next char is `}`.
+                if *pos >= chars.len() || chars[*pos] != '}' {
+                    return Err(ParseError {
+                        message: "expected '}' after '[]' in substitution".into(),
+                        line: start_line,
+                        col: *col,
+                    });
+                }
+                *pos += 1;
+                *col += 1;
+                break;
+            }
             ch if is_hocon_whitespace(ch) && !is_hocon_newline(ch) => {
                 // Inter-token whitespace (full HOCON_WS minus LF): buffer into
                 // pending_ws; column advances but line is unchanged.
@@ -698,7 +770,7 @@ fn parse_subst_body(
         }
     }
 
-    // END validation
+    // END validation (only reached via `}` break; `[]` break already pushes segment).
     if cur_started {
         segments.push(Segment {
             text: cur_text,
@@ -712,8 +784,9 @@ fn parse_subst_body(
             line: start_line,
             col: start_col,
         });
-    } else {
-        // trailing dot: ${foo.} — report at the offending dot position
+    } else if !list_suffix {
+        // trailing dot: ${foo.} — report at the offending dot position.
+        // Not an error when list_suffix=true; the `[]` arm already flushed.
         let (err_line, err_col) = last_dot.unwrap_or((start_line, start_col));
         return Err(ParseError {
             message: "empty segment in path".into(),
@@ -722,7 +795,7 @@ fn parse_subst_body(
         });
     }
 
-    Ok(SubstPayload { segments, optional, list_suffix: false })
+    Ok(SubstPayload { segments, optional, list_suffix })
 }
 
 fn is_unquoted_start(ch: char) -> bool {
