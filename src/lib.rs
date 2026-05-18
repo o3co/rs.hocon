@@ -121,7 +121,7 @@ pub mod value;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-pub use config::Config;
+pub use config::{Config, Period};
 pub use error::{ConfigError, HoconError, ParseError, ResolveError};
 pub use value::{HoconValue, ScalarType, ScalarValue};
 

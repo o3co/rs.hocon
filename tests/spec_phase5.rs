@@ -356,24 +356,7 @@ fn s18_4_bytes_string_no_unit_uses_default() {
     );
 }
 
-/// Duration pin: string "500" with no unit currently errors (does not use default ms).
 #[test]
-fn s18_4_pin_duration_string_no_unit_errors() {
-    let cfg = hocon::parse_with_env(r#"t = "500""#, &HashMap::new()).unwrap();
-    assert!(
-        cfg.get_duration("t").is_err(),
-        "[pin] S18.4: impl currently errors on duration string without unit (should use default ms per spec L1290)"
-    );
-    let err = cfg.get_duration("t").unwrap_err().to_string();
-    assert!(
-        err.contains("invalid duration"),
-        "[pin] S18.4: error message should contain 'invalid duration'; got: {}",
-        err
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S18.4 (L1290): duration string '500' with no unit must be interpreted as milliseconds (default unit); impl errors instead"]
 fn s18_4_spec_duration_string_no_unit_uses_default() {
     let cfg = hocon::parse_with_env(r#"t = "500""#, &HashMap::new()).unwrap();
     assert_eq!(

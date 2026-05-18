@@ -1,7 +1,34 @@
 use crate::error::ConfigError;
+use crate::lexer::is_hocon_whitespace;
 use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarType};
 use indexmap::IndexMap;
+
+/// A calendar period with year, month, and day components.
+///
+/// Returned by [`Config::get_period`] and [`Config::get_period_option`].
+/// All fields are `i32` to support negative periods (matching Lightbend behaviour).
+///
+/// The struct is `#[non_exhaustive]` so that new fields (e.g. weeks, hours) can
+/// be added in a future minor version without a breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct Period {
+    pub years: i32,
+    pub months: i32,
+    pub days: i32,
+}
+
+impl Period {
+    /// Construct a `Period` from year, month, and day components.
+    pub fn new(years: i32, months: i32, days: i32) -> Self {
+        Self {
+            years,
+            months,
+            days,
+        }
+    }
+}
 
 /// A parsed HOCON configuration object.
 ///
@@ -253,22 +280,30 @@ impl Config {
         })?;
         match v {
             HoconValue::Scalar(sv) => {
-                // Bare integer number: return as-is (assumed bytes)
-                if sv.value_type == ScalarType::Number {
-                    if let Ok(n) = sv.raw.parse::<i64>() {
-                        return Ok(n);
-                    }
-                    // Bare float without unit (e.g. "1.5") is not valid for bytes
-                    return Err(ConfigError {
+                let n: i64 = if sv.value_type == ScalarType::Number {
+                    // Bare integer number: return as-is (assumed bytes).
+                    // Bare float without unit (e.g. "1.5") is not valid for bytes.
+                    sv.raw.parse::<i64>().map_err(|_| ConfigError {
                         message: format!("expected byte size at {}", path),
+                        path: path.to_string(),
+                    })?
+                } else {
+                    // String type: try byte-size string (e.g. "512 MB", "1.5 KiB")
+                    parse_bytes(&sv.raw).ok_or_else(|| ConfigError {
+                        message: format!("invalid byte size at {}: {}", path, sv.raw),
+                        path: path.to_string(),
+                    })?
+                };
+                // ub04: Lightbend `getBytesBigInteger` rejects negative byte sizes.
+                // Bytes represent a resource size and must be non-negative.
+                // This guard applies to BOTH the bare-numeric and string paths.
+                if n < 0 {
+                    return Err(ConfigError {
+                        message: format!("negative byte size at {}: {}", path, sv.raw),
                         path: path.to_string(),
                     });
                 }
-                // String type: try byte-size string (e.g. "512 MB", "1.5 KiB")
-                parse_bytes(&sv.raw).ok_or_else(|| ConfigError {
-                    message: format!("invalid byte size at {}: {}", path, sv.raw),
-                    path: path.to_string(),
-                })
+                Ok(n)
             }
             _ => Err(ConfigError {
                 message: format!("expected byte size at {}", path),
@@ -280,6 +315,45 @@ impl Config {
     /// Like [`get_bytes`](Self::get_bytes) but returns `None` instead of an error.
     pub fn get_bytes_option(&self, path: &str) -> Option<i64> {
         self.get_bytes(path).ok()
+    }
+
+    /// Return the value at `path` as a calendar [`Period`].
+    ///
+    /// Accepts HOCON period strings (e.g. `"7d"`, `"2w"`, `"3m"`, `"1y"`) or a bare
+    /// integer string, which is taken as days per HOCON.md L1321.
+    ///
+    /// Supported units: `d`/`day`/`days` (default), `w`/`week`/`weeks` (× 7 days),
+    /// `m`/`mo`/`month`/`months`, `y`/`year`/`years`.
+    ///
+    /// Negative values are permitted (matches Lightbend behaviour).
+    pub fn get_period(&self, path: &str) -> Result<Period, ConfigError> {
+        match self.lookup_node(path) {
+            None => Err(missing(path)),
+            Some(HoconValue::Scalar(sv)) => {
+                if let Some((y, mo, d)) = parse_period(&sv.raw) {
+                    return Ok(Period::new(y, mo, d));
+                }
+                // Bare integer scalar (non-string): treat as days default (S18.1 parallel).
+                if sv.value_type == ScalarType::Number {
+                    if let Ok(n) = sv.raw.parse::<i32>() {
+                        return Ok(Period::new(0, 0, n));
+                    }
+                }
+                Err(ConfigError {
+                    message: format!("invalid period at {}: {}", path, sv.raw),
+                    path: path.to_string(),
+                })
+            }
+            _ => Err(ConfigError {
+                message: format!("expected period at {}", path),
+                path: path.to_string(),
+            }),
+        }
+    }
+
+    /// Like [`get_period`](Self::get_period) but returns `None` instead of an error.
+    pub fn get_period_option(&self, path: &str) -> Option<Period> {
+        self.get_period(path).ok()
     }
 
     /// Return `true` if a value exists at the given dot-separated path.
@@ -420,23 +494,62 @@ impl Config {
     }
 }
 
+/// Trim HOCON whitespace (per `is_hocon_whitespace`) from both ends of `s`.
+///
+/// Unlike `str::trim()` (which is ASCII-only for whitespace), this respects the full
+/// HOCON_WS set (U+00A0 NBSP, U+FEFF BOM, various Unicode space separators, etc.).
+fn trim_hocon_ws(s: &str) -> &str {
+    s.trim_matches(is_hocon_whitespace)
+}
+
+/// Returns `true` if `s` matches `[+-]?[0-9]+` (integer pre-classification).
+///
+/// Mirrors Lightbend `SimpleConfig.isWholeNumber`. Used to choose the integer fast-path
+/// vs fractional fallback in `parse_duration` and `parse_bytes`.
+fn is_integer_str(s: &str) -> bool {
+    let s = s.strip_prefix(['+', '-']).unwrap_or(s);
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Parse a HOCON duration string into a [`std::time::Duration`].
+///
+/// Accepts `[ws] number [ws] [unit] [ws]` where `unit` is one of the HOCON duration
+/// units (HOCON.md L1304-1313). When no unit is present the default is **milliseconds**
+/// (HOCON.md L1301: "bare numbers are taken to be in milliseconds already").
+///
+/// # Fractional values (Lightbend-faithful per-family)
+///
+/// - Integer form `[+-]?[0-9]+`: parsed as `i64` milliseconds → scaled to nanos.
+/// - Fractional form: parsed as `f64`, multiplied by `nanos_per_unit`.
+///
+/// # Negative values (rs-specific limitation)
+///
+/// `std::time::Duration` is unsigned; this function returns `None` for negative inputs.
+/// Callers that need signed duration semantics should inspect the raw string first.
+/// `get_duration` documents this constraint; ud06 conformance test asserts `is_err()`.
 fn parse_duration(s: &str) -> Option<std::time::Duration> {
-    let s = s.trim();
+    let s = trim_hocon_ws(s);
+    if s.is_empty() {
+        return None;
+    }
+
+    // Scan to end of the numeric prefix (digits, optional leading sign, optional decimal).
     let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
         .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
-    let unit_str = s[num_end..].trim().to_lowercase();
+    // Trim HOCON whitespace between number and unit, then lowercase the unit.
+    let unit_str = trim_hocon_ws(&s[num_end..]).to_lowercase();
 
-    let num: f64 = num_str.parse().ok()?;
-    if num < 0.0 || !num.is_finite() {
+    if num_str.is_empty() {
         return None;
     }
 
     let nanos_per_unit: f64 = match unit_str.as_str() {
+        // Default: milliseconds (HOCON.md L1301).
+        "" | "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
         "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
         "us" | "micro" | "micros" | "microsecond" | "microseconds" => 1_000.0,
-        "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
         "s" | "second" | "seconds" => 1_000_000_000.0,
         "m" | "minute" | "minutes" => 60_000_000_000.0,
         "h" | "hour" | "hours" => 3_600_000_000_000.0,
@@ -445,21 +558,100 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
         _ => return None,
     };
 
-    Some(std::time::Duration::from_nanos(
-        (num * nanos_per_unit) as u64,
-    ))
+    // Integer fast-path (matches Lightbend `Long.parseLong`).
+    if is_integer_str(num_str) {
+        let n: i64 = num_str.parse().ok()?;
+        // rs-specific: std::time::Duration is unsigned; negative values are rejected.
+        // Lightbend's java.time.Duration is signed. See CHANGELOG for rs-specific note.
+        if n < 0 {
+            return None;
+        }
+        let nanos = (n as f64 * nanos_per_unit) as u64;
+        return Some(std::time::Duration::from_nanos(nanos));
+    }
+
+    // Fractional fallback (matches Lightbend `Double.parseDouble`).
+    let f: f64 = num_str.parse().ok()?;
+    if f < 0.0 || !f.is_finite() {
+        return None;
+    }
+    let nanos = (f * nanos_per_unit) as u64;
+    Some(std::time::Duration::from_nanos(nanos))
 }
 
-fn parse_bytes(s: &str) -> Option<i64> {
-    let s = s.trim();
+/// Parse a HOCON period string into a `(years, months, days)` tuple.
+///
+/// Accepts `[ws] integer [ws] [unit] [ws]` where `unit` is one of the HOCON period
+/// units (HOCON.md L1324-1333). When no unit is present the default is **days**
+/// (HOCON.md L1321: "bare numbers are taken to be in days").
+///
+/// Period is integer-only (matches Lightbend `Integer.parseInt`). Fractional strings
+/// like `"7.5"` return `None`.
+///
+/// Returns `(years, months, days)` as `i32` to support negative periods (Lightbend allows
+/// negative). A `chrono` dependency is intentionally avoided; callers that need a typed
+/// `Period` can decompose the tuple.
+pub(crate) fn parse_period(s: &str) -> Option<(i32, i32, i32)> {
+    let s = trim_hocon_ws(s);
+    if s.is_empty() {
+        return None;
+    }
+
+    // Scan numeric prefix.
     let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
         .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
-    let unit_str = s[num_end..].trim();
+    let unit_str = trim_hocon_ws(&s[num_end..]);
+
+    if num_str.is_empty() {
+        return None;
+    }
+
+    // Period is integer-only (Lightbend `Integer.parseInt`). Reject fractional.
+    if !is_integer_str(num_str) {
+        return None;
+    }
+
+    let n: i32 = num_str.parse().ok()?;
+
+    // Unit match — case-sensitive per HOCON.md L1304 (period shares the same
+    // "unit names are case-sensitive" rule as duration; only lowercase accepted).
+    match unit_str {
+        // Default: days (HOCON.md L1321).
+        "" | "d" | "day" | "days" => Some((0, 0, n)),
+        "w" | "week" | "weeks" => Some((0, 0, n.checked_mul(7)?)),
+        "m" | "mo" | "month" | "months" => Some((0, n, 0)),
+        "y" | "year" | "years" => Some((n, 0, 0)),
+        _ => None,
+    }
+}
+
+/// Parse a HOCON byte-size string into a byte count.
+///
+/// Accepts `[ws] number [ws] [unit] [ws]`. When no unit is present the default is
+/// **bytes** (HOCON.md L1341: "bare numbers are taken to be in bytes").
+///
+/// Fractional values are accepted and **truncated** (not rounded) per Lightbend's
+/// `BigDecimal.toBigInteger()` semantics (e.g. `"1024.5"` → 1024 bytes).
+///
+/// Note: `get_bytes` rejects negative results at the accessor level (ub04 / Lightbend
+/// `getBytesBigInteger` positive-only invariant). `parse_bytes` itself allows negative
+/// integer inputs.
+fn parse_bytes(s: &str) -> Option<i64> {
+    let s = trim_hocon_ws(s);
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
+        .unwrap_or(s.len());
+    let num_str = s[..num_end].trim();
+    let unit_str = trim_hocon_ws(&s[num_end..]);
+
+    if num_str.is_empty() {
+        return None;
+    }
 
     // Case-sensitive matching: KB vs KiB matters. Short forms (K, M, G, T) are
-    // treated as SI decimal units (KB, MB, GB, TB).
+    // treated as SI decimal units (KB, MB, GB, TB) per HOCON.md L1344.
     let multiplier: i64 = match unit_str {
         "" | "B" | "byte" | "bytes" => 1,
         "K" | "KB" | "kilobyte" | "kilobytes" => 1_000,
@@ -473,17 +665,19 @@ fn parse_bytes(s: &str) -> Option<i64> {
         _ => return None,
     };
 
-    // Try lossless integer path first, fall back to f64 for fractional values
-    if let Ok(n) = num_str.parse::<i64>() {
-        n.checked_mul(multiplier)
-    } else {
-        let num: f64 = num_str.parse().ok()?;
-        let result = (num * multiplier as f64).round();
-        if !result.is_finite() || result > i64::MAX as f64 || result < i64::MIN as f64 {
-            return None;
-        }
-        Some(result as i64)
+    // Integer fast-path: lossless, avoids any floating-point rounding.
+    if is_integer_str(num_str) {
+        let n: i64 = num_str.parse().ok()?;
+        return n.checked_mul(multiplier);
     }
+
+    // Fractional fallback: truncate toward zero per Lightbend `BigDecimal.toBigInteger()`.
+    let f: f64 = num_str.parse().ok()?;
+    let result = (f * multiplier as f64) as i64; // `as i64` truncates (Rust saturates on overflow)
+    if !f.is_finite() || f.abs() * multiplier as f64 > i64::MAX as f64 {
+        return None;
+    }
+    Some(result)
 }
 
 fn missing(path: &str) -> ConfigError {
@@ -905,6 +1099,138 @@ mod tests {
         // 1.5 KiB = 1536 bytes exactly; rounding should not change it
         let c = make_config(vec![("s", sv("1.5 KiB"))]);
         assert_eq!(c.get_bytes("s").unwrap(), 1536);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Unit B — parse_duration bare/fractional/ws tests (RED phase)
+    // ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_duration_bare_integer_uses_ms_default() {
+        assert_eq!(
+            parse_duration("500"),
+            Some(std::time::Duration::from_millis(500))
+        );
+    }
+    #[test]
+    fn parse_duration_leading_ws_bare() {
+        assert_eq!(
+            parse_duration(" 500"),
+            Some(std::time::Duration::from_millis(500))
+        );
+    }
+    #[test]
+    fn parse_duration_trailing_ws_bare() {
+        assert_eq!(
+            parse_duration("500 "),
+            Some(std::time::Duration::from_millis(500))
+        );
+    }
+    #[test]
+    fn parse_duration_both_ws_bare() {
+        assert_eq!(
+            parse_duration(" 500 "),
+            Some(std::time::Duration::from_millis(500))
+        );
+    }
+    #[test]
+    fn parse_duration_fractional_bare_uses_nanos() {
+        let d = parse_duration("500.5").unwrap();
+        assert_eq!(d.as_nanos(), 500_500_000);
+    }
+    #[test]
+    fn parse_duration_empty_is_none() {
+        assert!(parse_duration("").is_none());
+    }
+    #[test]
+    fn parse_duration_ws_only_is_none() {
+        assert!(parse_duration("   ").is_none());
+    }
+    #[test]
+    fn parse_duration_unit_only_is_none() {
+        assert!(parse_duration("ms").is_none());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Unit C — parse_bytes ws / truncate / negative-accessor (RED)
+    // ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_bytes_leading_trailing_ws_bare() {
+        assert_eq!(parse_bytes(" 1024 "), Some(1024));
+    }
+    #[test]
+    fn parse_bytes_fractional_truncated() {
+        assert_eq!(parse_bytes("1024.5"), Some(1024));
+    }
+    #[test]
+    fn get_bytes_negative_accessor_rejects() {
+        use std::collections::HashMap;
+        let cfg = crate::parse_with_env(r#"b = "-1""#, &HashMap::new()).unwrap();
+        assert!(
+            cfg.get_bytes("b").is_err(),
+            "ub04: negative byte size must error at accessor (string path)"
+        );
+    }
+    #[test]
+    fn get_bytes_negative_bare_number_rejects() {
+        use std::collections::HashMap;
+        // b = -1 (unquoted number scalar) — previously bypassed the guard and returned Ok(-1).
+        let cfg = crate::parse_with_env(r#"b = -1"#, &HashMap::new()).unwrap();
+        assert!(
+            cfg.get_bytes("b").is_err(),
+            "ub04-bare: bare numeric -1 must error at accessor (both paths must hit guard)"
+        );
+    }
+    #[test]
+    fn get_bytes_option_negative_bare_number_is_none() {
+        use std::collections::HashMap;
+        let cfg = crate::parse_with_env(r#"b = -1"#, &HashMap::new()).unwrap();
+        assert!(
+            cfg.get_bytes_option("b").is_none(),
+            "ub04-bare-option: get_bytes_option must return None for bare numeric -1"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Unit D — parse_period (RED phase)
+    // ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_period_bare_integer_uses_days_default() {
+        assert_eq!(parse_period("7"), Some((0, 0, 7)));
+    }
+    #[test]
+    fn parse_period_leading_trailing_ws() {
+        assert_eq!(parse_period(" 7 "), Some((0, 0, 7)));
+    }
+    #[test]
+    fn parse_period_fractional_rejected() {
+        assert!(parse_period("7.5").is_none());
+    }
+    #[test]
+    fn parse_period_negative_allowed() {
+        assert_eq!(parse_period("-7"), Some((0, 0, -7)));
+    }
+    #[test]
+    fn parse_period_weeks_unit() {
+        assert_eq!(parse_period("7w"), Some((0, 0, 49)));
+    }
+    #[test]
+    fn parse_period_months_unit() {
+        assert_eq!(parse_period("3m"), Some((0, 3, 0)));
+    }
+    #[test]
+    fn parse_period_years_unit() {
+        assert_eq!(parse_period("2y"), Some((2, 0, 0)));
+    }
+    #[test]
+    fn parse_period_days_explicit() {
+        assert_eq!(parse_period("5d"), Some((0, 0, 5)));
+    }
+    #[test]
+    fn parse_period_empty_is_none() {
+        assert!(parse_period("").is_none());
     }
 
     #[test]

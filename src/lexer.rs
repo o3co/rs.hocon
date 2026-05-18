@@ -70,7 +70,7 @@ pub struct Token {
 /// NOTE: U+000A (LF) is included here because it is in the Java
 /// Character.isWhitespace set.  Callers that need to distinguish newline from
 /// inter-token whitespace must call is_hocon_newline first.
-fn is_hocon_whitespace(ch: char) -> bool {
+pub(crate) fn is_hocon_whitespace(ch: char) -> bool {
     matches!(ch,
         '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r'
       | '\u{001C}'..='\u{001F}'
