@@ -677,22 +677,21 @@ same item descriptions verbatim.
 
 ## S20. Period format
 
+rs.hocon exposes `get_period` / `get_period_option` returning a `Period { years, months, days }`
+struct. ts and go remain ➖ (no period accessor).
+
 - **S20.1** `d` / `day` / `days` — §Period Format (L1327)
-  out-of-scope: Period Format mirrors `java.time.Period`, a JVM-specific type; the spec text (L1316-1318) explicitly references this Java API. None of the three implementations exposes a period parser/API.
-  tests: —
-  status: ➖
+  tests: src/config.rs (parse_period_days_explicit, parse_period_bare_integer_uses_days_default); tests/units_default_test.rs (up01_period_bare, up02_period_leading_trailing_ws)
+  status: ✅ (rs.hocon) / ➖ (ts, go)
 - **S20.2** `w` / `week` / `weeks` — §Period Format (L1328)
-  out-of-scope: Period Format unsupported; see S20.1.
-  tests: —
-  status: ➖
+  tests: src/config.rs (parse_period_weeks_unit); tests/units_default_test.rs (up05_period_with_unit)
+  status: ✅ (rs.hocon) / ➖ (ts, go)
 - **S20.3** `m` / `mo` / `month` / `months` — §Period Format (L1329)
-  out-of-scope: Period Format unsupported; see S20.1.
-  tests: —
-  status: ➖
+  tests: src/config.rs (parse_period_months_unit)
+  status: ✅ (rs.hocon) / ➖ (ts, go)
 - **S20.4** `y` / `year` / `years` — §Period Format (L1333)
-  out-of-scope: Period Format unsupported; see S20.1.
-  tests: —
-  status: ➖
+  tests: src/config.rs (parse_period_years_unit)
+  status: ✅ (rs.hocon) / ➖ (ts, go)
 
 ## S21. Size in bytes format
 
