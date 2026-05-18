@@ -281,24 +281,16 @@ fn s13c_s5_optional_no_scalar_fallback() {
     );
 }
 
-// ── Unit 9: ev08 tripwire ─────────────────────────────────────────────────────
+// ── Unit 9: ev08 — self-ref concat with list suffix ──────────────────────────
 
-/// ev08 depends on S13a.13 self-ref-lookback fix (cluster 3f, not yet landed).
+/// ev08: `x = ["x"]; x = ${?x} ${?LIST[]}` → `["x","a"]`.
 ///
-/// Today `x = ${?x} ${?LIST[]}` fails to look back at the prior `x = ["x"]`,
-/// so the assertion below panics with a message containing "ev08". When S13a.13
-/// lands, the equality holds, no panic → `#[should_panic]` fires, forcing a
-/// code change. Identical pattern to `s8_6_us13_known_gap_tripwire`.
+/// The plan proposed a `#[should_panic]` tripwire (S13a.13 gap), but rs.hocon's
+/// existing prior_values / self-ref-lookback logic already handles this case
+/// correctly via the concat resolver and `join_pair`. Verified 2026-05-18:
+/// ev08 resolves to `["x","a"]` without the S13a.13 fix. This fixture therefore
+/// ships as a regular ✅ success test, not a tripwire.
 #[test]
-#[should_panic(expected = "ev08")]
-fn s13c_ev08_self_ref_tripwire() {
-    let result = parse_fixture_with_env("ev08-self-append");
-    let got = result
-        .map(|c| config_to_json(&c))
-        .unwrap_or_else(|e| panic!("ev08: parse failed (expected resolve): {:?}", e));
-    let expected = load_expected_json("ev08-self-append");
-    assert_eq!(
-        got, expected,
-        "ev08: depends on S13a.13 self-ref-lookback fix (cluster 3f)"
-    );
+fn s13c_ev08_self_ref_concat() {
+    assert_fixture_matches("ev08-self-append");
 }
