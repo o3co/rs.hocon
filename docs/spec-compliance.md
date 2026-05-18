@@ -194,15 +194,14 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:221 (resolves_string_concat_with_substitution); tests/integration_test.rs:34 (parse_with_substitutions); tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.2** All arrays → array concatenation — §Value concatenation (L312)
-  tests: tests/spec_phase5.rs (s10_2_pin_array_concat_produces_space_element; s10_2_spec_array_concat [#ignore])
-  status: ❌
-  notes: `[1,2] [3,4]` produces a 5-element list with a whitespace String scalar between the two sub-arrays instead of a 4-element concatenated array. Same root cause as S10.4/S10.19 — array/object concatenation not implemented. Tracked in #65.
+  tests: tests/spec_phase5.rs (s10_2_spec_array_concat)
+  status: ✅
 - **S10.3** All objects → object merge (concatenation) — §Value concatenation (L314)
   tests: tests/integration_test.rs:261 (test_object_concat_deep_merge); tests/integration_test.rs:158 (test_braced_root_object_concat)
   status: ✅
 - **S10.4** Mixing arrays + objects in concat is an error — §Array and object concatenation (L385)
-  tests: tests/integration_test.rs:664 (s10_4_array_object_concat_pin); tests/integration_test.rs:674 (s10_4_array_object_concat_spec)
-  status: ❌ (see #65)
+  tests: tests/integration_test.rs (s10_4_array_object_concat_is_error, s10_4_subst_obj_plus_array_is_error, s10_4_empty_edge_array_plus_empty_object_is_error, s10_4_optional_missing_mid_concat_is_error, s10_4_optional_missing_only_piece_ok, s10_4_numeric_obj_concat_still_works); tests/concat_errors_test.rs (ce01, ce02, ce07, ce08, ce10, ce11, ce14, ce15)
+  status: ✅ (fixed in Phase 6 #3b, closes #65)
 - **S10.5** Inner whitespace between simple values preserved — §String value concatenation (L332)
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
@@ -228,28 +227,26 @@ same item descriptions verbatim.
   tests: src/parser.rs:674 (parses_boolean_and_null); src/parser.rs:697 (parses_integer_scalars)
   status: ✅
 - **S10.13** Array/object appearing in string concat is an error — §String value concatenation (L373)
-  tests: tests/integration_test.rs:746 (s10_13_object_in_string_concat_pin); tests/integration_test.rs:756 (s10_13_object_in_string_concat_spec); tests/integration_test.rs:764 (s10_13_array_in_string_concat_pin); tests/integration_test.rs:774 (s10_13_array_in_string_concat_spec)
-  status: ❌ (see #67)
+  tests: tests/integration_test.rs (s10_13_scalar_object_concat_is_error, s10_13_scalar_array_concat_is_error, s10_13_subst_resolved_array_plus_scalar_is_error, s10_13_subst_resolved_object_plus_scalar_is_error); tests/concat_errors_test.rs (ce03, ce04, ce05, ce06, ce12, ce13)
+  status: ✅ (fixed in Phase 6 #3b, closes #67)
 - **S10.14** Whitespace around obj/array substitutions is ignored — §Concatenation with whitespace (L440)
   tests: tests/integration_test.rs:786 (s10_14_whitespace_around_obj_subst_ignored); tests/integration_test.rs:798 (s10_14_whitespace_around_arr_subst_ignored)
   status: ✅
 - **S10.15** Quoted whitespace between obj/array substitutions is an error — §Concatenation with whitespace (L442)
-  tests: tests/spec_phase5.rs (s10_15_pin_quoted_ws_between_obj_substs_no_error; s10_15_spec_quoted_ws_between_obj_substs_is_error [#ignore]; s10_15_pin_quoted_ws_between_arr_substs_no_error; s10_15_spec_quoted_ws_between_arr_substs_is_error [#ignore])
-  status: ❌
-  notes: impl does not error; obj subst case stringifies objects into a string containing the debug representation; arr subst case inserts the quoted whitespace as extra array elements. Same concat bug as S10.2/S10.4.
+  tests: tests/spec_phase5.rs (s10_15_quoted_ws_between_obj_substs_is_error; s10_15_quoted_ws_between_arr_substs_is_error)
+  status: ✅ (incidentally fixed by Phase 6 #3b S10.13 tightening: scalar between structured operands now errors via join_pair type-mismatch)
 - **S10.16** Non-newline whitespace in arrays is concat, not separator — §Arrays without commas or newlines (L447)
   tests: tests/testdata/hocon/equiv01/no-commas.conf (fixture)
   status: ✅
 - **S10.17** Substitution resolving to an array participates in array concat (`${arr} [x]`) — §Array and object concatenation (L387)
-  tests: tests/spec_phase5.rs (s10_17_pin_subst_array_concat_space_element; s10_17_spec_subst_array_concat [#ignore])
-  status: ❌
-  notes: `${base} [3,4]` where `base=[1,2]` produces 5 elements with a whitespace scalar between the two arrays instead of 4. Same concat bug as S10.2/S10.4. Tracked in #65.
+  tests: tests/spec_phase5.rs (s10_17_spec_subst_array_concat)
+  status: ✅
 - **S10.18** Substitution resolving to an object participates in object merge (`${obj} {x:1}`) — §Array and object concatenation (L388)
   tests: src/resolver/mod.rs:248 (delayed_merge_object_with_substitution)
   status: ✅
 - **S10.19** Mixing a substitution-resolved object with a literal array (or vice versa) is an error — §Array and object concatenation (L385-389)
-  tests: tests/integration_test.rs:809 (s10_19_subst_obj_concat_literal_array_pin); tests/integration_test.rs:819 (s10_19_subst_obj_concat_literal_array_spec); tests/integration_test.rs:827 (s10_19_subst_arr_concat_literal_obj_pin); tests/integration_test.rs:837 (s10_19_subst_arr_concat_literal_obj_spec)
-  status: ❌ (see #68)
+  tests: tests/integration_test.rs (s10_19_subst_obj_concat_literal_array_is_error, s10_19_subst_arr_concat_literal_obj_is_error); tests/concat_errors_test.rs (ce07, ce08)
+  status: ✅ (fixed in Phase 6 #3b, closes #68)
 
 ## S11. Path expressions
 
