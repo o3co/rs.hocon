@@ -428,19 +428,13 @@ impl<'a> SubstitutionResolver<'a> {
 
 /// Pairwise join for the left-to-right concat fold.
 ///
-/// Implements the `join_pair(left, right)` spec pseudocode per S10/S15:
-/// - Object + Object → deep-merge (S10.3)
-/// - Array  + Object → attempt numeric_object_to_array; if Some → array-array concat;
-///                     if None → Err (S10.4 / S10.19)
-/// - Object + Array  → symmetric (S10.4 / S10.19)
-/// - Array  + Array  → array-array concat
-/// - Array  + Scalar → Err (S10.13)
-/// - Scalar + Array  → Err (S10.13)
-/// - Scalar + Object → Err (S10.13)
-/// - Object + Scalar → Err (S10.13)
-/// - Scalar + Scalar → string concat per S10
+/// Implements the `join_pair(left, right)` spec pseudocode per S10/S15.
+/// Allowed pairs: Object+Object (deep-merge), Array+Object (S15 numeric bridge,
+/// else Err S10.4), Object+Array (symmetric), Array+Array (concat),
+/// Scalar+Scalar (string-concat). All other pairs return `Err(ResolveError)`.
 ///
-/// Produces `Err(ResolveError)` for every spec-disallowed type pair.
+/// Produces `Err(ResolveError)` for every spec-disallowed type pair
+/// (S10.4 array/object mix, S10.13 scalar/structured mix, S10.19 subst-resolved).
 fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
     match (left, right) {
         // Object + Object → deep-merge (S10.3)
