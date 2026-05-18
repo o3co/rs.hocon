@@ -189,3 +189,82 @@ fn lex_subst_no_list_suffix_for_plain() {
         .expect("SubstPayload");
     assert!(!p.list_suffix, "plain ${{X}} must NOT set list_suffix");
 }
+
+// ── Unit 4: E7 — whitespace before '[]' is allowed ───────────────────────────
+
+/// ASCII space between path and `[]` is allowed (E7).
+#[test]
+fn lex_subst_list_suffix_e7_space() {
+    // ${X []} — one space before `[`
+    let tokens = hocon::tokenize("${X []}").unwrap();
+    let p = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .and_then(|t| t.subst.as_ref())
+        .expect("SubstPayload");
+    assert!(p.list_suffix, "space before [] must still set list_suffix");
+    assert_eq!(p.segments.len(), 1);
+    assert_eq!(p.segments[0].text, "X");
+}
+
+/// ASCII tab between path and `[]` is allowed (E7).
+#[test]
+fn lex_subst_list_suffix_e7_tab() {
+    // "${X\t[]}" — tab before `[`
+    let input = "${X\t[]}";
+    let tokens = hocon::tokenize(input).unwrap();
+    let p = tokens
+        .iter()
+        .find(|t| t.kind == hocon::TokenKind::Substitution)
+        .and_then(|t| t.subst.as_ref())
+        .expect("SubstPayload");
+    assert!(p.list_suffix, "tab before [] must still set list_suffix");
+    assert_eq!(p.segments[0].text, "X");
+}
+
+// ── Unit 3: error shapes for malformed '[]' suffix ────────────────────────────
+
+/// `${[]}` — empty path before `[]` suffix is a lex error.
+#[test]
+fn lex_subst_list_suffix_empty_path_errors() {
+    let err = hocon::tokenize("${[]}").unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("empty segment before") || msg.contains("empty substitution path"),
+        "expected empty-segment/path error, got: {}",
+        msg
+    );
+}
+
+/// `${X[}` — missing `]` is a lex error.
+#[test]
+fn lex_subst_list_suffix_missing_close_bracket_errors() {
+    let err = hocon::tokenize("${X[}").unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expected ']'"),
+        "expected ']' missing error, got: {}",
+        msg
+    );
+}
+
+/// `${X[ ]}` — whitespace inside `[]` is a lex error (strict per spec Decision §1).
+#[test]
+fn lex_subst_list_suffix_whitespace_inside_brackets_errors() {
+    let err = hocon::tokenize("${X[ ]}").unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expected ']'"),
+        "expected ']' missing error for whitespace inside [], got: {}",
+        msg
+    );
+}
+
+/// `${X[][]}` — double suffix is a lex error (second `[` is unexpected after `}`).
+#[test]
+fn lex_subst_list_suffix_double_suffix_errors() {
+    // After `${X[]}` the tokenizer emits Substitution and advances past `}`.
+    // The trailing `[]` is then an unexpected `[` in value position → ParseError.
+    let result = hocon::tokenize("x = ${X[][]}");
+    assert!(result.is_err(), "${{X[][]}} must be a lex/parse error");
+}
