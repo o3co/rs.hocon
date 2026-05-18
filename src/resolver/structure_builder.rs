@@ -181,7 +181,7 @@ impl<'a> StructureBuilder<'a> {
                 col: pos.col,
                 prefix_len: 0,
             })),
-            AstNode::Concat { nodes, .. } => {
+            AstNode::Concat { nodes, pos } => {
                 let mut separator_flags = Vec::with_capacity(nodes.len());
                 let mut rv_nodes = Vec::with_capacity(nodes.len());
                 for node in nodes {
@@ -198,6 +198,8 @@ impl<'a> StructureBuilder<'a> {
                 Ok(ResolverValue::Concat(ConcatPlaceholder {
                     nodes: rv_nodes,
                     separator_flags,
+                    line: pos.line,
+                    col: pos.col,
                 }))
             }
             AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(

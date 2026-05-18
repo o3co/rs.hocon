@@ -70,7 +70,7 @@ impl<'a> SubstitutionResolver<'a> {
         match v {
             ResolverValue::Subst(s) => self.resolve_subst(s, scope),
             ResolverValue::Concat(c) => self
-                .resolve_concat(&c.nodes, &c.separator_flags, scope)
+                .resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
                 .map(Some),
             ResolverValue::Append(a) => self.resolve_append(a, scope).map(Some),
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
@@ -327,6 +327,8 @@ impl<'a> SubstitutionResolver<'a> {
         &mut self,
         nodes: &[ResolverValue],
         separator_flags: &[bool],
+        line: usize,
+        col: usize,
         scope: &ResObj,
     ) -> Result<HoconValue, ResolveError> {
         let mut resolved: Vec<(HoconValue, bool)> = Vec::new();
@@ -364,10 +366,14 @@ impl<'a> SubstitutionResolver<'a> {
         //
         // join_pair type-pair cases (separators are folded as scalars):
         //   Object + Object → deep-merge, skip is_sep between them (S10.3)
-        //   Array  + Object → numeric_object_to_array; if Some concat arrays (S15.3)
-        //   Object + Array  → numeric_object_to_array; if Some concat arrays (S15.3)
+        //   Array  + Object → numeric_object_to_array; if Some → concat; if None → Err (S10.4)
+        //   Object + Array  → symmetric (S10.4)
         //   Array  + Array  → array concat
-        //   Scalar + *      → string concat (separator whitespace contributes its raw value)
+        //   Array  + Scalar → Err (S10.13)
+        //   Scalar + Array  → Err (S10.13)
+        //   Scalar + Object → Err (S10.13)
+        //   Object + Scalar → Err (S10.13)
+        //   Scalar + Scalar → string concat (separator whitespace contributes its raw value)
 
         // Determine whether we are in an object/array concat (where separators are
         // skipped) or a scalar concat (where separators contribute their text).
@@ -392,7 +398,9 @@ impl<'a> SubstitutionResolver<'a> {
 
             let mut iter = non_sep.into_iter();
             let first = iter.next().unwrap();
-            return iter.try_fold(first, join_pair).map(Ok)?;
+            return iter
+                .try_fold(first, |l, r| join_pair(l, r, line, col))
+                .map(Ok)?;
         }
 
         // Scalar-only concat: include separators so whitespace contributes to the result
@@ -424,44 +432,46 @@ impl<'a> SubstitutionResolver<'a> {
 
 /// Pairwise join for the left-to-right concat fold.
 ///
-/// Implements the `join_pair(left, right)` spec pseudocode:
-/// - Object + Object → deep-merge (S10.3)
-/// - Array  + Object → attempt numeric_object_to_array; if Some → array-array concat
-/// - Object + Array  → attempt numeric_object_to_array; if Some → array-array concat
-/// - Array  + Array  → array-array concat
-/// - other pairs     → string concat (scalars coerced to string)
+/// Implements the `join_pair(left, right)` spec pseudocode per S10/S15.
+/// Allowed pairs: Object+Object (deep-merge), Array+Object (S15 numeric bridge,
+/// else Err S10.4), Object+Array (symmetric), Array+Array (concat),
+/// Scalar+Scalar (string-concat). All other pairs return `Err(ResolveError)`.
 ///
-/// The `Result` wrapper exists so it can be used directly with `try_fold`.
-/// This function currently never produces an `Err` — type-mismatch cases (e.g.
-/// a non-convertible Object next to an Array) push the unconverted Object into
-/// the Array, which preserves the existing "mixed concat" behaviour rather than
-/// erroring, consistent with how the original single-pass loop behaved.
-fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveError> {
+/// Produces `Err(ResolveError)` for every spec-disallowed type pair
+/// (S10.4 array/object mix, S10.13 scalar/structured mix, S10.19 subst-resolved).
+fn join_pair(
+    left: HoconValue,
+    right: HoconValue,
+    line: usize,
+    col: usize,
+) -> Result<HoconValue, ResolveError> {
     match (left, right) {
         // Object + Object → deep-merge (S10.3)
         (HoconValue::Object(lf), HoconValue::Object(rf)) => Ok(deep_merge_hocon_objects(lf, rf)),
 
-        // Array + Object → S15.3: try numeric-keyed object conversion
+        // Array + Object → S15.3: try numeric-keyed object conversion; error if None (S10.4)
         (HoconValue::Array(mut arr), obj @ HoconValue::Object(_)) => {
             match numeric_object_to_array(&obj) {
-                Some(converted) => arr.extend(converted),
-                None => arr.push(obj),
+                Some(converted) => {
+                    arr.extend(converted);
+                    Ok(HoconValue::Array(arr))
+                }
+                None => Err(ResolveError::concat_type_mismatch(
+                    "array", "object", line, col,
+                )),
             }
-            Ok(HoconValue::Array(arr))
         }
 
-        // Object + Array → S15.3 symmetric: try numeric-keyed object conversion
+        // Object + Array → S15.3 symmetric; error if None (S10.4)
         (obj @ HoconValue::Object(_), HoconValue::Array(right_arr)) => {
             match numeric_object_to_array(&obj) {
                 Some(mut converted) => {
                     converted.extend(right_arr);
                     Ok(HoconValue::Array(converted))
                 }
-                None => {
-                    let mut arr = vec![obj];
-                    arr.extend(right_arr);
-                    Ok(HoconValue::Array(arr))
-                }
+                None => Err(ResolveError::concat_type_mismatch(
+                    "object", "array", line, col,
+                )),
             }
         }
 
@@ -471,32 +481,158 @@ fn join_pair(left: HoconValue, right: HoconValue) -> Result<HoconValue, ResolveE
             Ok(HoconValue::Array(left_arr))
         }
 
-        // Array + Scalar → push scalar into array (preserves prior single-pass behaviour
-        // where scalar elements were appended to an in-progress array concat).
-        (HoconValue::Array(mut arr), scalar) => {
-            arr.push(scalar);
-            Ok(HoconValue::Array(arr))
-        }
+        // Array + Scalar → error per S10.13 (spec L373: arrays invalid in string concat)
+        (HoconValue::Array(_), scalar) => Err(ResolveError::concat_type_mismatch(
+            "array",
+            type_name(&scalar),
+            line,
+            col,
+        )),
 
-        // Scalar + Array → prepend array to scalar (push scalar as first element).
-        (scalar, HoconValue::Array(right_arr)) => {
-            let mut arr = vec![scalar];
-            arr.extend(right_arr);
-            Ok(HoconValue::Array(arr))
-        }
+        // Scalar + Array → error per S10.13
+        (scalar, HoconValue::Array(_)) => Err(ResolveError::concat_type_mismatch(
+            type_name(&scalar),
+            "array",
+            line,
+            col,
+        )),
 
-        // Scalar pairs → string concat
+        // Scalar pairs: reject if either side is an Object (S10.13); string-concat otherwise
         (left, right) => {
+            if matches!(left, HoconValue::Object(_)) || matches!(right, HoconValue::Object(_)) {
+                return Err(ResolveError::concat_type_mismatch(
+                    type_name(&left),
+                    type_name(&right),
+                    line,
+                    col,
+                ));
+            }
             let s = format!("{}{}", stringify_value(&left), stringify_value(&right));
             Ok(HoconValue::Scalar(ScalarValue::string(s)))
         }
     }
 }
 
+/// Return the type-name string for a HoconValue, used in error messages.
+///
+/// For scalars, returns the specific subtype name ("null", "boolean", "number",
+/// "string") per spec §"Required content in the error message".
+fn type_name(v: &HoconValue) -> &'static str {
+    match v {
+        HoconValue::Object(_) => "object",
+        HoconValue::Array(_) => "array",
+        HoconValue::Scalar(sv) => match sv.value_type {
+            crate::value::ScalarType::Null => "null",
+            crate::value::ScalarType::Boolean => "boolean",
+            crate::value::ScalarType::Number => "number",
+            crate::value::ScalarType::String => "string",
+        },
+    }
+}
+
 fn stringify_value(v: &HoconValue) -> String {
     match v {
         HoconValue::Scalar(sv) => sv.raw.clone(),
-        HoconValue::Array(_) => format!("{:?}", v),
-        HoconValue::Object(_) => format!("{:?}", v),
+        HoconValue::Array(_) => {
+            unreachable!(
+                "stringify_value invariant: type-check rejects Array in string-concat per S10.13"
+            )
+        }
+        HoconValue::Object(_) => {
+            unreachable!(
+                "stringify_value invariant: type-check rejects Object in string-concat per S10.13"
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::{ScalarType, ScalarValue};
+
+    /// Fix #2: type_name must return scalar subtype names (not "scalar").
+    #[test]
+    fn type_name_null_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::null());
+        assert_eq!(type_name(&v), "null");
+    }
+
+    #[test]
+    fn type_name_boolean_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::boolean(true));
+        assert_eq!(type_name(&v), "boolean");
+    }
+
+    #[test]
+    fn type_name_number_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::number("42".to_string()));
+        assert_eq!(type_name(&v), "number");
+    }
+
+    #[test]
+    fn type_name_string_scalar() {
+        let v = HoconValue::Scalar(ScalarValue::string("hello".to_string()));
+        assert_eq!(type_name(&v), "string");
+    }
+
+    #[test]
+    fn concat_error_message_contains_null_not_scalar() {
+        // a = null [1] → null + array → error message must say "null", not "scalar"
+        let err = join_pair(
+            HoconValue::Scalar(ScalarValue::null()),
+            HoconValue::Array(vec![]),
+            0,
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            err.message.contains("null"),
+            "expected 'null' in error message, got: {}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("scalar"),
+            "error message must not say 'scalar', got: {}",
+            err.message
+        );
+    }
+
+    /// Fix #3: concat type-mismatch errors must include non-zero line/col.
+    #[test]
+    fn concat_type_mismatch_error_has_position() {
+        // Line 2, col 5 is where the concat value starts: "a = [1] {b:1}"
+        // The value [1] {b:1} is a concat whose offending pair is array+object.
+        let input = "\na = [1] {b: 1}\n";
+        let env = std::collections::HashMap::new();
+        let err = crate::parse_with_env(input, &env).unwrap_err();
+        if let crate::HoconError::Resolve(re) = err {
+            assert!(
+                re.line != 0,
+                "concat type-mismatch error must have non-zero line, got line={}",
+                re.line
+            );
+            assert!(
+                re.col != 0,
+                "concat type-mismatch error must have non-zero col, got col={}",
+                re.col
+            );
+        } else {
+            panic!("expected ResolveError, got: {:?}", err);
+        }
+    }
+
+    /// Fix #3: scalar+object concat error must also carry position.
+    #[test]
+    fn concat_scalar_plus_object_error_has_position() {
+        let input = "a = x {b: 1}\n";
+        let env = std::collections::HashMap::new();
+        let err = crate::parse_with_env(input, &env).unwrap_err();
+        if let crate::HoconError::Resolve(re) = err {
+            assert!(re.line != 0, "line must be non-zero, got {}", re.line);
+            assert!(re.col != 0, "col must be non-zero, got {}", re.col);
+        } else {
+            panic!("expected ResolveError, got: {:?}", err);
+        }
     }
 }

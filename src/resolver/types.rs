@@ -55,6 +55,10 @@ pub(crate) struct ConcatPlaceholder {
     pub nodes: Vec<ResolverValue>,
     /// Parallel array: true if the corresponding node is a parser-synthesized separator.
     pub separator_flags: Vec<bool>,
+    /// 1-based line of the concat value in the source file (from AST Concat pos).
+    pub line: usize,
+    /// 1-based column of the concat value in the source file (from AST Concat pos).
+    pub col: usize,
 }
 
 #[derive(Debug, Clone)]
