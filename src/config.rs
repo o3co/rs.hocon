@@ -560,13 +560,21 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
 
     // Integer fast-path (matches Lightbend `Long.parseLong`).
     if is_integer_str(num_str) {
-        let n: i64 = num_str.parse().ok()?;
-        // rs-specific: std::time::Duration is unsigned; negative values are rejected.
-        // Lightbend's java.time.Duration is signed. See CHANGELOG for rs-specific note.
-        if n < 0 {
+        // Parse as i128 so we can range-check both negatives (rejected per rs's
+        // unsigned-Duration limitation) AND values in [i64::MAX, u64::MAX] before
+        // narrowing to u64. The prior i64 parse rejected the entire upper half of
+        // the representable nanos range as "parse error" rather than overflow.
+        let n_i128: i128 = num_str.parse().ok()?;
+        if n_i128 < 0 {
             return None;
         }
-        let nanos = (n as f64 * nanos_per_unit) as u64;
+        let n_u64: u64 = n_i128.try_into().ok()?;
+        // Overflow guard via checked_mul on u64. The table values are exact small
+        // integers (max = 604_800_000_000_000 for weeks), so the f64 → u64 cast
+        // is lossless. The prior `(n as f64 * nanos_per_unit) as u64` lost precision
+        // for large n (~2^53+) and silently saturated on overflow.
+        let unit_u64 = nanos_per_unit as u64;
+        let nanos = n_u64.checked_mul(unit_u64)?;
         return Some(std::time::Duration::from_nanos(nanos));
     }
 
@@ -575,8 +583,16 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
     if f < 0.0 || !f.is_finite() {
         return None;
     }
-    let nanos = (f * nanos_per_unit) as u64;
-    Some(std::time::Duration::from_nanos(nanos))
+    // Precision-safe upper bound: u64::MAX = 2^64 - 1 cannot be represented exactly
+    // in f64 (rounds up to 2^64). Compare against `2f64.powi(64)` — the exact float64
+    // value of 2^64 — so the boundary check fires for any value that would saturate
+    // the subsequent `as u64` cast. Same approach as the cluster #3h fractional byte
+    // overflow fix (rs `parse_bytes` 2^63, go `math.Exp2(63)`).
+    let product = f * nanos_per_unit;
+    if !product.is_finite() || product >= 2f64.powi(64) {
+        return None;
+    }
+    Some(std::time::Duration::from_nanos(product as u64))
 }
 
 /// Parse a HOCON period string into a `(years, months, days)` tuple.
@@ -1167,6 +1183,53 @@ mod tests {
     #[test]
     fn parse_duration_unit_only_is_none() {
         assert!(parse_duration("ms").is_none());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Issue #95 — parse_duration overflow guards (integer + fractional)
+    //
+    // Pre-fix: `(n as f64 * nanos_per_unit) as u64` silently saturated for
+    // large n; `(f * nanos_per_unit) as u64` silently saturated for fractional
+    // overflow. Lightbend errors in both cases — we now match.
+    // ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_duration_integer_overflow_weeks_is_none() {
+        // i64::MAX weeks would require ~5.6e33 nanos, far past u64::MAX.
+        assert!(parse_duration("9223372036854775807 weeks").is_none());
+    }
+
+    #[test]
+    fn parse_duration_integer_overflow_days_is_none() {
+        // i64::MAX days × 86_400_000_000_000 ns/day overflows u64 (2^64 ≈ 1.8e19).
+        assert!(parse_duration("9223372036854775807 days").is_none());
+    }
+
+    #[test]
+    fn parse_duration_integer_max_u64_nanos_succeeds() {
+        // u64::MAX nanos should be representable (boundary success).
+        let d = parse_duration("18446744073709551615ns").unwrap();
+        assert_eq!(d.as_nanos(), u64::MAX as u128);
+    }
+
+    #[test]
+    fn parse_duration_fractional_overflow_is_none() {
+        // 1e30 days is wildly past u64::MAX nanos.
+        assert!(parse_duration("1e30 d").is_none());
+    }
+
+    #[test]
+    fn parse_duration_fractional_above_u64_max_is_none() {
+        // 2^64 nanos exactly — boundary just past representable range.
+        // f64 rounds u64::MAX up to 2^64, so the strict-< check at 2^64 catches both.
+        assert!(parse_duration("18446744073709551616ns").is_none());
+    }
+
+    #[test]
+    fn parse_duration_fractional_succeeds_below_boundary() {
+        // 1.5 weeks = ~907_200_000_000_000 ns, well within u64.
+        let d = parse_duration("1.5w").unwrap();
+        assert_eq!(d.as_nanos(), 907_200_000_000_000u128);
     }
 
     // ──────────────────────────────────────────────────────────────
