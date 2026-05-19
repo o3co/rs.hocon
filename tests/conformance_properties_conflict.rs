@@ -105,7 +105,12 @@ fn run_pc_fixture(stem: &str) {
 
     // Create a temporary HOCON wrapper file that includes the properties file.
     // The include path must be absolute so the loader finds it.
-    let wrapper_content = format!(r#"include file("{}")"#, props_path.display());
+    // Normalize Windows backslashes to forward slashes — HOCON tokenizer treats `\`
+    // inside quoted strings as the start of an escape sequence (e.g. `\C:\Users`
+    // becomes `\C` which is rejected as "invalid escape sequence"). Forward slashes
+    // work cross-platform per HOCON.md L300 and match `Path::display()` on POSIX.
+    let path_str = props_path.to_string_lossy().replace('\\', "/");
+    let wrapper_content = format!(r#"include file("{}")"#, path_str);
 
     let env: HashMap<String, String> = HashMap::new();
     let result = hocon::parse_with_env(&wrapper_content, &env);
