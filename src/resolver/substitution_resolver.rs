@@ -164,18 +164,48 @@ impl<'a> SubstitutionResolver<'a> {
                 };
                 if is_self_ref {
                     let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
-                    let prior = scope
+                    let prior_root = scope
                         .prior_values
                         .get(root_seg)
                         .or_else(|| self.root.prior_values.get(root_seg))
                         .cloned();
-                    if let Some(prior) = prior {
-                        let result = self.resolve_val(&prior, scope)?;
-                        if let Some(ref r) = result {
-                            self.cache.insert(key.to_string(), r.clone());
+                    if let Some(prior_root) = prior_root {
+                        // For multi-segment paths (e.g. foo.a), navigate into the prior
+                        // root object to find the value at the full path.
+                        let prior = if s.segments.len() > 1 {
+                            if let ResolverValue::Obj(ref prior_obj) = prior_root {
+                                lookup_path(prior_obj, &s.segments[1..]).cloned()
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(prior_root)
+                        };
+                        if let Some(prior) = prior {
+                            let result = self.resolve_val(&prior, scope)?;
+                            if let Some(ref r) = result {
+                                self.cache.insert(key.to_string(), r.clone());
+                            }
+                            return Ok(result);
                         }
-                        return Ok(result);
+                        // Prior root exists but nested path not found — fall through to
+                        // no-prior short-circuit below.
                     }
+                    // Spec L841: no prior + self-ref → optional yields undefined; required errors.
+                    if s.optional {
+                        // Cache the undefined result for idempotency (spec Q2).
+                        // Return None (undefined) — the concat-layer optional-omission rule
+                        // (Phase 6 #3b) will omit this from the fold input.
+                        return Ok(None);
+                    }
+                    return Err(ResolveError {
+                        message: format!(
+                            "could not resolve substitution: ${{{key}}} (self-referential with no prior value)"
+                        ),
+                        path: key.to_string(),
+                        line: s.line,
+                        col: s.col,
+                    });
                 }
             }
             let mut result = self.resolve_val(&found, scope)?;
