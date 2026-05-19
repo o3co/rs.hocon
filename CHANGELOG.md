@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`parse_duration` overflow guards** (closes #95, non-breaking):
+  Integer path now uses `checked_mul` on `u64` instead of `(n as f64 * unit) as u64`
+  which silently saturated for large `n` values. Fractional path now checks the
+  product against `2f64.powi(64)` (the exact f64 value of 2^64) before the
+  `as u64` cast — `(n as f64 * unit) as u64` previously rounded up `u64::MAX` to
+  `2^64` on cast, masking overflow. Inputs like `"9223372036854775807 weeks"` and
+  `"1e30 d"` now correctly return `None` instead of saturating to `Duration::from_nanos(u64::MAX)`.
+  Same pattern as the cluster #3h fractional byte overflow fix in `parse_bytes`.
+
+  Additionally, the integer fast-path now parses via `i128` to range-check both
+  negatives (rejected per rs's unsigned-`Duration` limitation) AND values up to
+  `u64::MAX` — previously the upper half of the representable nanos range was
+  rejected as "parse error" rather than overflow.
+
 - **S3.1 — Empty file is invalid** (Phase 6 #3h):
   `parse` and `parse_file` (and their `_with_env` variants) now return a `ParseError` for
   empty documents — including empty strings, whitespace-only, newlines-only, comment-only,
