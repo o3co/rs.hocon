@@ -400,8 +400,8 @@ same item descriptions verbatim.
   tests: tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
   status: ✅
 - **S13a.13** `a = ${?a}foo` resolves to `"foo"` (look-back undefined) — §Self-Referential (L841)
-  tests: tests/integration_test.rs:1103 (s13a_13_optional_self_ref_concat_with_no_prior_pin); tests/integration_test.rs:1115 (s13a_13_optional_self_ref_concat_with_no_prior_spec)
-  status: ❌ (see #76)
+  tests: tests/integration_test.rs (s13a_13_optional_self_ref_concat_with_no_prior_spec); tests/self_ref_lookback_test.rs (sr01–sr11)
+  status: ✅ (fixed in #76; cleared in cluster phase6-3f)
 - **S13a.14** Mutually-referring object fields (`bar.a = ${foo.d}; foo.c = ${bar.b}`) resolve lazily without false cycle — §Self-Referential (L825-834)
   tests: tests/spec_phase5.rs (s13a_14_mutual_refs_no_false_cycle)
   status: ✅

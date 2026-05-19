@@ -286,11 +286,8 @@ fn s13c_s5_optional_no_scalar_fallback() {
 
 /// ev08: `x = ["x"]; x = ${?x} ${?LIST[]}` → `["x","a"]`.
 ///
-/// The plan proposed a `#[should_panic]` tripwire (S13a.13 gap), but rs.hocon's
-/// existing prior_values / self-ref-lookback logic already handles this case
-/// correctly via the concat resolver and `join_pair`. Verified 2026-05-18:
-/// ev08 resolves to `["x","a"]` without the S13a.13 fix. This fixture therefore
-/// ships as a regular ✅ success test, not a tripwire.
+/// The prior value `x = ["x"]` is found by the self-ref look-back, so the array
+/// concat resolves correctly. Ships as a regular ✅ success test.
 #[test]
 fn s13c_ev08_self_ref_concat() {
     assert_fixture_matches("ev08-self-append");
