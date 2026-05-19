@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/hocon-parser.svg)](https://crates.io/crates/hocon-parser)
 [![docs.rs](https://docs.rs/hocon-parser/badge.svg)](https://docs.rs/hocon-parser)
 [![CI](https://github.com/o3co/rs.hocon/actions/workflows/test.yml/badge.svg)](https://github.com/o3co/rs.hocon/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/main/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
+[![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/develop/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
 A [Lightbend HOCON specification](https://github.com/lightbend/config/blob/main/HOCON.md)
