@@ -234,11 +234,35 @@ impl<'a> SubstitutionResolver<'a> {
                         // Prior root exists but nested path not found — fall through to
                         // no-prior short-circuit below.
                     }
+                    // Object-literal form fallback: when `foo { a = "x"; a = ${?foo.a}bar }`
+                    // is used, the prior for the leaf key `a` is stored directly in the
+                    // current scope (inner_obj.prior_values["a"]), not in the root scope
+                    // under the parent key "foo".  The root-segment lookup above only
+                    // finds the parent object's prior (used for dotted-path reassignments
+                    // at root level), so it finds nothing here.
+                    //
+                    // Guard: only fire this fallback when the substitution is multi-segment
+                    // (len > 1) — single-segment priors are already handled above — and the
+                    // leaf segment's prior lives directly in `scope`.
+                    if s.segments.len() > 1 {
+                        let leaf_seg = s.segments.last().map(|seg| seg.text.as_str()).unwrap_or("");
+                        if let Some(leaf_prior) = scope.prior_values.get(leaf_seg).cloned() {
+                            let result = self.resolve_val(&leaf_prior, scope)?;
+                            if let Some(ref r) = result {
+                                self.cache.insert(key.to_string(), r.clone());
+                            }
+                            return Ok(result);
+                        }
+                    }
                     // Spec L841: no prior + self-ref → optional yields undefined; required errors.
                     if s.optional {
-                        // Cache the undefined result for idempotency (spec Q2).
                         // Return None (undefined) — the concat-layer optional-omission rule
                         // (Phase 6 #3b) will omit this from the fold input.
+                        // Note: no explicit cache entry is inserted here; undefined is
+                        // encoded by absence from the cache (cache stores HoconValue, not
+                        // Option<HoconValue>). Re-resolving the same self-ref deterministically
+                        // returns None without a cached entry — spec Q2 idempotency is
+                        // satisfied structurally.
                         return Ok(None);
                     }
                     return Err(ResolveError {

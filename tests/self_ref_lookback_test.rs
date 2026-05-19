@@ -123,6 +123,12 @@ fn run_fixture(stem: &str) {
     let ep = error_sidecar_path(stem);
     let jp = expected_json_path(stem);
 
+    assert!(
+        fp.exists(),
+        "fixture missing: {} — run `make testdata` to sync fixtures from xx.hocon",
+        fp.display()
+    );
+
     let has_error = ep.exists();
     let has_json = jp.exists();
 
@@ -236,4 +242,20 @@ fn sr10_nested_with_prior() {
 #[test]
 fn sr11_mutual_ref_forward() {
     run_fixture("sr11-mutual-ref-forward");
+}
+
+/// sr12: object-literal form `foo { a = "x"\n a = ${?foo.a}bar }` → `foo.a = "xbar"`
+/// Regression guard: AST normalization must unify object-literal and dotted-path forms
+/// for self-ref look-back (Copilot rs-T1 verification).
+/// Note: HOCON field separator is LF (0x0A); semicolons are not newline equivalents
+/// in this parser, so the multi-field form requires a literal newline inside the
+/// object-literal block.
+#[test]
+fn s13a_13_nested_self_ref_object_literal_form() {
+    let cfg = hocon::parse_with_env(
+        "foo {\n  a = \"x\"\n  a = ${?foo.a}bar\n}",
+        &std::collections::HashMap::new(),
+    )
+    .expect("parse failed");
+    assert_eq!(cfg.get_string("foo.a").unwrap(), "xbar");
 }
