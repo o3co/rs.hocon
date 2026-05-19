@@ -62,8 +62,8 @@ same item descriptions verbatim.
 ## S3. Omit root braces
 
 - **S3.1** Empty file is invalid — §Omit root braces (L130)
-  tests: src/parser.rs:623 (parses_empty_input)
-  status: ⚠️ (test pins spec-violating behavior — spec says empty file is invalid, impl returns empty object)
+  tests: tests/spec_s3_1_empty_file.rs (s3_1_1_empty_string, s3_1_2_whitespace_only, s3_1_3_newlines_only, s3_1_4_comment_only, s3_1_5_bom_only, s3_1_6_mixed_ws_comment); tests/conformance_empty_file.rs (ef01-ef06); src/parser.rs (parses_empty_input — updated to expect Err via hocon::parse)
+  status: ✅ (was ⚠️; guard added at parse_with_env/parse_file_with_env entry — Phase 6 #3h)
 - **S3.2** Root non-object/non-array is invalid (when explicitly enclosed) — §Omit root braces (L131)
   tests: tests/integration_test.rs:651 (s3_2_root_bare_string_rejected)
   status: ✅
@@ -705,8 +705,8 @@ struct. ts and go remain ➖ (no period accessor).
   tests: src/config.rs:825 (get_bytes_kibibytes); src/config.rs:837 (get_bytes_mebibytes); src/config.rs:849 (get_bytes_gibibytes); src/config.rs:861 (get_bytes_tebibytes)
   status: ✅
 - **S21.4** Single-letter abbreviations → powers of 2 (java -Xmx convention) — §Size in bytes format (L1385)
-  tests: src/config.rs:867 (get_bytes_no_space)
-  status: ✅
+  tests: tests/spec_s21_4_single_letter_bytes.rs (s21_4_1_k_uppercase_is_1024 through s21_4_12_kib_stays_binary); tests/conformance_bsl.rs (bsl01-bsl09); tests/units_default_test.rs (ub05_bytes_with_unit — updated to 1_048_576)
+  status: ✅ (was ✅ mis-classified; prior ✅ cited get_bytes_no_space which exercised '512MB' multi-letter, never single-letter K/M/G/T; behavior corrected — BREAKING: K/M/G/T now binary per L1385 — Phase 6 #3h)
 - **S21.5** Fractional values supported (`0.5M`) — §Units format (L1281-1294) + §Size in bytes (L1335-1342)
   tests: tests/integration_test.rs:196 (test_parse_bytes_fractional); tests/integration_test.rs:203 (test_parse_bytes_fractional_binary); src/config.rs:891 (get_bytes_fractional_rounds)
   status: ✅
@@ -736,8 +736,8 @@ struct. ts and go remain ➖ (no period accessor).
   tests: src/properties.rs:109 (values_are_always_strings)
   status: ✅
 - **S23.4** Object wins over string on conflicting key — §Java properties (L1485)
-  tests: src/properties.rs:116 (converts_to_hocon_value)
-  status: ✅
+  tests: src/properties.rs (s23_4_forward_object_wins, s23_4_reverse_object_wins, s23_4_deep_forward_object_wins, s23_4_deep_reverse_object_wins); tests/conformance_properties_conflict.rs (pc01-pc04)
+  status: ✅ (was ✅ mis-classified; prior ✅ cited converts_to_hocon_value which exercised 'a.b=1\nc=hello' — no conflict; set_nested had two bugs causing silent data-loss on conflict; corrected with object-wins rule + sorted-key processing — Phase 6 #3h)
 - **S23.5** Multi-line values (backslash continuation) — §Note on Java properties similarity (L1587)
   out-of-scope: declared in each implementation's README — the `.properties` reader supports only basic `key=value` syntax to avoid pulling a full Java properties parser into a non-JVM library.
   tests: —

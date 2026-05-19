@@ -193,11 +193,14 @@ fn test_nested_quoted_path_lookup() {
 }
 
 // Task 13: parse_bytes fractional number support
+// BREAKING (S21.4): single-letter M is now binary (2^20 = 1_048_576).
+// 0.5M = 0.5 × 1_048_576 = 524_288. Previously was 0.5 × 1_000_000 = 500_000 (SI).
+// See CHANGELOG.md — S21.4 BREAKING entry.
 #[test]
 fn test_parse_bytes_fractional() {
     let cfg = hocon::parse("size = 0.5M").unwrap();
     let bytes = cfg.get_bytes("size").unwrap();
-    assert_eq!(bytes, 500_000);
+    assert_eq!(bytes, 524_288); // 0.5 × 2^20 (binary M, HOCON.md L1385)
 }
 
 #[test]

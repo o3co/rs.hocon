@@ -126,6 +126,24 @@ fn load_single_include(
         line: e.line,
         col: e.col,
     })?;
+
+    // S3.1 empty-file guard: empty included files are invalid (HOCON.md L130).
+    // Mirrors the guard in `parse_with_env` / `parse_file_with_env` in src/lib.rs.
+    let has_content = tokens.iter().any(|t| {
+        !matches!(
+            t.kind,
+            crate::lexer::TokenKind::Newline | crate::lexer::TokenKind::Eof
+        )
+    });
+    if !has_content {
+        return Err(ResolveError {
+            message: "empty file is not a valid HOCON document (HOCON.md L130)".into(),
+            path: candidate.display().to_string(),
+            line: 1,
+            col: 1,
+        });
+    }
+
     let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
         message: e.message,
         path: candidate.display().to_string(),

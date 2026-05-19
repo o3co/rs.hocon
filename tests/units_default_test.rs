@@ -226,14 +226,18 @@ fn ub04_bytes_negative_accessor_rejects() {
     );
 }
 
-/// ub05: `"1024K"` → 1_024_000 bytes (regression guard: SI unit K = 1000).
+/// ub05: `"1024K"` → 1_048_576 bytes (Lightbend ground truth: K = 1024 binary, HOCON.md L1385).
+///
+/// BREAKING since 1.3.0: K was previously treated as SI decimal (1_000), yielding
+/// 1_024_000 for "1024K". Per HOCON.md L1385, single-letter K maps to powers of two
+/// (1_024). Correct result: 1024 × 1024 = 1_048_576. See CHANGELOG.md for migration.
 #[test]
 fn ub05_bytes_with_unit() {
     let cfg = load("ub05-bytes-with-unit.conf");
     assert_eq!(
         cfg.get_bytes("b").unwrap(),
-        1_024_000,
-        "ub05 (regression): '1024K' must yield 1_024_000 bytes (K = 1000 SI)"
+        1_048_576,
+        "ub05: '1024K' must yield 1_048_576 bytes (K = 1024 binary, HOCON.md L1385 Lightbend ground truth)"
     );
 }
 

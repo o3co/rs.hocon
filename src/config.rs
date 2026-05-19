@@ -650,18 +650,34 @@ fn parse_bytes(s: &str) -> Option<i64> {
         return None;
     }
 
-    // Case-sensitive matching: KB vs KiB matters. Short forms (K, M, G, T) are
-    // treated as SI decimal units (KB, MB, GB, TB) per HOCON.md L1344.
+    // Case-sensitive matching: KB vs KiB matters.
+    //
+    // Single-letter abbreviations (K, M, G, T, P, E) map to **powers of two**
+    // per HOCON.md L1385: "single-character abbreviations ('128K') should go
+    // with… powers of two" — aligned with Lightbend typesafe-config 1.4.3.
+    //
+    // BREAKING (since 1.3.0): K/M/G/T were previously treated as SI decimal
+    // (1_000, 1_000_000, …). They are now binary (1_024, 1_048_576, …).
+    // Multi-letter forms KB/MB/GB/TB remain SI decimal (separate match arms).
+    // See CHANGELOG.md — S21.4 BREAKING entry.
     let multiplier: i64 = match unit_str {
         "" | "B" | "byte" | "bytes" => 1,
-        "K" | "KB" | "kilobyte" | "kilobytes" => 1_000,
-        "KiB" | "kibibyte" | "kibibytes" => 1_024,
-        "M" | "MB" | "megabyte" | "megabytes" => 1_000_000,
-        "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
-        "G" | "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
-        "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
-        "T" | "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
-        "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
+        // Single-letter → powers of two (HOCON.md L1385). BREAKING for K/M/G/T.
+        "K" | "k" => 1_024,
+        "M" | "m" => 1_048_576,
+        "G" | "g" => 1_073_741_824,
+        "T" | "t" => 1_099_511_627_776,
+        "P" | "p" => 1_125_899_906_842_624,
+        "E" | "e" => 1_152_921_504_606_846_976,
+        // Multi-letter SI decimal forms (unchanged).
+        "KB" | "kilobyte" | "kilobytes" => 1_000,
+        "KiB" | "Ki" | "kibibyte" | "kibibytes" => 1_024,
+        "MB" | "megabyte" | "megabytes" => 1_000_000,
+        "MiB" | "Mi" | "mebibyte" | "mebibytes" => 1_048_576,
+        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
+        "GiB" | "Gi" | "gibibyte" | "gibibytes" => 1_073_741_824,
+        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
+        "TiB" | "Ti" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
         _ => return None,
     };
 
@@ -673,11 +689,13 @@ fn parse_bytes(s: &str) -> Option<i64> {
 
     // Fractional fallback: truncate toward zero per Lightbend `BigDecimal.toBigInteger()`.
     let f: f64 = num_str.parse().ok()?;
-    let result = (f * multiplier as f64) as i64; // `as i64` truncates (Rust saturates on overflow)
-    if !f.is_finite() || f.abs() * multiplier as f64 > i64::MAX as f64 {
+    // Overflow guard BEFORE the cast: `i64::MAX as f64` rounds up to exactly 2^63 in IEEE-754,
+    // so `> i64::MAX as f64` misses the boundary (8.0E == 2^63 passes the `>` test but saturates).
+    // Use `>= 2f64.powi(63)` to catch the exact boundary and all values above it.
+    if !f.is_finite() || f.abs() * multiplier as f64 >= 2f64.powi(63) {
         return None;
     }
-    Some(result)
+    Some((f * multiplier as f64) as i64)
 }
 
 fn missing(path: &str) -> ConfigError {
