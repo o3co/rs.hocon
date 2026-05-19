@@ -12,6 +12,15 @@ pub(crate) struct SubstitutionResolver<'a> {
     env: &'a HashMap<String, String>,
     resolving: HashSet<String>,
     cache: HashMap<String, HoconValue>,
+    /// Path stack tracking the full dotted path of the field currently being
+    /// assigned in `resolve_res_obj`.  Leaf keys are pushed on entry to each
+    /// `for (key, val)` iteration and popped on exit, so nested objects build
+    /// up the full path (e.g. `["foo", "a"]` while resolving `foo.a`).
+    ///
+    /// Used to tighten the self-ref detection: a substitution `${x}` whose
+    /// found value contains a self-reference is only a true self-reference when
+    /// the field we are assigning IS `x` (i.e., the joined path == subst key).
+    resolving_field_path: Vec<String>,
 }
 
 impl<'a> SubstitutionResolver<'a> {
@@ -21,6 +30,7 @@ impl<'a> SubstitutionResolver<'a> {
             env,
             resolving: HashSet::new(),
             cache: HashMap::new(),
+            resolving_field_path: Vec::new(),
         }
     }
 
@@ -32,14 +42,18 @@ impl<'a> SubstitutionResolver<'a> {
     fn resolve_res_obj(&mut self, obj: &ResObj) -> Result<HoconValue, ResolveError> {
         let mut result = IndexMap::new();
         for (key, val) in &obj.fields {
-            match self.resolve_val(val, obj)? {
+            self.resolving_field_path.push(key.clone());
+            let resolved_result = self.resolve_val(val, obj);
+            self.resolving_field_path.pop();
+            match resolved_result? {
                 Some(resolved) => {
                     // Delayed merge: if both current and prior resolve to objects, deep merge
                     if let HoconValue::Object(ref current_fields) = resolved {
                         if let Some(prior) = obj.prior_values.get(key) {
-                            if let Some(HoconValue::Object(prior_fields)) =
-                                self.resolve_val(prior, obj)?
-                            {
+                            self.resolving_field_path.push(key.clone());
+                            let prior_result = self.resolve_val(prior, obj);
+                            self.resolving_field_path.pop();
+                            if let Some(HoconValue::Object(prior_fields)) = prior_result? {
                                 let merged =
                                     deep_merge_hocon_objects(prior_fields, current_fields.clone());
                                 result.insert(key.clone(), merged);
@@ -52,7 +66,10 @@ impl<'a> SubstitutionResolver<'a> {
                 None => {
                     // Unresolved optional: fall back to prior value
                     if let Some(prior) = obj.prior_values.get(key) {
-                        if let Some(prior_resolved) = self.resolve_val(prior, obj)? {
+                        self.resolving_field_path.push(key.clone());
+                        let prior_result = self.resolve_val(prior, obj);
+                        self.resolving_field_path.pop();
+                        if let Some(prior_resolved) = prior_result? {
                             result.insert(key.clone(), prior_resolved);
                         }
                     }
@@ -155,13 +172,32 @@ impl<'a> SubstitutionResolver<'a> {
             // Self-referential substitution: only use prior value when the substitution
             // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
             if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
-                let is_self_ref = match &found {
-                    ResolverValue::Subst(sub) => segments_text_equal(&sub.segments, &s.segments),
-                    ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
-                        matches!(n, ResolverValue::Subst(sub) if segments_text_equal(&sub.segments, &s.segments))
-                    }),
-                    _ => false,
-                };
+                // Guard: the self-ref short-circuit only fires when the field currently
+                // being assigned IS the field that the substitution points at.
+                // Without this guard, resolving `b = ${a}` would see that `a`'s value
+                // is `${?a}foo` (a self-referential concat) and mis-fire the short-circuit,
+                // returning an error instead of resolving `a` normally and giving `b = "foo"`.
+                //
+                // `resolving_field_path` holds the leaf keys pushed by `resolve_res_obj`
+                // as it recurses into nested objects, giving the full path of the field
+                // being assigned (e.g. `["foo", "a"]` while resolving `foo.a = …`).
+                // We compare by text so quoting differences don't cause false negatives.
+                let is_owner = self.resolving_field_path.len() == s.segments.len()
+                    && self
+                        .resolving_field_path
+                        .iter()
+                        .zip(s.segments.iter())
+                        .all(|(p, seg)| p == &seg.text);
+                let is_self_ref = is_owner
+                    && match &found {
+                        ResolverValue::Subst(sub) => {
+                            segments_text_equal(&sub.segments, &s.segments)
+                        }
+                        ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
+                            matches!(n, ResolverValue::Subst(sub) if segments_text_equal(&sub.segments, &s.segments))
+                        }),
+                        _ => false,
+                    };
                 if is_self_ref {
                     let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior_root = scope
@@ -579,7 +615,7 @@ fn stringify_value(v: &HoconValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::{ScalarType, ScalarValue};
+    use crate::value::ScalarValue;
 
     /// Fix #2: type_name must return scalar subtype names (not "scalar").
     #[test]

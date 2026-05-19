@@ -1490,3 +1490,16 @@ fn s17_8_array_to_other_type_errors() {
         "get_list on an array must succeed"
     );
 }
+
+// --- S13a.13 Codex P2: external reference to a self-referential concat field ----
+/// When field `a = ${?a}foo` (self-ref optional concat) is referenced by another
+/// field `b = ${a}`, the self-ref look-back short-circuit must NOT fire for `b`.
+/// Previously the `is_self_ref` guard keyed only on structural match, so it
+/// mis-classified `b`'s resolution of `${a}` as a self-reference.
+#[test]
+fn s13a_13_external_reference_to_self_ref_field() {
+    let cfg = hocon::parse_with_env("a = ${?a}foo\nb = ${a}", &std::collections::HashMap::new())
+        .expect("parse failed");
+    assert_eq!(cfg.get_string("a").unwrap(), "foo");
+    assert_eq!(cfg.get_string("b").unwrap(), "foo");
+}
