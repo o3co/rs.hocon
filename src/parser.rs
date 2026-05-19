@@ -694,9 +694,14 @@ mod tests {
 
     #[test]
     fn parses_empty_input() {
-        let node = parse("");
-        assert!(matches!(node, AstNode::Object { .. }));
-        assert_eq!(fields(&node).len(), 0);
+        // S3.1: empty file is not a valid HOCON document (HOCON.md L130).
+        // The guard fires at the library entry point (`parse_with_env`) after
+        // tokenise, before `parse_tokens`. Verify via the public `hocon::parse`
+        // API so the full pipeline is exercised.
+        assert!(
+            crate::parse("").is_err(),
+            "S3.1: hocon::parse(\"\") must return Err (empty file is invalid)"
+        );
     }
 
     #[test]

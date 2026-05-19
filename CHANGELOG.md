@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (S21.4)**: Single-letter byte abbreviations `K`/`k`/`M`/`m`/`G`/`g`/`T`/`t`/`P`/`p`/`E`/`e`
+  now map to **powers of two** (binary) instead of SI decimal, per HOCON.md L1385 java -Xmx convention.
+
+  | Unit | Old value (SI decimal) | New value (binary) |
+  | ---- | ---------------------- | ------------------- |
+  | `K`/`k` | 1,000 | 1,024 |
+  | `M`/`m` | 1,000,000 | 1,048,576 |
+  | `G`/`g` | 1,000,000,000 | 1,073,741,824 |
+  | `T`/`t` | 1,000,000,000,000 | 1,099,511,627,776 |
+  | `P`/`p` | *(not supported)* | 1,125,899,906,842,624 |
+  | `E`/`e` | *(not supported)* | 1,152,921,504,606,846,976 |
+
+  **Migration**: callers that expected SI decimal semantics for single-letter units must switch
+  to multi-letter forms (`KB` / `MB` / `GB` / `TB` remain SI decimal and are unchanged).
+  Example: `1K` was 1,000 bytes; it is now 1,024 bytes. `1024K` was 1,024,000; it is now 1,048,576.
+
+  Background: this corrects a mis-classification — the prior ✅ for S21.4 was based on the
+  `get_bytes_no_space` test which exercised `"512MB"` (multi-letter), never single-letter `K`/`M`/`G`/`T`.
+  The source comment citing "L1344 as SI decimal short forms" was wrong; HOCON.md L1385 normatively
+  says single-letter → powers of two, confirmed by Lightbend typesafe-config 1.4.3.
+
+### Fixed
+
+- **S3.1 — Empty file is invalid** (Phase 6 #3h):
+  `parse` and `parse_file` (and their `_with_env` variants) now return a `ParseError` for
+  empty documents — including empty strings, whitespace-only, newlines-only, comment-only,
+  BOM-only, and mixed whitespace+comment inputs — per HOCON.md L130 ("empty files are invalid
+  documents"). Explicit empty objects (`{}`) and documents with at least one field are unaffected.
+
+- **S23.4 — Properties dotted-key conflict: object wins** (Phase 6 #3h, non-breaking):
+  When a `.properties` file contains conflicting keys (e.g. `a=hello` and `a.b=world`),
+  the resolved value is now deterministically `{a: {b: "world"}}` (object wins, scalar discarded)
+  per HOCON.md L1485.
+
+  Two bugs in `set_nested` (`src/properties.rs`) are corrected:
+  - **Leaf overwrite bug**: `a=hello` after `a.b=world` was being silently overwritten by the
+    scalar, reversing the object-wins rule.
+  - **Non-leaf scalar stranding bug**: when `a=hello` appeared before `a.b=world`, the
+    `if let HoconValue::Object(inner) = entry` pattern failed silently on the scalar, causing
+    `a.b` to be dropped on the floor (silent data-loss).
+
+  Additionally, property keys are now **processed in sorted order** so the conflict direction
+  is deterministic regardless of input line order (mirrors go.hocon's `sort.Strings(keys)`
+  and the requirement in HOCON.md L1476-1479).
+
+  Background: this corrects a mis-classification — the prior ✅ for S23.4 was based on
+  `converts_to_hocon_value` which exercised `"a.b=1\nc=hello"` (no conflict path).
+
 ### Added
 
 - **`Period` struct** (Phase 6 #3d — S18 review fix):
