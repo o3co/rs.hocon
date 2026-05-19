@@ -20,6 +20,13 @@ pub(crate) struct SubstitutionResolver<'a> {
     /// Used to tighten the self-ref detection: a substitution `${x}` whose
     /// found value contains a self-reference is only a true self-reference when
     /// the field we are assigning IS `x` (i.e., the joined path == subst key).
+    ///
+    /// Spec deviation: the S13a.13 spec ★1 decision #1 specified path-equality
+    /// preservation for self-ref detection. Round-2 multi-agent-review surfaced
+    /// a false-positive on external lookups (`a = ${?a}foo; b = ${a}`), so the
+    /// criterion was tightened with this `is_owner` guard — strictly narrower
+    /// than the original path-equality check. Spec amendment deferred to a
+    /// follow-up xx.hocon PR (see Phase 6 #3f close-out notes).
     resolving_field_path: Vec<String>,
 }
 
