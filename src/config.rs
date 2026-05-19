@@ -689,11 +689,13 @@ fn parse_bytes(s: &str) -> Option<i64> {
 
     // Fractional fallback: truncate toward zero per Lightbend `BigDecimal.toBigInteger()`.
     let f: f64 = num_str.parse().ok()?;
-    let result = (f * multiplier as f64) as i64; // `as i64` truncates (Rust saturates on overflow)
-    if !f.is_finite() || f.abs() * multiplier as f64 > i64::MAX as f64 {
+    // Overflow guard BEFORE the cast: `i64::MAX as f64` rounds up to exactly 2^63 in IEEE-754,
+    // so `> i64::MAX as f64` misses the boundary (8.0E == 2^63 passes the `>` test but saturates).
+    // Use `>= 2f64.powi(63)` to catch the exact boundary and all values above it.
+    if !f.is_finite() || f.abs() * multiplier as f64 >= 2f64.powi(63) {
         return None;
     }
-    Some(result)
+    Some((f * multiplier as f64) as i64)
 }
 
 fn missing(path: &str) -> ConfigError {

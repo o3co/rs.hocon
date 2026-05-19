@@ -115,6 +115,55 @@ fn s21_4_10_9e_overflows_i64() {
     );
 }
 
+/// s21_4_f1: `8.0E` must error — 8.0 × 2^60 = 2^63 equals i64::MAX as f64 (float64 boundary).
+///
+/// `i64::MAX as f64` rounds up to exactly 2^63 in IEEE-754, so a naive `> i64::MAX as f64`
+/// check lets 8.0E through and the `as i64` cast saturates to i64::MAX silently.
+/// The fix uses `>= 2f64.powi(63)` to catch the exact boundary (rs-I1 / convergent with go I1+T1).
+#[test]
+fn s21_4_f1_8e_boundary_overflows() {
+    assert!(
+        parse_bytes_str("8.0E").is_err(),
+        "S21.4: '8.0E' must error — 8.0 × 2^60 == 2^63 == i64::MAX+1, not a valid i64 (rs-I1)"
+    );
+}
+
+/// s21_4_f2: `9.0E` must error (9 × 2^60 > i64::MAX, fractional overflow path).
+///
+/// Tests the fractional path explicitly (integer path uses checked_mul which already worked).
+#[test]
+fn s21_4_f2_9e_fractional_overflows() {
+    assert!(
+        parse_bytes_str("9.0E").is_err(),
+        "S21.4: '9.0E' must error — 9.0 × 2^60 overflows i64 (fractional path)"
+    );
+}
+
+/// s21_4_f3: `8.5E` must error (8.5 × 2^60 > 2^63, clearly above boundary).
+#[test]
+fn s21_4_f3_8_5e_overflows() {
+    assert!(
+        parse_bytes_str("8.5E").is_err(),
+        "S21.4: '8.5E' must error — 8.5 × 2^60 > 2^63"
+    );
+}
+
+/// s21_4_f4: `7.0E` must succeed — 7 × 2^60 = 8_070_450_532_247_928_832 < i64::MAX.
+#[test]
+fn s21_4_f4_7e_succeeds() {
+    let result = parse_bytes_str("7.0E");
+    assert!(
+        result.is_ok(),
+        "S21.4: '7.0E' must succeed — 7 × 2^60 = 8_070_450_532_247_928_832 < i64::MAX"
+    );
+    // f64 truncation: 7.0 * 2^60 is exact in f64 (7 * 2^60 < 2^63 and 7 has only 3 bits)
+    assert_eq!(
+        result.unwrap(),
+        7 * 1_152_921_504_606_846_976_i64,
+        "S21.4: '7.0E' value must be 7 × 2^60"
+    );
+}
+
 /// s21_4_11: multi-letter `KB` remains SI decimal 1000 (separate match arm, unchanged).
 #[test]
 fn s21_4_11_kb_stays_si_decimal() {
