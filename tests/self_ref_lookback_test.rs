@@ -16,13 +16,11 @@ use std::path::PathBuf;
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/hocon/self-ref-lookback")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/hocon/self-ref-lookback")
 }
 
 fn expected_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/expected/self-ref-lookback")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/self-ref-lookback")
 }
 
 fn fixture_path(stem: &str) -> PathBuf {
