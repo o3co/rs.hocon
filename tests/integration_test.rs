@@ -1203,25 +1203,10 @@ fn s13_16_substitution_in_key_is_rejected() {
 // No test added; see docs/spec-compliance.md S13a.10.
 
 // --- S13a.13: `a = ${?a}foo` resolves to "foo" (spec L841) ----------------------
-// BUG: rs.hocon currently evaluates ${?a} as the (already-set) value of `a`
-// ("foo") and produces "foofoo".
 #[test]
-fn s13a_13_optional_self_ref_concat_with_no_prior_pin() {
-    // [pin] Current (broken) behaviour: ${?a} sees "foo" instead of undefined.
+fn s13a_13_optional_self_ref_concat_with_no_prior_spec() {
     // Use empty env so an ambient `a` env var cannot leak in (single-letter env
     // names like `a` are common on POSIX shells — a real-world flake risk).
-    let cfg = hocon::parse_with_env("a = ${?a}foo", &std::collections::HashMap::new())
-        .expect("parse failed");
-    assert_eq!(
-        cfg.get_string("a").unwrap(),
-        "foofoo",
-        "[pin] a currently resolves to \"foofoo\" — update when fixed"
-    );
-}
-
-#[test]
-#[ignore = "spec violation: a = ${?a}foo must resolve to \"foo\" when a has no prior value, see #76"]
-fn s13a_13_optional_self_ref_concat_with_no_prior_spec() {
     let cfg = hocon::parse_with_env("a = ${?a}foo", &std::collections::HashMap::new())
         .expect("parse failed");
     assert_eq!(
