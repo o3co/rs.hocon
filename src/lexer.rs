@@ -1302,11 +1302,13 @@ mod tests {
         // `123abc` is not a valid number; parse_scalar_value falls back to
         // ScalarType::String. Same observable behavior as Lightbend (whose
         // parseLong/parseFloat both fail and produce an unquoted concat).
-        let result = crate::parse("x = 123abc");
-        assert!(
-            result.is_ok(),
-            "E8: `123abc` must lex+resolve as unquoted string, got {:?}",
-            result.err()
+        // Assert the resolved value (not just is_ok) so accidental coercion
+        // or truncation would surface here.
+        let cfg = crate::parse("x = 123abc").expect("parse failed");
+        assert_eq!(
+            cfg.get_string("x").expect("x not found"),
+            "123abc",
+            "E8: `123abc` must lex+resolve as unquoted string \"123abc\""
         );
     }
 
@@ -1316,11 +1318,13 @@ mod tests {
         // is an unquoted string at value-position — RFC 8259 JSON-number
         // requires a digit after `-`, so bare `-foo` falls outside L270's
         // disallow scope. Lightbend reference produces `{"x":"-foo"}`.
-        let result = crate::parse("x = -foo");
-        assert!(
-            result.is_ok(),
-            "E8: `-foo` must lex+resolve as unquoted string, got {:?}",
-            result.err()
+        // Assert the resolved value (not just is_ok) so accidental coercion
+        // or truncation would surface here.
+        let cfg = crate::parse("x = -foo").expect("parse failed");
+        assert_eq!(
+            cfg.get_string("x").expect("x not found"),
+            "-foo",
+            "E8: `-foo` must lex+resolve as unquoted string \"-foo\""
         );
     }
 

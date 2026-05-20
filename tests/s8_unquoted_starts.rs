@@ -120,6 +120,18 @@ fn config_to_json(config: &hocon::Config) -> serde_json::Value {
 fn run_fixture(stem: &str) {
     let fp = fixture_path(stem);
     let jp = expected_json_path(stem);
+
+    assert!(
+        fp.exists(),
+        "fixture missing: {} — run `make testdata` to sync fixtures from xx.hocon",
+        fp.display()
+    );
+    assert!(
+        jp.exists(),
+        "expected JSON missing: {} — run `make testdata` to sync expected sidecars from xx.hocon",
+        jp.display()
+    );
+
     let env: HashMap<String, String> = HashMap::new();
     let result = hocon::parse_file_with_env(&fp, &env);
     let cfg = result.unwrap_or_else(|e| {
@@ -291,7 +303,7 @@ fn e8_value_start_negative_zero_normalizes_to_zero() {
 
 #[test]
 fn e8_value_start_negative_inf_is_string_not_number() {
-    // Codex review (PR #N): Rust's `f64::parse("-inf")` succeeds and returns
+    // Codex review (PR #98): Rust's `f64::parse("-inf")` succeeds and returns
     // f64::NEG_INFINITY, but Lightbend's parseDouble rejects `-inf` (Java
     // requires `-Infinity` or `Infinity`). rs.hocon must not classify `-inf`
     // as a number — the `-`-followed-by-digit guard at parse_scalar_value
