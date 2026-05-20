@@ -311,11 +311,16 @@ impl<'a> Parser<'a> {
                 let mut seg_char_offset: usize = 0;
                 for part in val.split('.') {
                     if !part.is_empty() {
-                        // S8.6 (HOCON.md L270–276): each unquoted key segment
-                        // that begins with '-' must be followed by a digit. The
-                        // lexer sees `a.-foo` as a single unquoted token, so we
-                        // validate per-segment here after splitting. Symmetric
-                        // with the lexer and parse_subst_body checks.
+                        // S8.6 (HOCON.md L270–276) path-element rule: each
+                        // unquoted key segment that begins with '-' must be
+                        // followed by a digit. The lexer sees `a.-foo` as a
+                        // single unquoted token, so we validate per-segment
+                        // here after splitting. Symmetric with the
+                        // parse_subst_body segment-start check in
+                        // src/lexer.rs (the value-position strict reject
+                        // that lived in src/lexer.rs's tokenize loop was
+                        // removed by the E8 amendment — see
+                        // tests/s8_unquoted_starts.rs for the post-E8 reading).
                         let mut seg_chars = part.chars();
                         if seg_chars.next() == Some('-') {
                             let after = seg_chars.next();
@@ -665,9 +670,25 @@ fn parse_scalar_value(raw: &str) -> ScalarValue {
         _ => {}
     }
 
-    // Number detection: first char must be 0-9 or - (Lightbend-aligned)
-    if let Some(first) = raw.bytes().next() {
-        if (first.is_ascii_digit() || first == b'-') && raw.parse::<f64>().is_ok() {
+    // Number detection per E8 (xx.hocon#31): greedy Java numeric semantics.
+    // The run must be JSON-number-shaped to enter the numeric coercion path:
+    // first char is `0-9`, OR `-` followed by `0-9`. This excludes Rust-only
+    // float literals like `-inf`/`-nan` that `f64::parse` would otherwise
+    // accept but that Lightbend's `parseDouble` rejects.
+    let starts_like_number = matches!(raw.as_bytes(), [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..]);
+
+    if starts_like_number {
+        // i64 first for canonical-form normalization: `01` → "1", `-0` → "0",
+        // matching Lightbend's parseLong (which silently drops leading zeros
+        // and the negative-zero sign). This is the F3 BREAKING surface.
+        if let Ok(n) = raw.parse::<i64>() {
+            return ScalarValue::number(n.to_string());
+        }
+        // f64 fallback for fractional / scientific forms — preserve the
+        // original input text rather than f64-round-tripping (Lightbend
+        // keeps the input form for fractions; round-trip would change
+        // precision and surface non-canonical exponents).
+        if raw.parse::<f64>().is_ok() {
             return ScalarValue::number(raw.to_string());
         }
     }
