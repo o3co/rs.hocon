@@ -259,16 +259,69 @@ fn e8_value_start_hyphen_alone_lexes_as_unquoted() {
 }
 
 #[test]
-fn e8_value_start_leading_zero_resolves_to_number() {
-    // F3 BREAKING (vs strict pre-E8 reading): `01` is a digit-leading run
-    // that parses as f64=1.0 in rs.hocon. The scalar `raw` field retains
-    // "01" (rs.hocon does not currently normalize), but the resolved JSON
-    // value is the number 1 — matching Lightbend's `{"a":1}` output.
+fn e8_value_start_leading_zero_normalizes_to_number_one() {
+    // F3 BREAKING (vs all prior rs.hocon behavior): `a = 01` is a digit-
+    // leading run that the E8 amendment specifies should be coerced via the
+    // greedy numeric path with i64-first parsing. `parse_scalar_value` now
+    // normalizes leading zeros: `"01".parse::<i64>()` returns 1, so the
+    // stored `raw` becomes `"1"`. Lightbend produces the same `{"a":1}`
+    // JSON via its parseLong fallback.
+    //
+    // BREAKING surface: `get_string("a")` now returns `"1"` (was `"01"`);
+    // typed `get_i64("a")` returns 1 (unchanged); JSON serialization
+    // produces `1` (unchanged).
     let cfg = parse("a = 01");
     let sv = get_scalar(&cfg, "a");
     assert_eq!(sv.value_type, hocon::ScalarType::Number);
-    let n: i64 = sv.raw.parse().expect("01 must parse as i64");
-    assert_eq!(n, 1);
+    assert_eq!(
+        sv.raw, "1",
+        "leading zero must be normalized to canonical i64 form"
+    );
+}
+
+#[test]
+fn e8_value_start_negative_zero_normalizes_to_zero() {
+    // `-0` parses as i64 = 0; the canonical form drops the sign (no negative
+    // zero in integer arithmetic). Lightbend's parseLong does the same.
+    let cfg = parse("a = -0");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::Number);
+    assert_eq!(sv.raw, "0");
+}
+
+#[test]
+fn e8_value_start_negative_inf_is_string_not_number() {
+    // Codex review (PR #N): Rust's `f64::parse("-inf")` succeeds and returns
+    // f64::NEG_INFINITY, but Lightbend's parseDouble rejects `-inf` (Java
+    // requires `-Infinity` or `Infinity`). rs.hocon must not classify `-inf`
+    // as a number — the `-`-followed-by-digit guard at parse_scalar_value
+    // keeps it on the string path.
+    let cfg = parse("a = -inf");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(
+        sv.value_type,
+        hocon::ScalarType::String,
+        "E8: `-inf` must be unquoted string, not number (Lightbend parity)"
+    );
+    assert_eq!(sv.raw, "-inf");
+}
+
+#[test]
+fn e8_value_start_negative_nan_is_string_not_number() {
+    let cfg = parse("a = -nan");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::String);
+    assert_eq!(sv.raw, "-nan");
+}
+
+#[test]
+fn e8_value_start_inf_alone_is_string_not_number() {
+    // `inf` (no minus) is not a JSON-number-shaped run (first char is `i`,
+    // not a digit), so it already takes the string path. Regression guard.
+    let cfg = parse("a = inf");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::String);
+    assert_eq!(sv.raw, "inf");
 }
 
 #[test]

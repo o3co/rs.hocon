@@ -670,9 +670,25 @@ fn parse_scalar_value(raw: &str) -> ScalarValue {
         _ => {}
     }
 
-    // Number detection: first char must be 0-9 or - (Lightbend-aligned)
-    if let Some(first) = raw.bytes().next() {
-        if (first.is_ascii_digit() || first == b'-') && raw.parse::<f64>().is_ok() {
+    // Number detection per E8 (xx.hocon#31): greedy Java numeric semantics.
+    // The run must be JSON-number-shaped to enter the numeric coercion path:
+    // first char is `0-9`, OR `-` followed by `0-9`. This excludes Rust-only
+    // float literals like `-inf`/`-nan` that `f64::parse` would otherwise
+    // accept but that Lightbend's `parseDouble` rejects.
+    let starts_like_number = matches!(raw.as_bytes(), [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..]);
+
+    if starts_like_number {
+        // i64 first for canonical-form normalization: `01` → "1", `-0` → "0",
+        // matching Lightbend's parseLong (which silently drops leading zeros
+        // and the negative-zero sign). This is the F3 BREAKING surface.
+        if let Ok(n) = raw.parse::<i64>() {
+            return ScalarValue::number(n.to_string());
+        }
+        // f64 fallback for fractional / scientific forms — preserve the
+        // original input text rather than f64-round-tripping (Lightbend
+        // keeps the input form for fractions; round-trip would change
+        // precision and surface non-canonical exponents).
+        if raw.parse::<f64>().is_ok() {
             return ScalarValue::number(raw.to_string());
         }
     }
