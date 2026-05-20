@@ -26,6 +26,18 @@ jobs:
             cargo set-version "$TAG_VERSION"
           fi
 
+      - name: Cache expected JSON
+        # Mirror the cache pattern from test.yml so the publish job doesn't
+        # re-fetch fixtures on every tag push (avoids GitHub API rate-limit
+        # and transient network failures during release).
+        uses: actions/cache@v5
+        with:
+          path: |
+            tests/testdata/expected
+            .xx-hocon-version
+          key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
+          restore-keys: xx-hocon-expected-
+
       - name: Fetch expected JSON sidecars from xx.hocon
         # tests/concat_errors_test.rs, tests/s8_unquoted_starts.rs, and
         # other sidecar-driven conformance tests need `tests/testdata/expected/`
@@ -33,7 +45,8 @@ jobs:
         # fetched, not vendored), so without this step the publish-time
         # `cargo test` fails with "no expected sidecar" panics on ce01-ce15
         # / us02-us30 etc. Mirrors ts.hocon release.yml fix from v1.2.0
-        # publish regression.
+        # publish regression. The Makefile's early-exit on matching pin SHA
+        # makes this a no-op when the cache hit above is fresh.
         run: make testdata
 
       - run: cargo test
