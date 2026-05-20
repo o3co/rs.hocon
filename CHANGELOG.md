@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-05-21
+
+v1.3 is a spec-compliance bugfix release. The implementation has been corrected to match the HOCON spec and Lightbend typesafe-config reference behavior across several previously-divergent areas (E8 value-position lexing + leading-zero canonicalization, single-letter byte units, `include` key reservation, concat type-checking, empty-file rejection, `.properties` object-wins, duration/bytes default unit, S13c env-var list). The spec did not change; the parser was simply wrong in places.
+
+A subset of these fixes change observable runtime behavior. The most likely user-visible change is **S21.4** — single-letter byte units (`K`/`M`/`G`/`T`/`P`/`E`) now map to powers of two instead of SI decimal (`1K` was 1,000; now 1,024 — per HOCON.md L1385 java `-Xmx` convention, confirmed against Lightbend 1.4.3). If your `.conf` files use single-letter units and you rely on the numeric result, audit `get_bytes` call sites. Multi-letter forms (`KB`/`MB`/`GB`/`TB`) remain SI decimal and are unchanged. Other fixes have narrow practical impact — read `### Changed` / `### Fixed` below if your CI fails to upgrade cleanly. We elected MINOR (not MAJOR) because no API or architectural changes occurred; v2.0 is reserved for parser/lexer rewrites or similar structural shifts.
 
 ### Changed
 
