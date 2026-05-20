@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **E8 amendment — Lightbend reading of HOCON.md L270-276** ([xx.hocon#31](https://github.com/o3co/xx.hocon/issues/31), [xx.hocon#32](https://github.com/o3co/xx.hocon/pull/32) commit `dd102e8`).
+  xx.hocon's extra-spec-conventions E8 was rewritten to adopt Lightbend's pragmatic reading of HOCON.md L270-276: "begin" = **value-position begin** (first component of a concatenation), not token-position begin at any lexer offset. rs.hocon retracts the v1.2.0 strict-spec posture (see the v1.2.0 retraction note below) and now matches:
+
+  - **Reverted BREAKING from v1.2.0** — `a = -foo`, `a = -bar`, `a = -` now lex as unquoted strings (`{"a":"-foo"}` / `{"a":"-"}`), matching Lightbend. The v1.2.0 reject was correct for the strict-spec reading at the time but is superseded by the E8 amendment. RFC 8259's JSON-number grammar requires a digit after `-`, so bare `-` / `-foo` fall outside L270's disallow scope.
+  - **Concat-continuation now accepted** — `b = ${a}-bar` (and the symmetric `${a}.bar` / `${a}1bar` / `"foo"-bar` cases) resolves to the expected unquoted concat (e.g. `"foo-bar"`). Previously rejected by the strict `-` reject at the lexer's unquoted-start branch. Driven by external issue [xx.hocon#31](https://github.com/o3co/xx.hocon/issues/31) — first issue from outside o3co (@cgordon).
+  - **F3 BREAKING** — `a = 01` now resolves to the **number** `1` (was unquoted string `"01"` under the pre-1.2.0 reading, and was unaffected by the v1.2.0 reject which only targeted `-`-leading runs). The `ScalarValue.raw` field retains `"01"`, but `value_type` is `Number` and JSON serialization produces `1`. Driven by the E8 amendment's adoption of Lightbend's greedy numeric-then-fallback semantics. **Migration**: callers comparing `raw` text against literal `"01"` must update to compare against the resolved number or against the original input.
+  - `+` rejection retained in both value-start and concat-continuation positions (HOCON `+=` operator reservation) — `+` is excluded from `is_unquoted_start`, so it cannot open a value or extend a prior token in concat position.
+  - Path-element strict checks preserved (out of E8 scope): `parse_subst_body`'s segment-start `-` check and `parse_key`'s per-segment check — these police path-element composition, not value-position unquoted strings. Tests `${-foo}` and `a.-foo = 1` still throw `ParseError`.
+  - Known gap retained as `#[should_panic]` tripwire: us15 `a = 1e+x` (Lightbend errors on `+` mid-token at its value-parser layer; rs.hocon currently accepts `+` mid-unquoted run except when followed by `=`).
+
 - **BREAKING (S21.4)**: Single-letter byte abbreviations `K`/`k`/`M`/`m`/`G`/`g`/`T`/`t`/`P`/`p`/`E`/`e`
   now map to **powers of two** (binary) instead of SI decimal, per HOCON.md L1385 java -Xmx convention.
 
@@ -181,6 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING (S8.6)**: `a = -foo`, `a = -bar`, `a = -` and other `-`-not-followed-by-digit inputs are now lex errors. Per HOCON.md L270–276, a leading `-` must begin a number literal (i.e. be followed by a digit). Previously these were silently accepted as unquoted strings (`"-foo"`, `"-"`). The same rule is applied to substitution paths (`${-foo}` rejected) and dotted key segments (`a.-foo = 1` rejected). Mitigation: quote the value (`a = "-foo"`). Note: this is intentionally stricter than Lightbend's reference implementation, which falls back to unquoted on number-parse failure. Digit-leading inputs (e.g. `123abc`, `01`, `1e+x`) are unaffected — rs.hocon's token model has no separate `Number` kind, so the resolved value continues to match Lightbend's value-concat output for the common cases (see `docs/spec-compliance.md` §S8.6 for the remaining gaps tracked under #63).
+
+  > **⚠ Retracted by E8 amendment (2026-05-20)**: the value-position `-` reject described above was reverted in the [Unreleased] section. xx.hocon E8 was rewritten to adopt Lightbend's pragmatic reading of HOCON.md L270-276 ([xx.hocon#31](https://github.com/o3co/xx.hocon/issues/31), driven by external report @cgordon). The substitution-body and dotted-key-segment strict checks are NOT retracted — those remain in force as out-of-E8-scope path-element rules.
 - Substitution body tokenization: `${...}` internals are now tokenized
   by a dedicated `parse_subst_body` in the lexer, matching Lightbend
   `PathParser` + `WhitespaceSaver` semantics. Quoted segments receive

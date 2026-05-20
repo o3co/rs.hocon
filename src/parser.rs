@@ -311,11 +311,16 @@ impl<'a> Parser<'a> {
                 let mut seg_char_offset: usize = 0;
                 for part in val.split('.') {
                     if !part.is_empty() {
-                        // S8.6 (HOCON.md L270–276): each unquoted key segment
-                        // that begins with '-' must be followed by a digit. The
-                        // lexer sees `a.-foo` as a single unquoted token, so we
-                        // validate per-segment here after splitting. Symmetric
-                        // with the lexer and parse_subst_body checks.
+                        // S8.6 (HOCON.md L270–276) path-element rule: each
+                        // unquoted key segment that begins with '-' must be
+                        // followed by a digit. The lexer sees `a.-foo` as a
+                        // single unquoted token, so we validate per-segment
+                        // here after splitting. Symmetric with the
+                        // parse_subst_body segment-start check in
+                        // src/lexer.rs (the value-position strict reject
+                        // that lived in src/lexer.rs's tokenize loop was
+                        // removed by the E8 amendment — see
+                        // tests/s8_unquoted_starts.rs for the post-E8 reading).
                         let mut seg_chars = part.chars();
                         if seg_chars.next() == Some('-') {
                             let after = seg_chars.next();

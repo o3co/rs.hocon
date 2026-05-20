@@ -1,44 +1,155 @@
-//! S8.6 — Unquoted strings MUST NOT begin with `-` (unless followed by a digit
-//! forming a number prefix) or any digit `0-9` (per HOCON.md L270-276).
-//! Issue #63: <https://github.com/o3co/rs.hocon/issues/63>
+//! S8.6 — Unquoted strings at value-position MAY begin with `-` (treated as
+//! unquoted text when not followed by a digit) or with digits (greedy Java
+//! numeric semantics, fall back to unquoted on parse failure). Concat-
+//! continuation positions (after `${...}`, `"..."`, a prior unquoted run,
+//! etc.) accept any unquoted-permissible character except `+` as a
+//! continuation of the existing unquoted run.
 //!
-//! Fixture-driven conformance tests against xx.hocon ground truth at
-//! `tests/testdata/hocon/unquoted-starts/`.
+//! This reading was established by the E8 amendment in
+//! `xx.hocon/docs/extra-spec-conventions.md` (rewritten 2026-05-20 as
+//! xx.hocon#32 / commit `dd102e8`, driven by external issue xx.hocon#31). It
+//! adopts Lightbend's pragmatic reading of HOCON.md L270-276 — "begin" =
+//! value-position begin (first component of a concatenation), not
+//! token-position begin at any lexer offset.
 //!
-//! rs.hocon implements S8.6 via three lex/parse-time checks rather than via a
-//! separate `Number` token kind (which the lexer does not have):
-//!   1. Main `tokenize` loop, unquoted-start branch (`src/lexer.rs`, runs after
-//!      the `is_unquoted_start` predicate dispatches the branch).
-//!   2. `parse_subst_body`, unquoted-segment start (same file).
-//!   3. `parse_key`, post-`.`-split (`src/parser.rs`), so dotted keys like
-//!      `a.-foo` are policed at the segment level.
-//! See `docs/spec-compliance.md` §S8.6 for the architectural rationale and the
-//! Lightbend-quirk gaps (us13, us15) that remain out of scope for this PR.
+//! Subst-body path expressions (`${-foo}`) and key-path segments
+//! (`a.-foo = 1`) keep their existing strict checks — those rules are about
+//! path-element composition, not value-position unquoted strings, and remain
+//! out of E8 scope.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 
-fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/testdata/hocon/unquoted-starts")
-        .join(format!("{}.conf", name))
+// ── Sidecar helpers (mirrors tests/concat_errors_test.rs pattern) ────────────
+
+fn fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/hocon/unquoted-starts")
 }
 
-fn parse_fixture(name: &str) -> Result<hocon::Config, hocon::HoconError> {
-    let content = fs::read_to_string(fixture_path(name))
-        .unwrap_or_else(|e| panic!("failed to read fixture {}: {}", name, e));
-    hocon::parse_with_env(&content, &HashMap::new())
+fn expected_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/expected/unquoted-starts")
 }
 
-// Success fixtures: parse must succeed. Per-impl resolved-value assertions are
-// intentionally skipped here — value-coercion equivalence with Lightbend is
-// covered by the rs.hocon Phase-4 test suite, and the cross-impl JSON ground
-// truth in `expected/unquoted-starts/` is the lingua franca; this file's job
-// is only to assert the S8.6 *strict-rejection* posture (or its absence on
-// success fixtures).
+fn fixture_path(stem: &str) -> PathBuf {
+    fixture_dir().join(format!("{}.conf", stem))
+}
+
+fn expected_json_path(stem: &str) -> PathBuf {
+    expected_dir().join(format!("{}-expected.json", stem))
+}
+
+fn normalize(v: &serde_json::Value) -> serde_json::Value {
+    match v {
+        serde_json::Value::Object(map) => {
+            let mut m = serde_json::Map::new();
+            for (k, val) in map {
+                m.insert(k.clone(), normalize(val));
+            }
+            serde_json::Value::Object(m)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(normalize).collect())
+        }
+        serde_json::Value::Number(n) => {
+            let f = n.as_f64().unwrap_or(0.0);
+            serde_json::json!(f)
+        }
+        other => other.clone(),
+    }
+}
+
+fn hocon_to_json(v: &hocon::HoconValue) -> serde_json::Value {
+    match v {
+        hocon::HoconValue::Object(map) => {
+            let mut m = serde_json::Map::new();
+            for (k, val) in map {
+                m.insert(k.clone(), hocon_to_json(val));
+            }
+            serde_json::Value::Object(m)
+        }
+        hocon::HoconValue::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(hocon_to_json).collect())
+        }
+        hocon::HoconValue::Scalar(sv) => match sv.value_type {
+            hocon::ScalarType::Null => serde_json::Value::Null,
+            hocon::ScalarType::Boolean => serde_json::Value::Bool(sv.raw == "true"),
+            hocon::ScalarType::Number => {
+                if !sv.raw.contains('.') && !sv.raw.contains('e') && !sv.raw.contains('E') {
+                    if let Ok(n) = sv.raw.parse::<i64>() {
+                        return serde_json::json!(n);
+                    }
+                }
+                if let Ok(f) = sv.raw.parse::<f64>() {
+                    return serde_json::json!(f);
+                }
+                serde_json::Value::String(sv.raw.clone())
+            }
+            hocon::ScalarType::String => serde_json::Value::String(sv.raw.clone()),
+            _ => serde_json::Value::String(sv.raw.clone()),
+        },
+        _ => panic!("hocon_to_json: unknown HoconValue variant: {:?}", v),
+    }
+}
+
+fn key_to_lookup_path(key: &str) -> String {
+    if key.is_empty()
+        || key.contains('.')
+        || key.contains('"')
+        || key.contains('\\')
+        || key.contains(' ')
+        || key.contains('\t')
+    {
+        let escaped = key.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    } else {
+        key.to_string()
+    }
+}
+
+fn config_to_json(config: &hocon::Config) -> serde_json::Value {
+    let mut m = serde_json::Map::new();
+    for key in config.keys() {
+        let path = key_to_lookup_path(key);
+        if let Some(val) = config.get(&path) {
+            m.insert(key.to_string(), hocon_to_json(val));
+        }
+    }
+    normalize(&serde_json::Value::Object(m))
+}
+
+fn run_fixture(stem: &str) {
+    let fp = fixture_path(stem);
+    let jp = expected_json_path(stem);
+    let env: HashMap<String, String> = HashMap::new();
+    let result = hocon::parse_file_with_env(&fp, &env);
+    let cfg = result.unwrap_or_else(|e| {
+        panic!(
+            "unquoted-starts {}: unexpected error {:?} (fixture: {})",
+            stem,
+            e,
+            fp.display()
+        )
+    });
+    let got = config_to_json(&cfg);
+    let json_src = std::fs::read_to_string(&jp)
+        .unwrap_or_else(|e| panic!("failed to read expected JSON {}: {}", jp.display(), e));
+    let expected: serde_json::Value = serde_json::from_str(&json_src)
+        .unwrap_or_else(|e| panic!("invalid JSON in {}: {}", jp.display(), e));
+    let expected = normalize(&expected);
+    assert_eq!(got, expected, "unquoted-starts {}: JSON mismatch", stem);
+}
+
+// ── Success fixtures (post-E8 amendment) ─────────────────────────────────────
+//
+// Parse, resolve, and compare to xx.hocon expected JSON. us02/us03/us13
+// joined this list as part of the E8 amendment (previously in ERROR_FIXTURES
+// / known-gap tripwire under the strict reading). us17-us30 are new
+// concat-continuation fixtures from probe groups A/B/D/E.
+
 const SUCCESS_FIXTURES: &[&str] = &[
     "us01-digit-prefix-with-tail",
+    "us02-hyphen-no-digit",
+    "us03-hyphen-alone",
     "us04-hyphen-with-digit",
     "us05-number-then-comment",
     "us06-embedded-digits",
@@ -48,72 +159,176 @@ const SUCCESS_FIXTURES: &[&str] = &[
     "us10-greedy-backtrack-exp",
     "us11-greedy-backtrack-frac",
     "us12-hex-prefix",
+    "us13-leading-zero",
     "us14-multi-dot-version",
     "us16-negative-with-tail",
+    "us17-concat-subst-dash-text",
+    "us18-concat-subst-dash-only",
+    "us19-concat-subst-double-dash",
+    "us20-concat-subst-dash-digit",
+    "us21-concat-subst-digit-text",
+    "us22-concat-subst-dot-text",
+    "us23-concat-subst-underscore",
+    "us24-concat-quoted-dash-text",
+    "us25-concat-quoted-dot-text",
+    "us26-concat-quoted-digit-text",
+    "us27-concat-subst-dash-subst",
+    "us28-concat-subst-dash-subst-other",
+    "us29-concat-unquoted-dash-subst",
+    "us30-concat-quoted-dash-subst",
 ];
 
-// Error fixtures: parse must throw a ParseError. us02 / us03 are the rule this
-// PR enforces (`-` not followed by a digit at the lex layer).
-const ERROR_FIXTURES: &[&str] = &["us02-hyphen-no-digit", "us03-hyphen-alone"];
-
 #[test]
-fn s8_6_success_fixtures_parse() {
+fn s8_6_success_fixtures_parse_and_resolve() {
     let mut failures: Vec<(&str, String)> = vec![];
     for name in SUCCESS_FIXTURES {
-        if let Err(e) = parse_fixture(name) {
-            failures.push((*name, format!("{:?}", e)));
+        let result = std::panic::catch_unwind(|| run_fixture(name));
+        if let Err(e) = result {
+            let msg = if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else if let Some(s) = e.downcast_ref::<&str>() {
+                (*s).to_string()
+            } else {
+                String::from("<unknown panic>")
+            };
+            failures.push((*name, msg));
         }
     }
     assert!(
         failures.is_empty(),
-        "S8.6 success fixtures failed to parse: {:#?}",
+        "unquoted-starts: {} fixture failures: {:#?}",
+        failures.len(),
         failures
     );
 }
 
-#[test]
-fn s8_6_error_fixtures_throw() {
-    let mut accepts: Vec<&str> = vec![];
-    for name in ERROR_FIXTURES {
-        if parse_fixture(name).is_ok() {
-            accepts.push(*name);
-        }
-    }
-    assert!(
-        accepts.is_empty(),
-        "S8.6 error fixtures unexpectedly parsed OK (must throw ParseError): {:?}",
-        accepts
-    );
-}
-
-// ── Known gap tripwires ──────────────────────────────────────────────────────
-// us13 (`01`) and us15 (`1e+x`) require introducing a `Number` token kind
-// (architectural change deferred under #63). These tests use #[should_panic]
-// to fire automatically when the gap closes: the assertion currently panics
-// (parse is_err returns false → assert! fails → panic), satisfying the attribute;
-// if rs.hocon ever starts rejecting these, assert! succeeds → no panic →
-// #[should_panic] sees no panic → test FAILS, surfacing the change without any
-// source edit.
-
-#[test]
-#[should_panic(expected = "us13-leading-zero")]
-fn s8_6_us13_known_gap_tripwire() {
-    assert!(
-        parse_fixture("us13-leading-zero").is_err(),
-        "us13-leading-zero: strict spec requires reject, but rs.hocon currently parses (gap)"
-    );
-}
+// ── Known gap tripwire ───────────────────────────────────────────────────────
+//
+// us15 (`a = 1e+x`) carries an `.error` sidecar from Lightbend (Reserved
+// character `+` outside quotes). Lightbend's error fires at its value-parser
+// layer; the `+` reservation is enforced in both value-start and concat-
+// continuation positions per E8. rs.hocon currently does NOT reject `+` when
+// it appears mid-unquoted-run with a non-`=` follower (e.g. `1e+x`). The
+// #[should_panic] tripwire surfaces this gap automatically when it closes:
+// the assertion currently panics (parse is Ok → assert! fails) and the
+// attribute consumes the panic. If rs.hocon ever starts rejecting `1e+x`,
+// the assertion passes → no panic → test FAILS.
 
 #[test]
 #[should_panic(expected = "us15-incomplete-exp")]
 fn s8_6_us15_known_gap_tripwire() {
+    let env: HashMap<String, String> = HashMap::new();
+    let result = hocon::parse_file_with_env(fixture_path("us15-incomplete-exp"), &env);
     assert!(
-        parse_fixture("us15-incomplete-exp").is_err(),
-        "us15-incomplete-exp: strict spec / Lightbend require reject, but rs.hocon currently parses (gap)"
+        result.is_err(),
+        "us15-incomplete-exp: Lightbend requires reject ('+' reservation mid-token), but rs.hocon currently parses (gap)"
     );
 }
 
-// ── Path-rule regressions ────────────────────────────────────────────────────
+// ── E8 amendment explicit value-position tests ───────────────────────────────
+
+fn parse(input: &str) -> hocon::Config {
+    hocon::parse_with_env(input, &HashMap::new())
+        .unwrap_or_else(|e| panic!("parse failed: {:?}", e))
+}
+
+fn get_scalar(cfg: &hocon::Config, key: &str) -> hocon::ScalarValue {
+    match cfg.get(key) {
+        Some(hocon::HoconValue::Scalar(sv)) => sv.clone(),
+        Some(other) => panic!("expected scalar for {}, got {:?}", key, other),
+        None => panic!("key {} not found", key),
+    }
+}
+
+#[test]
+fn e8_value_start_hyphen_no_digit_lexes_as_unquoted() {
+    // RFC 8259 JSON-number requires a digit after `-`; bare `-foo` therefore
+    // falls outside L270's disallow scope. Lightbend produces `{"a":"-foo"}`.
+    let cfg = parse("a = -foo");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::String);
+    assert_eq!(sv.raw, "-foo");
+}
+
+#[test]
+fn e8_value_start_hyphen_alone_lexes_as_unquoted() {
+    let cfg = parse("a = -");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::String);
+    assert_eq!(sv.raw, "-");
+}
+
+#[test]
+fn e8_value_start_leading_zero_resolves_to_number() {
+    // F3 BREAKING (vs strict pre-E8 reading): `01` is a digit-leading run
+    // that parses as f64=1.0 in rs.hocon. The scalar `raw` field retains
+    // "01" (rs.hocon does not currently normalize), but the resolved JSON
+    // value is the number 1 — matching Lightbend's `{"a":1}` output.
+    let cfg = parse("a = 01");
+    let sv = get_scalar(&cfg, "a");
+    assert_eq!(sv.value_type, hocon::ScalarType::Number);
+    let n: i64 = sv.raw.parse().expect("01 must parse as i64");
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn e8_plus_still_rejected_value_start() {
+    // HOCON `+=` operator reservation: `+` is not in is_unquoted_start, so
+    // `+foo` cannot start an unquoted run; lexer hits the catch-all
+    // "unexpected character" branch.
+    let result = hocon::parse_with_env("a = +foo", &HashMap::new());
+    assert!(
+        result.is_err(),
+        "E8: '+' reservation must still reject value-start +foo, got {:?}",
+        result.ok()
+    );
+}
+
+// ── E8 concat-continuation explicit tests ────────────────────────────────────
+
+#[test]
+fn e8_concat_continuation_subst_dash_text() {
+    let cfg = parse("a = foo\nb = ${a}-bar");
+    let sv = get_scalar(&cfg, "b");
+    assert_eq!(sv.raw, "foo-bar");
+}
+
+#[test]
+fn e8_concat_continuation_quoted_dash_text() {
+    let cfg = parse(r#"b = "foo"-bar"#);
+    let sv = get_scalar(&cfg, "b");
+    assert_eq!(sv.raw, "foo-bar");
+}
+
+#[test]
+fn e8_concat_continuation_subst_digit_text() {
+    let cfg = parse("a = foo\nb = ${a}1bar");
+    let sv = get_scalar(&cfg, "b");
+    assert_eq!(sv.raw, "foo1bar");
+}
+
+#[test]
+fn e8_concat_continuation_subst_dot_text() {
+    let cfg = parse("a = foo\nb = ${a}.bar");
+    let sv = get_scalar(&cfg, "b");
+    assert_eq!(sv.raw, "foo.bar");
+}
+
+#[test]
+fn e8_plus_still_rejected_concat_continuation() {
+    let result = hocon::parse_with_env("a = foo\nb = ${a}+bar", &HashMap::new());
+    assert!(
+        result.is_err(),
+        "E8: '+' reservation must still reject concat-continuation, got {:?}",
+        result.ok()
+    );
+}
+
+// ── Out-of-E8-scope strict checks (unchanged) ────────────────────────────────
+//
+// The following rules apply to path-element composition (substitution body
+// paths and dotted key segments), not to value-position unquoted strings.
+// E8 amendment did not touch these — the strict rule is preserved.
 
 #[test]
 fn s8_6_subst_path_hyphen_no_digit_rejected() {
@@ -134,7 +349,6 @@ fn s8_6_subst_path_hyphen_no_digit_rejected() {
 // Regression: the parse_subst_body S8.6 check must fire only at **segment
 // start** (gated on `!cur_started`). Quoted+unquoted concat within a segment
 // — e.g. `${"a"-foo}` building key `"a-foo"` — must remain accepted.
-// This mirrors the existing `${"a"x}` → `"ax"` concat flow.
 #[test]
 fn s8_6_subst_mid_segment_hyphen_after_quoted_allowed() {
     let input = r#"
