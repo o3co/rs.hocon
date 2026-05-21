@@ -256,9 +256,11 @@ fn test_get_string_coerces_bool() {
 }
 
 #[test]
-fn test_get_string_coerces_null() {
+fn test_get_string_on_null_errors() {
+    // Spec L1252: null → any non-null type is an error. get_string on a null
+    // scalar now errors instead of returning Ok("null"). See #80.
     let cfg = hocon::parse("val = null").unwrap();
-    assert_eq!(cfg.get_string("val").unwrap(), "null");
+    assert!(cfg.get_string("val").is_err());
 }
 
 // Task 10: object concatenation deep-merge
@@ -1434,9 +1436,6 @@ fn s17_5_null_string_stored_as_string_not_null() {
 }
 
 // --- S17.6: null → other type: error (spec L1252) ----------------------------------
-//
-// Partial conformance: get_i64 and get_bool on null correctly error.
-// get_string on null incorrectly returns Ok("null") — bug, see #80.
 #[test]
 fn s17_6_null_to_numeric_and_bool_errors() {
     let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
@@ -1451,19 +1450,9 @@ fn s17_6_null_to_numeric_and_bool_errors() {
 }
 
 #[test]
-fn s17_6_null_to_string_pin() {
-    let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
-    // [pin] Buggy: get_string on a null value returns Ok("null") instead of Err.
-    // The spec (L1252) requires null → any type to be an error.
-    assert!(
-        cfg.get_string("v").is_ok(),
-        "[pin] get_string on null currently returns Ok(\"null\") — update when fixed"
-    );
-}
-
-#[ignore = "spec violation: null → string must error per HOCON L1252, but get_string returns Ok(\"null\"), see #80"]
-#[test]
-fn s17_6_null_to_string_spec() {
+fn s17_6_null_to_string_errors() {
+    // Fix for #80: get_string on a null scalar now errors per HOCON L1252.
+    // Previously this returned Ok("null") via the raw-string passthrough.
     let cfg = hocon::parse_with_env(r#"v = null"#, &HashMap::new()).unwrap();
     assert!(
         cfg.get_string("v").is_err(),
