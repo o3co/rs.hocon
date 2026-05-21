@@ -551,12 +551,20 @@ impl<'a> Parser<'a> {
                 // already produced by the lexer — lexer unescapes quoted strings).
                 validate_package_file_arg(&file_arg, err_line, err_col)?;
 
-                // Consume closing ")" — will be part of the next Unquoted token
-                // (e.g. ")" or "))" for required form)
+                // Consume closing ")" — required; must be the next Unquoted token.
+                // (e.g. ")" for bare form or "))" for required(package(...)) form)
                 if self.peek_kind() == TokenKind::Unquoted
                     && self.peek_value().starts_with(')')
                 {
                     self.advance();
+                } else {
+                    return Err(ParseError {
+                        message: "include package(): expected closing ')' after file argument \
+                                  (E11 syntax)"
+                            .into(),
+                        line: err_line,
+                        col: err_col,
+                    });
                 }
 
                 return Ok(AstField {
@@ -573,19 +581,18 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // ── Non-E11: detect one-arg package() form and reject it even without feature ──
-        // When include-package feature is OFF, package(...)  must still parse cleanly
-        // and not crash. We check for "package(" and emit a parse error.
+        // ── Non-E11: detect package() form and reject it when feature is disabled ──
+        // When include-package feature is OFF, `include package(...)` and
+        // `include required(package(...))` must error with a clear message rather than
+        // silently falling through to standard include parsing.
         #[cfg(not(feature = "include-package"))]
         {
-            let is_package = self.peek_kind() == TokenKind::Unquoted
+            let is_package_token = self.peek_kind() == TokenKind::Unquoted
                 && (self.peek_value() == "package("
                     || self.peek_value().starts_with("package("));
-            if is_package || (required && {
-                // Check if already consumed "required(package("
-                let _ = package_prefix_consumed;
-                false // can't be true without the feature flag
-            }) {
+            // package_prefix_consumed can be true when required(package(... was tokenized
+            // as a fused token; the normalization above sets it regardless of feature flag.
+            if is_package_token || package_prefix_consumed {
                 return Err(ParseError {
                     message: "include package(...) requires the 'include-package' feature".into(),
                     line: self.peek_line(),

@@ -322,3 +322,27 @@ fn empty_identifier_rejected() {
         "empty identifier must be a parse error (E11 decision 1)"
     );
 }
+
+// ── Closing paren required (review fix) ──────────────────────────────────────
+
+#[test]
+fn missing_closing_paren_is_parse_error() {
+    // Without closing ")", must be a parse error, not a silent success.
+    let input = r#"include package("foo", "x.conf""#;
+    let result = Parser::new().parse(input);
+    assert!(
+        result.is_err(),
+        "missing closing ')' must be a parse error (review fix for Codex finding)"
+    );
+}
+
+#[test]
+fn required_missing_closing_paren_is_parse_error() {
+    // required(package(...) without closing )) must also be a parse error.
+    let input = r#"include required(package("foo", "x.conf")"#;
+    let result = Parser::new().parse(input);
+    assert!(
+        result.is_err(),
+        "missing outer closing ')' for required(package(...)) must be a parse error"
+    );
+}
