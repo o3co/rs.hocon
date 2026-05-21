@@ -128,11 +128,15 @@ impl<'a> StructureBuilder<'a> {
             let mut child_prefix = path_prefix.to_vec();
             child_prefix.push(head.clone());
             let elem = self.ast_to_resolver_value(field.value, &child_prefix)?;
+            let field_line = field.pos.line;
+            let field_col = field.pos.col;
             obj.fields.insert(
                 head,
                 ResolverValue::Append(AppendPlaceholder {
                     existing: Box::new(existing),
                     elem: Box::new(elem),
+                    line: field_line,
+                    col: field_col,
                 }),
             );
             return Ok(());
