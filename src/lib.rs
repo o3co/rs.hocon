@@ -259,6 +259,78 @@ pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Conf
     }
 }
 
+/// Internal JSON renderer for use by Layer-2 fixture tests.
+///
+/// Emits compact sorted-key JSON. Not semver-stable.
+/// Callers: `tests/deferred_resolution_fixtures.rs`.
+#[doc(hidden)]
+pub fn _render_json_for_test(config: &Config) -> String {
+    use crate::value::HoconValue;
+    use std::fmt::Write;
+
+    fn render_value(val: &HoconValue, out: &mut String) {
+        match val {
+            HoconValue::Scalar(sv) => {
+                use crate::value::ScalarType;
+                match sv.value_type {
+                    ScalarType::Null => out.push_str("null"),
+                    ScalarType::Boolean => out.push_str(&sv.raw),
+                    ScalarType::Number => out.push_str(&sv.raw),
+                    ScalarType::String => {
+                        let escaped = sv
+                            .raw
+                            .replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t");
+                        let _ = write!(out, "\"{}\"", escaped);
+                    }
+                }
+            }
+            HoconValue::Object(map) => {
+                out.push('{');
+                let mut keys: Vec<&str> = map.keys().map(|s| s.as_str()).collect();
+                keys.sort_unstable();
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    let _ = write!(out, "\"{}\":", k);
+                    render_value(map.get(*k).unwrap(), out);
+                }
+                out.push('}');
+            }
+            HoconValue::Array(arr) => {
+                out.push('[');
+                for (i, v) in arr.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    render_value(v, out);
+                }
+                out.push(']');
+            }
+            HoconValue::Placeholder(pv) => {
+                let _ = write!(out, "\"<unresolved:{}>\"", pv.path);
+            }
+        }
+    }
+
+    let mut out = String::from("{");
+    let mut keys: Vec<&str> = config.root.keys().map(|s| s.as_str()).collect();
+    keys.sort_unstable();
+    for (i, k) in keys.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "\"{}\":", k);
+        render_value(config.root.get(*k).unwrap(), &mut out);
+    }
+    out.push('}');
+    out
+}
+
 /// Guard: reject token streams that carry no semantic content (HOCON.md L130).
 ///
 /// An empty document is one whose token stream contains only `Newline` and `Eof`

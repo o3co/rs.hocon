@@ -68,27 +68,44 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
     // Apply receiver: receiver keys win.
     for (k, rv) in recv_fields.drain(..) {
         if let Some(existing) = result.fields.get(&k) {
-            // Both Obj → recurse
+            // Both Obj → recurse, UNLESS there is a composition barrier.
+            // Composition barrier (HOCON.md L1485): if receiver's prior_values[k]
+            // is a non-Obj value, a scalar has already won at this path in the
+            // receiver-side chain. Subsequent fallback objects MUST NOT be merged —
+            // treat the collision as non-Obj (receiver object wins; fallback object
+            // is discarded into prior rather than merged).
+            let has_barrier = recv_priors
+                .get(&k)
+                .map(|p| !matches!(p, ResolverValue::Obj(_)))
+                .unwrap_or(false);
+
             if let (ResolverValue::Obj(_), ResolverValue::Obj(_)) = (&rv, existing) {
-                let rec_obj = match rv {
-                    ResolverValue::Obj(o) => o,
-                    _ => unreachable!(),
-                };
-                let fb_obj = match result.fields.shift_remove(&k).unwrap() {
-                    ResolverValue::Obj(o) => o,
-                    _ => unreachable!(),
-                };
-                result.fields.insert(k.clone(), ResolverValue::Obj(merge_unresolved(rec_obj, fb_obj)));
-                // Carry receiver's own prior for this key if it had one.
-                if let Some(rp) = recv_priors.shift_remove(&k) {
-                    result.prior_values.insert(k, rp);
+                if !has_barrier {
+                    let rec_obj = match rv {
+                        ResolverValue::Obj(o) => o,
+                        _ => unreachable!(),
+                    };
+                    let fb_obj = match result.fields.shift_remove(&k).unwrap() {
+                        ResolverValue::Obj(o) => o,
+                        _ => unreachable!(),
+                    };
+                    result.fields.insert(k.clone(), ResolverValue::Obj(merge_unresolved(rec_obj, fb_obj)));
+                    // Carry receiver's own prior for this key if it had one.
+                    if let Some(rp) = recv_priors.shift_remove(&k) {
+                        result.prior_values.insert(k, rp);
+                    }
+                    continue;
                 }
-                continue;
+                // Barrier: both are Obj, but receiver's prior is non-Obj.
+                // Receiver's Obj wins; fallback Obj is NOT merged.
+                let prior = result.fields.insert(k.clone(), rv).unwrap();
+                result.prior_values.entry(k.clone()).or_insert(prior);
+            } else {
+                // Non-obj collision: receiver wins; capture existing (fallback's value) as prior.
+                let prior = result.fields.insert(k.clone(), rv).unwrap(); // replace, get old
+                // prior = the fallback value we just displaced
+                result.prior_values.entry(k.clone()).or_insert(prior);
             }
-            // Non-obj collision: receiver wins; capture existing (fallback's value) as prior.
-            let prior = result.fields.insert(k.clone(), rv).unwrap(); // replace, get old
-            // prior = the fallback value we just displaced
-            result.prior_values.entry(k.clone()).or_insert(prior);
         } else {
             result.fields.insert(k.clone(), rv);
         }
@@ -98,6 +115,19 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
         }
     }
     result
+}
+
+/// Returns true if `obj` or any nested ResObj contains prior_values entries.
+/// Used by `Config::new_from_res_obj` to determine whether to keep the
+/// unresolved_tree for composition-barrier tracking across future with_fallback calls.
+pub(crate) fn res_obj_has_priors(obj: &ResObj) -> bool {
+    if !obj.prior_values.is_empty() {
+        return true;
+    }
+    obj.fields.values().any(|v| match v {
+        types::ResolverValue::Obj(inner) => res_obj_has_priors(inner),
+        _ => false,
+    })
 }
 
 /// Walk a `HoconValue` map and return `true` if any value is a placeholder.

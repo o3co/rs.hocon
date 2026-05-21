@@ -100,12 +100,18 @@ impl Config {
     ) -> Self {
         let root = crate::resolver::res_obj_to_hocon_partial(&tree);
         let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&root);
+        // Keep the ResObj in unresolved_tree if either:
+        // - There are placeholders (resolved=false), OR
+        // - There are prior_values anywhere in the tree (composition barrier info
+        //   for future with_fallback calls). This ensures barriers survive when
+        //   the merged config is placeholder-free.
+        let has_priors = crate::resolver::res_obj_has_priors(&tree);
         Self {
             root,
             resolved,
             parse_base_dir,
             origin_description,
-            unresolved_tree: if resolved { None } else { Some(tree) },
+            unresolved_tree: if resolved && !has_priors { None } else { Some(tree) },
         }
     }
 
