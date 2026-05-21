@@ -33,6 +33,39 @@ const SCENARIO_SKIP: &[(&str, &str)] = &[
         "origin format differs from Lightbend — rs.hocon position info diverges; \
          resolution semantics covered by other error scenarios",
     ),
+    // Scenarios that use fromMap as a source — gated on the `serde` feature.
+    // Without `serde`, the runner emits a skip rather than a hard failure.
+    // CI runs them under `cargo test --features serde`.
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr01",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr02",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr03",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr15",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr16",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
+    #[cfg(not(feature = "serde"))]
+    (
+        "dr29",
+        "fromMap source — requires the 'serde' feature (run `cargo test --features serde`)",
+    ),
 ];
 
 fn scenario_id(filename: &str) -> String {

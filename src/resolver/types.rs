@@ -4,6 +4,29 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+// ---- Include cycle detection key ----
+
+/// Unified key for include-cycle detection.
+///
+/// Covers both filesystem-path includes (`include "..."` / `include file(...)`)
+/// and package includes (`include package("id", "file")`). A single stack of
+/// `IncludeKey` values replaces the former `Vec<PathBuf>` in `ResolveOptions`.
+///
+/// NOTE: marked `#[doc(hidden)] pub` (rather than `pub(crate)`) because it is
+/// referenced via `InternalResolveOptions.include_stack` — itself exposed via
+/// `pub mod resolver` to support integration tests like
+/// `tests/resolver_phase_split.rs`. The `#[doc(hidden)]` signals that this
+/// type is not stable public API.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IncludeKey {
+    /// A filesystem-path include (bare or `file(...)` qualifier).
+    Path(PathBuf),
+    /// A package include (`package("identifier", "file")` qualifier) — E11.
+    #[cfg(feature = "include-package")]
+    Package { identifier: String, file: String },
+}
+
 // ---- Public types ----
 
 /// Internal resolver options (env, base_dir, etc.).
@@ -14,7 +37,13 @@ use std::path::PathBuf;
 pub struct InternalResolveOptions {
     pub env: HashMap<String, String>,
     pub base_dir: Option<PathBuf>,
-    pub include_stack: Vec<PathBuf>,
+    /// Include-cycle detection stack. Each entry represents a file/package
+    /// currently being loaded in the call chain above this resolver invocation.
+    pub include_stack: Vec<IncludeKey>,
+    /// Package registry for `include package(...)` — E11.
+    /// Only present when the `include-package` feature is enabled.
+    #[cfg(feature = "include-package")]
+    pub package_registry: std::sync::Arc<std::collections::HashMap<(String, String), String>>,
     /// When false, env-var fallback in phase 2 is skipped.
     /// Default true for backward compat (fused parse-and-resolve path).
     pub use_system_environment: bool,
@@ -28,6 +57,8 @@ impl InternalResolveOptions {
             env,
             base_dir: None,
             include_stack: Vec::new(),
+            #[cfg(feature = "include-package")]
+            package_registry: std::sync::Arc::new(std::collections::HashMap::new()),
             use_system_environment: true,
             allow_unresolved: false,
         }

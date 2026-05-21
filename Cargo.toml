@@ -16,6 +16,7 @@ name = "hocon"
 [features]
 default = []
 serde = ["dep:serde", "dep:serde_json"]
+include-package = []
 
 [dependencies]
 indexmap = "2"

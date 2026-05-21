@@ -3,7 +3,7 @@ use crate::value::HoconValue;
 use std::fs;
 
 use super::structure_builder::StructureBuilder;
-use super::types::{InternalResolveOptions, ResObj, ResolverValue};
+use super::types::{IncludeKey, InternalResolveOptions, ResObj, ResolverValue};
 use super::utils::deep_merge_res_obj_into;
 
 pub(crate) fn load_include(
@@ -90,8 +90,9 @@ fn load_single_include(
     candidate: &std::path::Path,
     opts: &InternalResolveOptions,
 ) -> Result<ResObj, ResolveError> {
-    // Circular include detection
-    if opts.include_stack.iter().any(|p| p.as_path() == candidate) {
+    // Circular include detection — check against IncludeKey::Path entries
+    let candidate_key = IncludeKey::Path(candidate.to_path_buf());
+    if opts.include_stack.contains(&candidate_key) {
         return Err(ResolveError {
             message: format!("circular include: {}", candidate.display()),
             path: candidate.display().to_string(),
@@ -156,7 +157,98 @@ fn load_single_include(
         child_opts = child_opts.with_base_dir(parent.to_path_buf());
     }
     child_opts.include_stack = opts.include_stack.clone();
-    child_opts.include_stack.push(candidate.to_path_buf());
+    child_opts.include_stack.push(candidate_key);
+    #[cfg(feature = "include-package")]
+    {
+        child_opts.package_registry = opts.package_registry.clone();
+    }
+
+    StructureBuilder::new(&child_opts).build(ast, &[])
+}
+
+/// Load a `package(...)` include — E11.
+///
+/// Looks up `(identifier, file)` in the per-parser registry, parses the
+/// registered content, and returns the resolved object. Cycle detection
+/// uses `IncludeKey::Package { identifier, file }` (E11 decision 8).
+#[cfg(feature = "include-package")]
+pub(crate) fn load_package_include(
+    identifier: &str,
+    file: &str,
+    required: bool,
+    line: usize,
+    col: usize,
+    opts: &InternalResolveOptions,
+) -> Result<ResObj, ResolveError> {
+    // Cycle detection (E11 decision 8)
+    let key = IncludeKey::Package {
+        identifier: identifier.to_string(),
+        file: file.to_string(),
+    };
+    if opts.include_stack.contains(&key) {
+        return Err(ResolveError {
+            message: format!("circular package include: ({:?}, {:?})", identifier, file),
+            path: format!("package({:?}, {:?})", identifier, file),
+            line,
+            col,
+        });
+    }
+
+    // Registry lookup (E11 decision 4)
+    // Borrow &str from the Arc-owned map to avoid cloning the content String on every
+    // include call — tokenize/parse work on &str, so no owned copy is needed here.
+    let content: &str = match opts
+        .package_registry
+        .get(&(identifier.to_string(), file.to_string()))
+    {
+        Some(c) => c.as_str(),
+        None => {
+            let _ = required; // required semantics: miss is always an error for package includes
+            return Err(ResolveError {
+                message: format!(
+                    "include package not found: ({:?}, {:?}) — was Parser::register_package called?",
+                    identifier, file
+                ),
+                path: format!("package({:?}, {:?})", identifier, file),
+                line,
+                col,
+            });
+        }
+    };
+
+    // E11 decision 4 note: empty registered content => empty merge object, not an error.
+    // Do NOT call assert_non_empty_document here.
+    let tokens = crate::lexer::tokenize(content).map_err(|e| ResolveError {
+        message: e.message,
+        path: format!("package({:?}, {:?})", identifier, file),
+        line: e.line,
+        col: e.col,
+    })?;
+
+    let has_content = tokens.iter().any(|t| {
+        !matches!(
+            t.kind,
+            crate::lexer::TokenKind::Newline | crate::lexer::TokenKind::Eof
+        )
+    });
+    if !has_content {
+        // Empty registered content → empty merge object (E11 decision 4 note)
+        return Ok(ResObj::new());
+    }
+
+    let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
+        message: e.message,
+        path: format!("package({:?}, {:?})", identifier, file),
+        line: e.line,
+        col: e.col,
+    })?;
+
+    // Build child ResolveOptions: inherit env + registry; push cycle key
+    let mut child_opts = InternalResolveOptions::new(opts.env.clone());
+    child_opts.package_registry = opts.package_registry.clone();
+    // No base_dir for package includes (content is in-memory, not filesystem)
+    child_opts.include_stack = opts.include_stack.clone();
+    child_opts.include_stack.push(key);
 
     StructureBuilder::new(&child_opts).build(ast, &[])
 }
