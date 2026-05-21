@@ -3,6 +3,8 @@ use crate::parser::{AstField, AstNode};
 use crate::value::{HoconValue, ScalarValue};
 
 use super::include_loader::load_include;
+#[cfg(feature = "include-package")]
+use super::include_loader::load_package_include;
 use super::types::{
     AppendPlaceholder, ConcatPlaceholder, ResObj, ResolveOptions, ResolverValue, SubstPlaceholder,
 };
@@ -63,7 +65,29 @@ impl<'a> StructureBuilder<'a> {
                     relativize_res_obj(&mut included, path_prefix);
                 }
                 deep_merge_res_obj_into(obj, included);
+                return Ok(());
             }
+
+            // PackageInclude directive — E11
+            #[cfg(feature = "include-package")]
+            if let AstNode::PackageInclude {
+                identifier,
+                file,
+                required,
+                pos,
+                ..
+            } = &field.value
+            {
+                let mut included = load_package_include(
+                    identifier, file, *required, pos.line, pos.col, self.opts,
+                )?;
+                if !path_prefix.is_empty() {
+                    relativize_res_obj(&mut included, path_prefix);
+                }
+                deep_merge_res_obj_into(obj, included);
+                return Ok(());
+            }
+
             return Ok(());
         }
 
@@ -203,6 +227,12 @@ impl<'a> StructureBuilder<'a> {
                 }))
             }
             AstNode::Include { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
+                ScalarValue::null(),
+            ))),
+            // PackageInclude in value position is unreachable: the parser only
+            // emits PackageInclude as an include directive (key=[]), not as a value.
+            #[cfg(feature = "include-package")]
+            AstNode::PackageInclude { .. } => Ok(ResolverValue::Resolved(HoconValue::Scalar(
                 ScalarValue::null(),
             ))),
         }

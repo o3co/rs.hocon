@@ -136,6 +136,200 @@ pub use serde::DeserializeError;
 use std::collections::HashMap;
 use std::path::Path;
 
+// ── include-package feature: public Parser builder ───────────────────────────
+
+/// Builder-style parser with a per-instance package registry for
+/// `include package(...)` support (E11).
+///
+/// # Feature flag
+///
+/// This type is only available when the `include-package` Cargo feature is
+/// enabled:
+///
+/// ```toml
+/// [dependencies]
+/// hocon-parser = { version = "...", features = ["include-package"] }
+/// ```
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// # #[cfg(feature = "include-package")]
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = hocon::Parser::new()
+///     .register_package("github.com/org/pkg", "reference.conf", include_str!("conf/reference.conf"))
+///     .parse_file("app.conf")?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Cascade convention
+///
+/// For packages that depend on other HOCON-config-providing packages, follow
+/// this convention to cascade registrations:
+///
+/// ```rust,ignore
+/// // In your package (e.g., pkg_a/src/hocon.rs):
+/// pub fn register(parser: hocon::Parser) -> hocon::Parser {
+///     let parser = parser
+///         .register_package("github.com/org/pkg_a", "reference.conf", include_str!("../conf/reference.conf"));
+///     // Cascade to dependencies:
+///     // let parser = pkg_b::hocon::register(parser);
+///     parser
+/// }
+/// ```
+///
+/// Callers:
+/// ```rust,ignore
+/// let config = pkg_a::hocon::register(hocon::Parser::new())
+///     .parse_file("app.conf")?;
+/// ```
+///
+/// # Collision policy
+///
+/// Registering two **different** content strings for the same `(identifier, file)`
+/// key **panics** — this is a programming error (setup-time invariant). Re-registering
+/// **byte-identical** content is idempotent (no panic).
+#[cfg(feature = "include-package")]
+pub struct Parser {
+    registry: HashMap<(String, String), String>,
+}
+
+#[cfg(feature = "include-package")]
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "include-package")]
+impl Parser {
+    /// Create a new `Parser` with an empty package registry.
+    pub fn new() -> Self {
+        Parser {
+            registry: HashMap::new(),
+        }
+    }
+
+    /// Register HOCON content for an `include package("identifier", "file")`
+    /// include statement.
+    ///
+    /// # Arguments
+    ///
+    /// * `identifier` — the package identifier (e.g., `"github.com/org/pkg"`).
+    ///   Should follow Go-module-path style for cross-impl portability (E11 decision 1),
+    ///   but any non-empty string is accepted by the parser.
+    /// * `file` — the file path within the package (e.g., `"reference.conf"`).
+    ///   Must satisfy E11 decision 6 constraints.
+    /// * `content` — the HOCON source text. Typically loaded via `include_str!`.
+    ///   Empty content is valid and contributes `{}` to the merge.
+    ///
+    /// # Panics
+    ///
+    /// Panics if different content is registered for the same `(identifier, file)` pair.
+    /// Re-registering byte-identical content is idempotent (no panic).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let parser = hocon::Parser::new()
+    ///     .register_package("github.com/org/pkg", "reference.conf", include_str!("conf/reference.conf"))
+    ///     .register_package("github.com/org/pkg", "overrides.conf", include_str!("conf/overrides.conf"));
+    /// ```
+    pub fn register_package(
+        mut self,
+        identifier: impl Into<String>,
+        file: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        let id = identifier.into();
+        let f = file.into();
+        let c = content.into();
+        if let Some(existing) = self.registry.get(&(id.clone(), f.clone())) {
+            if existing != &c {
+                panic!(
+                    "hocon: conflicting content registered for package ({:?}, {:?}): \
+                     different content already registered for this (identifier, file) pair",
+                    id, f
+                );
+            }
+            // byte-identical: idempotent, no-op
+        } else {
+            self.registry.insert((id, f), c);
+        }
+        self
+    }
+
+    /// Parse a HOCON string using the registered package registry.
+    pub fn parse(self, input: &str) -> Result<Config, HoconError> {
+        self.parse_with_env(input, &std::env::vars().collect())
+    }
+
+    /// Parse a HOCON file using the registered package registry.
+    pub fn parse_file(self, path: impl AsRef<Path>) -> Result<Config, HoconError> {
+        self.parse_file_with_env(path, &std::env::vars().collect())
+    }
+
+    /// Parse a HOCON string with a custom environment map and the registered registry.
+    pub fn parse_with_env(
+        self,
+        input: &str,
+        env: &HashMap<String, String>,
+    ) -> Result<Config, HoconError> {
+        let tokens = lexer::tokenize(input)?;
+        assert_non_empty_document(&tokens)?;
+        let ast = parser::parse_tokens(&tokens)?;
+        let opts = self.into_resolve_opts(env.clone(), None);
+        let value = resolver::resolve(ast, &opts)?;
+        match value {
+            HoconValue::Object(fields) => Ok(Config::new(fields)),
+            _ => Err(HoconError::Parse(ParseError {
+                message: "root must be an object".into(),
+                line: 1,
+                col: 1,
+            })),
+        }
+    }
+
+    /// Parse a HOCON file with a custom environment map and the registered registry.
+    pub fn parse_file_with_env(
+        self,
+        path: impl AsRef<Path>,
+        env: &HashMap<String, String>,
+    ) -> Result<Config, HoconError> {
+        let path = path.as_ref();
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
+        let tokens = lexer::tokenize(&content)?;
+        assert_non_empty_document(&tokens)?;
+        let ast = parser::parse_tokens(&tokens)?;
+        let opts = self.into_resolve_opts(env.clone(), path.parent().map(|p| p.to_path_buf()));
+        let value = resolver::resolve(ast, &opts)?;
+        match value {
+            HoconValue::Object(fields) => Ok(Config::new(fields)),
+            _ => Err(HoconError::Parse(ParseError {
+                message: "root must be an object".into(),
+                line: 1,
+                col: 1,
+            })),
+        }
+    }
+
+    /// Convert this `Parser` into `ResolveOptions`, threading the registry in.
+    fn into_resolve_opts(
+        self,
+        env: HashMap<String, String>,
+        base_dir: Option<std::path::PathBuf>,
+    ) -> resolver::ResolveOptions {
+        let mut opts = resolver::ResolveOptions::new(env);
+        if let Some(dir) = base_dir {
+            opts = opts.with_base_dir(dir);
+        }
+        opts.package_registry = std::sync::Arc::new(self.registry);
+        opts
+    }
+}
+
 /// Parse a HOCON string into a Config.
 pub fn parse(input: &str) -> Result<Config, HoconError> {
     parse_with_env(input, &std::env::vars().collect())
