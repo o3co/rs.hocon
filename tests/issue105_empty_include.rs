@@ -1,7 +1,8 @@
 //! Cross-impl fix for go.hocon#105 — empty / whitespace-only / comment-only /
 //! BOM-only INCLUDED files contribute an empty config instead of erroring
 //! with S3.1's "empty file is not a valid HOCON document". Top-level parses
-//! (parse_string / parse_file on a top-level empty file) continue to error
+//! (`parse` / `parse_with_env` / `parse_file_with_options` on a top-level
+//! empty file) continue to error
 //! per S3.1.
 
 use tempfile::tempdir;

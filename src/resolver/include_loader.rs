@@ -130,7 +130,8 @@ fn load_single_include(
 
     // Lightbend-compat carve-out (#105 cross-impl): an empty / whitespace-only /
     // comment-only included file contributes an empty config rather than
-    // erroring with S3.1. Top-level parses (parse_string / parse_file on a
+    // erroring with S3.1. Top-level parses (`parse` / `parse_with_env` /
+    // `parse_string_with_options` / `parse_file_with_options` on a
     // top-level empty document) continue to enforce S3.1 in `parse_with_env` /
     // `parse_file_with_env` (src/lib.rs); the carve-out is scoped to the
     // file-include path only. E11 package includes are unchanged.
