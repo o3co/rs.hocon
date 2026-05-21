@@ -37,8 +37,11 @@ jobs:
           restore-keys: xx-hocon-expected-
       - name: Fetch expected JSON
         run: make testdata
+      # Default `if: success()` — skip the save if `make testdata` failed so
+      # we don't write a partial/missing-pin cache under the empty-hash key
+      # (which would collapse to the constant `xx-hocon-expected-` and
+      # recreate the bug this PR is fixing). Copilot review thread.
       - name: Save expected JSON cache
-        if: always()
         uses: actions/cache/save@v5
         with:
           path: |
@@ -79,8 +82,11 @@ jobs:
           restore-keys: xx-hocon-expected-
       - name: Fetch expected JSON
         run: make testdata
+      # Default `if: success()` — skip the save if `make testdata` failed so
+      # we don't write a partial/missing-pin cache under the empty-hash key
+      # (which would collapse to the constant `xx-hocon-expected-` and
+      # recreate the bug this PR is fixing). Copilot review thread.
       - name: Save expected JSON cache
-        if: always()
         uses: actions/cache/save@v5
         with:
           path: |
