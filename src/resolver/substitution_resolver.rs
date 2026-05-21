@@ -544,20 +544,17 @@ impl<'a> SubstitutionResolver<'a> {
             .any(|(v, _)| matches!(v, HoconValue::Placeholder(_)));
         if has_placeholder {
             use crate::value::PlaceholderValue;
-            // Build a combined path from all placeholder operands for diagnostics.
-            let path: String = resolved
-                .iter()
-                .filter_map(|(v, _)| {
-                    if let HoconValue::Placeholder(pv) = v {
-                        Some(pv.path.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("+");
+            // T2 fix: use a sentinel path instead of joining operand paths with `+`.
+            // The old `join("+")` approach produced a fake substitution key (e.g.
+            // "x+y") that hocon_map_to_res_obj would later try to round-trip back
+            // to a SubstPlaceholder, silently corrupting re-resolution.
+            //
+            // The sentinel "<unresolved-concat>" is detected by hocon_value_to_resolver
+            // (in resolver/mod.rs) and passed through as-is rather than reconstructed
+            // as a Subst. Re-resolution uses the unresolved_tree preserved by T1 (which
+            // retains the real ConcatPlaceholder structure), not this HoconValue marker.
             return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
-                path,
+                path: "<unresolved-concat>".into(),
                 optional: false,
             })));
         }

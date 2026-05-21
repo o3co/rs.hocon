@@ -168,16 +168,37 @@ impl Config {
             .with_allow_unresolved(opts.allow_unresolved)
             .with_use_system_environment(opts.use_system_environment);
 
+        // T1+T2 fix: clone the pre-resolution tree before consuming it.
+        // If resolution produces a still-unresolved output (allow_unresolved=true
+        // with remaining placeholders), we store this pre-resolution tree as
+        // unresolved_tree instead of reconstructing it from the HoconValue output.
+        // Reconstruction via hocon_map_to_res_obj loses ConcatPlaceholder structure
+        // (concat becomes a sentinel Placeholder), so subsequent with_fallback() /
+        // resolve() cycles would fail to re-resolve concat values (T2 root cause).
+        // The pre-resolution tree retains all Concat/Subst structure for correct
+        // re-resolution once missing values become available.
+        let pre_resolution_tree = if opts.allow_unresolved {
+            Some(tree.clone())
+        } else {
+            None
+        };
+
         let resolved_value = crate::resolver::resolve_tree(tree, &internal_opts)?;
         match resolved_value {
             HoconValue::Object(fields) => {
                 let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&fields);
+                let unresolved_tree = if resolved {
+                    None
+                } else {
+                    // Use the pre-resolution tree (retains ConcatPlaceholder structure).
+                    pre_resolution_tree
+                };
                 Ok(Config {
                     root: fields,
                     resolved,
                     parse_base_dir: self.parse_base_dir.clone(),
                     origin_description: self.origin_description.clone(),
-                    unresolved_tree: None,
+                    unresolved_tree,
                 })
             }
             _ => Err(HoconError::Parse(ParseError {
@@ -239,6 +260,15 @@ impl Config {
             .with_allow_unresolved(opts.allow_unresolved)
             .with_use_system_environment(opts.use_system_environment);
 
+        // T1+T2 fix (resolve_with): same as resolve() — clone pre-resolution merged
+        // tree before consuming it, so that ConcatPlaceholder structure is preserved
+        // for re-resolution when allow_unresolved=true leaves placeholders.
+        let pre_resolution_tree = if opts.allow_unresolved {
+            Some(merged.clone())
+        } else {
+            None
+        };
+
         let resolved_value = crate::resolver::resolve_tree(merged, &internal_opts)?;
 
         let filtered = match resolved_value {
@@ -257,12 +287,18 @@ impl Config {
         };
 
         let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&filtered);
+        let unresolved_tree = if resolved {
+            None
+        } else {
+            // Use the pre-resolution tree (retains ConcatPlaceholder structure).
+            pre_resolution_tree
+        };
         Ok(Config {
             root: filtered,
             resolved,
             parse_base_dir: self.parse_base_dir.clone(),
             origin_description: self.origin_description.clone(),
-            unresolved_tree: None,
+            unresolved_tree,
         })
     }
 

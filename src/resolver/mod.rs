@@ -218,7 +218,16 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
     use types::{ResolverValue, SubstPlaceholder};
     match v {
         HoconValue::Placeholder(pv) => {
-            // Reconstruct a Subst-like placeholder from the path string.
+            // T2 fix: sentinel paths (those beginning with '<') are internal markers
+            // produced by resolver_value_to_hocon for Concat/Append/unresolved-concat
+            // placeholders. They must NOT be reconstructed as substitution keys — doing
+            // so would silently produce a bogus lookup like "${<unresolved-concat>}".
+            // Pass them through as Resolved(Placeholder) so the re-resolution path
+            // (driven by the unresolved_tree preserved by T1) handles them correctly.
+            if pv.path.starts_with('<') {
+                return ResolverValue::Resolved(v.clone());
+            }
+            // Normal substitution placeholder: reconstruct a Subst from the path string.
             use crate::lexer::Segment;
             let segments: Vec<Segment> = pv
                 .path

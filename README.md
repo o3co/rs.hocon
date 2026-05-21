@@ -218,7 +218,7 @@ let server: ServerConfig = config
 | `ParseError` | Syntax errors during lexing/parsing (includes line and column) |
 | `ResolveError` | Substitution failures, cyclic references, missing required variables |
 | `ConfigError` | Missing keys or type mismatches during value access |
-| `NotResolvedError` | Getter called on a path containing an unresolved substitution placeholder (v1.4.0) |
+| `ConfigError` (use `.is_not_resolved()` to detect "value not yet resolved") | Getter called on a path containing an unresolved substitution placeholder (v1.4.0) |
 | `DeserializeError` | Serde deserialization failures (with `serde` feature) |
 
 ## HOCON Examples

@@ -83,6 +83,24 @@ mod from_map_tests {
         let c = from_map(map, None).expect("finite float must succeed");
         assert!((c.get_f64("f").unwrap() - 1.5).abs() < 1e-10);
     }
+
+    /// T4 fix: u64 values above i64::MAX must round-trip exactly.
+    /// Previously the code called as_i64() then as_f64(), silently losing
+    /// precision for integers in the u64-but-not-i64 range.
+    #[test]
+    fn u64_max_round_trips_exactly() {
+        let mut map = serde_json::Map::new();
+        map.insert(
+            "big".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(u64::MAX)),
+        );
+        let c = from_map(map, None).expect("u64::MAX must succeed");
+        assert_eq!(
+            c.get_string("big").unwrap(),
+            u64::MAX.to_string(),
+            "u64::MAX must round-trip exactly through from_map"
+        );
+    }
 }
 
 mod empty_tests {

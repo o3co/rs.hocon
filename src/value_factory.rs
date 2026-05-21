@@ -97,12 +97,17 @@ fn coerce_value(v: serde_json::Value) -> Result<HoconValue, String> {
             value_type: ScalarType::String,
         })),
         Value::Number(n) => {
-            // Prefer i64; fall back to f64. serde_json::Number disallows NaN/Inf
-            // natively, so we don't need a guard for those — but we do guard
-            // against numbers outside representable range.
-            if let Some(i) = n.as_i64() {
+            // T4 fix: use serde_json::Number's canonical JSON token form as the raw
+            // representation. This preserves exact integer values for numbers that
+            // fit in u64 but not i64 (e.g. u64::MAX), and avoids the precision loss
+            // and formatting change that `format!("{}", f)` introduced.
+            //
+            // Guard: serde_json::Number does not allow NaN/Inf natively, but we
+            // still check as_f64 finiteness for floats to be safe.
+            if n.is_i64() || n.is_u64() {
+                // Integer: canonical JSON token is exact; use it directly.
                 Ok(HoconValue::Scalar(ScalarValue {
-                    raw: i.to_string(),
+                    raw: n.to_string(),
                     value_type: ScalarType::Number,
                 }))
             } else if let Some(f) = n.as_f64() {
@@ -112,12 +117,17 @@ fn coerce_value(v: serde_json::Value) -> Result<HoconValue, String> {
                         n
                     ));
                 }
+                // Float: canonical JSON token form from serde_json preserves the
+                // original source representation better than format!("{}", f).
                 Ok(HoconValue::Scalar(ScalarValue {
-                    raw: format!("{}", f),
+                    raw: n.to_string(),
                     value_type: ScalarType::Number,
                 }))
             } else {
-                Err(format!("number {} cannot be represented as i64 or f64", n))
+                Err(format!(
+                    "number {} cannot be represented as i64, u64, or f64",
+                    n
+                ))
             }
         }
         Value::Array(arr) => {
