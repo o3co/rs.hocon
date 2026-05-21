@@ -370,10 +370,15 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(None);
         }
 
-        // allow_unresolved: return Ok(None) instead of Err for mandatory substitutions
-        // that could not be satisfied (E12 T1).
+        // allow_unresolved: keep unresolved mandatory substitutions as Placeholder values
+        // (E12 T1). This preserves is_resolved()=false on the result and allows
+        // get_*() to return Err("not resolved") rather than Err("key not found").
         if self.allow_unresolved {
-            return Ok(None);
+            use crate::value::PlaceholderValue;
+            return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                path: key.to_string(),
+                optional: false,
+            })));
         }
 
         Err(ResolveError {
