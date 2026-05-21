@@ -1114,8 +1114,8 @@ fn s13_9_required_substitution_to_null_yields_null() {
     // optional-substitution drop). The getter layer applies S17.6 coercion.
     let mut env = std::collections::HashMap::new();
     env.insert("HOME".to_string(), "/x/y".to_string());
-    let cfg = hocon::parse_with_env("HOME = null\nresult = ${HOME}", &env)
-        .expect("parse should succeed");
+    let cfg =
+        hocon::parse_with_env("HOME = null\nresult = ${HOME}", &env).expect("parse should succeed");
     let v = cfg
         .get("result")
         .expect("required substitution must yield a value");
