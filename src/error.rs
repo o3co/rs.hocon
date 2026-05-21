@@ -96,6 +96,30 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+/// Error returned when a getter is called on a [`Config`](crate::Config) path
+/// whose value (or any transitive parent) contains an unresolved substitution
+/// placeholder.
+///
+/// Detect via `downcast_ref::<NotResolvedError>()` or by matching
+/// `HoconError::NotResolved(e)`.  Per E12 decision 12.
+#[derive(Debug, Clone)]
+pub struct NotResolvedError {
+    /// The dot-separated path that was accessed.
+    pub path: String,
+}
+
+impl fmt::Display for NotResolvedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "value at path {:?} is not resolved (call resolve() before accessing values)",
+            self.path
+        )
+    }
+}
+
+impl std::error::Error for NotResolvedError {}
+
 /// Unified error type returned by top-level parse functions.
 ///
 /// Wraps the three possible failure modes: syntax errors ([`ParseError`]),
@@ -110,6 +134,9 @@ pub enum HoconError {
     Resolve(ResolveError),
     /// File I/O error when reading the top-level config file.
     Io(std::io::Error),
+    /// A getter was called on a path whose value contains an unresolved
+    /// substitution placeholder. Per E12 decision 12.
+    NotResolved(NotResolvedError),
 }
 
 impl fmt::Display for HoconError {
@@ -118,6 +145,7 @@ impl fmt::Display for HoconError {
             HoconError::Parse(e) => write!(f, "{}", e),
             HoconError::Resolve(e) => write!(f, "{}", e),
             HoconError::Io(e) => write!(f, "I/O error: {}", e),
+            HoconError::NotResolved(e) => write!(f, "{}", e),
         }
     }
 }
@@ -128,6 +156,7 @@ impl std::error::Error for HoconError {
             HoconError::Parse(e) => Some(e),
             HoconError::Resolve(e) => Some(e),
             HoconError::Io(e) => Some(e),
+            HoconError::NotResolved(e) => Some(e),
         }
     }
 }

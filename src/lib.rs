@@ -123,7 +123,7 @@ pub mod value;
 pub mod serde;
 
 pub use config::{Config, Period};
-pub use error::{ConfigError, HoconError, ParseError, ResolveError};
+pub use error::{ConfigError, HoconError, NotResolvedError, ParseError, ResolveError};
 pub use options::{ParseOptions, ResolveOptions};
 pub use value::{HoconValue, ScalarType, ScalarValue};
 
