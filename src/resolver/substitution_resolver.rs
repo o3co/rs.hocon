@@ -288,6 +288,23 @@ impl<'a> SubstitutionResolver<'a> {
             }
             let mut result = self.resolve_val(&found, scope)?;
 
+            // S13.9 (HOCON.md L618): an optional substitution `${?key}` whose
+            // config value is null treats the null as "not present" — the
+            // field is dropped. The env-var fallback is still suppressed
+            // (config wins over env) because we already found a value in the
+            // config tree above; this guard converts that found-null into a
+            // dropped field for optional substitutions. Required substitutions
+            // still yield the null scalar so an explicit `${HOME}` against
+            // `HOME = null` produces a typed-coercion error at the getter
+            // layer (S17.6).
+            if s.optional {
+                if let Some(HoconValue::Scalar(ref sv)) = result {
+                    if sv.value_type == crate::value::ScalarType::Null {
+                        return Ok(None);
+                    }
+                }
+            }
+
             // Delayed merge: if the resolved value is an Object and there is a prior
             // value for the root segment, resolve the prior and deep merge underneath.
             // Only apply for single-segment paths; for multi-segment paths (e.g. foo.bar),

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`get_string()` on a null-typed scalar now errors instead of returning `Ok("null")`** ([#80](https://github.com/o3co/rs.hocon/issues/80)). Per HOCON spec L1252, "if the application asks for a specific type and finds null instead, that should usually result in an error" — including `String`. Previously `get_i64` and `get_bool` on null correctly errored but `get_string` returned the raw `"null"` literal. The fix adds a `ScalarType::Null` guard at the top of `get_string`, matching the existing behaviour of the other typed getters.
 
+### Fixed — S13.9 spec compliance
+
+- **`null` in config blocks env-var fallback for optional substitutions** ([#74](https://github.com/o3co/rs.hocon/issues/74)). Per HOCON spec L618, "if the same variable is set in the config and in the environment, the config value wins"; for an optional substitution `${?key}` whose config value is null, the null is treated as "not present" and the parent field is dropped. Previously `rs.hocon` blocked the env-var fallback but still yielded `Scalar(null)`, so the field remained present with a null value. Required substitutions are unchanged — `${HOME}` against `HOME = null` still yields the explicit null scalar (the getter layer applies S17.6 coercion).
+
 ## [1.4.1] - 2026-05-22
 
 Cross-impl bugfix release: addresses [go.hocon#105](https://github.com/o3co/go.hocon/issues/105) (cgordon-reported Lightbend divergence on empty/comment-only includes) at the rs.hocon layer, and pins go.hocon#106 (include-ordering / self-ref-through-include) which already worked correctly here. Pure include-path behaviour; no public API changes; safe drop-in upgrade from v1.4.0.

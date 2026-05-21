@@ -1090,36 +1090,13 @@ fn s13_5_no_subst_in_quoted_string() {
 }
 
 // --- S13.9: `null` in config blocks env var lookup (spec L618) ------------------
-// Spec: if the config tree has `key = null`, an optional substitution `${?key}`
-// must NOT fall back to the environment; the explicit null takes precedence.
-// BUG: rs.hocon currently falls through to the env var.
+// Fixed in #74: optional substitution `${?key}` against a config-null value
+// now drops the field instead of yielding Scalar(null). Env-var fallback is
+// suppressed (config wins) and the null is treated as "not present" per the
+// optional-substitution semantics. Required substitutions still yield the
+// null scalar (so the getter layer can apply S17.6 type-coercion error).
 #[test]
-fn s13_9_null_blocks_env_var_lookup_pin() {
-    // [pin] Current behaviour: rs.hocon does NOT leak the env value, but it
-    // also does NOT treat null-as-missing (which would erase the field per
-    // L618). Instead it resolves ${?HOME} to the explicit null scalar, so
-    // `result` ends up present with value null. The spec wants the field
-    // absent. Pinning the exact Some(Scalar(null)) shape catches both
-    // (a) regression to env leak ("/x/y") and
-    // (b) accidental progress to None (which the spec test would then catch).
-    let mut env = std::collections::HashMap::new();
-    env.insert("HOME".to_string(), "/x/y".to_string());
-    let cfg = hocon::parse_with_env("HOME = null\nresult = ${?HOME}", &env)
-        .expect("parse should succeed");
-    let v = cfg.get("result").expect("[pin] result must be present");
-    match v {
-        hocon::HoconValue::Scalar(s) => assert_eq!(
-            s.value_type,
-            hocon::ScalarType::Null,
-            "[pin] result must be the explicit null scalar — env value must not leak"
-        ),
-        other => panic!("[pin] result must be a null scalar, got {:?}", other),
-    }
-}
-
-#[test]
-#[ignore = "spec violation: null in config must block env fallback per HOCON L618, see #74"]
-fn s13_9_null_blocks_env_var_lookup_spec() {
+fn s13_9_null_blocks_env_var_lookup() {
     let mut env = std::collections::HashMap::new();
     env.insert("HOME".to_string(), "/x/y".to_string());
     let cfg = hocon::parse_with_env("HOME = null\nresult = ${?HOME}", &env)
@@ -1128,6 +1105,28 @@ fn s13_9_null_blocks_env_var_lookup_spec() {
         cfg.get("result").is_none(),
         "null in config must block env var fallback; result must be absent per HOCON L618"
     );
+}
+
+#[test]
+fn s13_9_required_substitution_to_null_yields_null() {
+    // Cross-check: a required substitution ${HOME} against `HOME = null` must
+    // still yield the explicit null scalar (it is not subject to the
+    // optional-substitution drop). The getter layer applies S17.6 coercion.
+    let mut env = std::collections::HashMap::new();
+    env.insert("HOME".to_string(), "/x/y".to_string());
+    let cfg = hocon::parse_with_env("HOME = null\nresult = ${HOME}", &env)
+        .expect("parse should succeed");
+    let v = cfg
+        .get("result")
+        .expect("required substitution must yield a value");
+    match v {
+        hocon::HoconValue::Scalar(s) => assert_eq!(
+            s.value_type,
+            hocon::ScalarType::Null,
+            "required ${{HOME}} against null config must yield null scalar — env value must not leak",
+        ),
+        other => panic!("expected null scalar, got {:?}", other),
+    }
 }
 
 // --- S13.13: optional undefined in string concat → empty string (spec L636) -----
