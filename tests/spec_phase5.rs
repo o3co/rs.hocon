@@ -464,11 +464,18 @@ fn s22_3_null_clears_earlier_object_in_merge() {
         merged.get_i64("a.x").is_err(),
         "S22.3: a.x must not be accessible after a=null clears the earlier object (spec L1436)"
     );
-    // a itself is null (get_string returns "null" due to S17.6 bug, which is separate)
-    assert!(
-        merged.get_string("a").is_ok(),
-        "S22.3: a is still present as null value"
-    );
+    // a itself is the null scalar. After #80 (S17.6 compliance), get_string
+    // on null errors, so probe via get() to assert the null is structurally
+    // present — this distinguishes "null cleared the object" from
+    // "field was removed entirely".
+    match merged.get("a") {
+        Some(hocon::HoconValue::Scalar(ref s)) => assert_eq!(
+            s.value_type,
+            hocon::ScalarType::Null,
+            "S22.3: a must be the explicit null scalar after merge"
+        ),
+        other => panic!("S22.3: a must be Scalar(Null), got {:?}", other),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
