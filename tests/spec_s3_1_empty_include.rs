@@ -29,8 +29,11 @@ fn tmp_conf(content: &str) -> NamedTempFile {
 /// field after it so the test can assert the include itself didn't error.
 fn include_with_after(path: &str) -> String {
     let escaped = path.replace('\\', "/");
-    format!(r#"include required("{}")
-a = 1"#, escaped)
+    format!(
+        r#"include required("{}")
+a = 1"#,
+        escaped
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -41,7 +44,8 @@ a = 1"#, escaped)
 fn s3_1_inc_1_empty_required_include_is_noop() {
     let included = tmp_conf("");
     let top = include_with_after(included.path().to_str().unwrap());
-    let cfg = hocon::parse(&top).expect("empty included file must be no-op (Lightbend-compat #105)");
+    let cfg =
+        hocon::parse(&top).expect("empty included file must be no-op (Lightbend-compat #105)");
     assert_eq!(cfg.get_i64("a").unwrap(), 1);
 }
 
@@ -81,8 +85,11 @@ fn s3_1_inc_4_bom_only_required_include_is_noop() {
 fn s3_1_inc_5_bare_include_of_empty_file_is_noop() {
     let included = tmp_conf("");
     let escaped = included.path().to_str().unwrap().replace('\\', "/");
-    let top = format!(r#"include "{}"
-a = 1"#, escaped);
+    let top = format!(
+        r#"include "{}"
+a = 1"#,
+        escaped
+    );
     let cfg = hocon::parse(&top).expect("bare include of empty file must be no-op");
     assert_eq!(cfg.get_i64("a").unwrap(), 1);
 }
