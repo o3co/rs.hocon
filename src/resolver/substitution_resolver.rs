@@ -572,9 +572,28 @@ impl<'a> SubstitutionResolver<'a> {
             .unwrap_or_else(|| HoconValue::Array(vec![]));
         let elem = self.resolve_val(&a.elem, scope)?;
 
+        // S13b.2 (HOCON.md L732): `a += b` is sugar for `a = ${?a} [b]`. The
+        // prior value must be an array (or absent → empty array fallback). A
+        // non-array prior must produce a resolve-time error. Previously the
+        // resolver silently wrapped the non-array as a single-element array.
         let mut items: Vec<HoconValue> = match existing {
             HoconValue::Array(arr) => arr,
-            other => vec![other],
+            other => {
+                return Err(ResolveError {
+                    message: format!(
+                        "'+=' on non-array value: prior value is {} (spec L732)",
+                        match other {
+                            HoconValue::Object(_) => "object",
+                            HoconValue::Scalar(_) => "scalar",
+                            HoconValue::Placeholder(_) => "placeholder",
+                            HoconValue::Array(_) => unreachable!(),
+                        },
+                    ),
+                    path: String::new(),
+                    line: 0,
+                    col: 0,
+                });
+            }
         };
         if let Some(e) = elem {
             items.push(e);

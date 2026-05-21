@@ -1008,23 +1008,10 @@ fn s12_5_include_as_key_spec() {
 }
 
 // --- S13b.2: `+=` on non-array prior value → error (HOCON L732) -------------
+// Fixed in #72: resolver previously wrapped the non-array as a single-element
+// array; now errors as the spec mandates.
 #[test]
-fn s13b_2_plus_eq_on_non_array_pin() {
-    // BUG: `a = 42 \n a += 1` should error because prior value is a number not an array.
-    // Currently rs.hocon silently produces Array([42, 1]).
-    assert!(
-        parse("a = 42\na += 1").is_ok(),
-        "[pin] += on non-array currently accepted — update when fixed"
-    );
-    assert!(
-        parse("a = \"str\"\na += 1").is_ok(),
-        "[pin] += on string currently accepted — update when fixed"
-    );
-}
-
-#[test]
-#[ignore = "spec violation: += on non-array prior value must error per HOCON L732, see #72"]
-fn s13b_2_plus_eq_on_non_array_spec() {
+fn s13b_2_plus_eq_on_non_array_errors() {
     assert!(
         parse("a = 42\na += 1").is_err(),
         "+= on numeric prior value must be a resolve-time error per HOCON L732"
@@ -1032,6 +1019,14 @@ fn s13b_2_plus_eq_on_non_array_spec() {
     assert!(
         parse("a = \"str\"\na += 1").is_err(),
         "+= on string prior value must be a resolve-time error per HOCON L732"
+    );
+}
+
+#[test]
+fn s13b_2_plus_eq_on_object_errors() {
+    assert!(
+        parse("a = { x = 1 }\na += 1").is_err(),
+        "+= on object prior value must be a resolve-time error per HOCON L732"
     );
 }
 
