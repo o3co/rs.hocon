@@ -61,7 +61,11 @@ const PKG_CYCLE_B: &str = r#"include package("foo", "a.conf")"#;
 
 /// Build a Parser for ipk01: registers ("github.com/example/lib", "reference.conf").
 fn parser_ipk01() -> Parser {
-    Parser::new().register_package("github.com/example/lib", "reference.conf", PKG_LIB_REFERENCE)
+    Parser::new().register_package(
+        "github.com/example/lib",
+        "reference.conf",
+        PKG_LIB_REFERENCE,
+    )
 }
 
 // ── ipk01: happy-path basic include ──────────────────────────────────────────
@@ -95,11 +99,10 @@ fn ipk02_one_arg_rejected() {
 #[should_panic(expected = "conflicting content")]
 fn ipk03_collision_panics() {
     // First registration succeeds
-    let parser = Parser::new()
-        .register_package("github.com/example/lib", "reference.conf", PKG_IPK03_A);
+    let parser =
+        Parser::new().register_package("github.com/example/lib", "reference.conf", PKG_IPK03_A);
     // Second registration with different content must panic
-    let _parser = parser
-        .register_package("github.com/example/lib", "reference.conf", PKG_IPK03_B);
+    let _parser = parser.register_package("github.com/example/lib", "reference.conf", PKG_IPK03_B);
 }
 
 #[test]
@@ -156,7 +159,11 @@ fn ipk07_case_sensitive_file() {
     // Register "Reference.conf" (uppercase R) — fixture uses "reference.conf" (lowercase r)
     let input = r#"include package("github.com/example/lib", "reference.conf")"#;
     let result = Parser::new()
-        .register_package("github.com/example/lib", "Reference.conf", PKG_LIB_REFERENCE_UPPER)
+        .register_package(
+            "github.com/example/lib",
+            "Reference.conf",
+            PKG_LIB_REFERENCE_UPPER,
+        )
         .parse(input);
     assert!(
         result.is_err(),
@@ -355,7 +362,11 @@ fn spaced_package_qualifier_accepted() {
     // The lexer emits `package` as a separate Unquoted token; parser must handle it.
     let input = r#"include package ("github.com/example/lib", "reference.conf")"#;
     let result = Parser::new()
-        .register_package("github.com/example/lib", "reference.conf", PKG_LIB_REFERENCE)
+        .register_package(
+            "github.com/example/lib",
+            "reference.conf",
+            PKG_LIB_REFERENCE,
+        )
         .parse(input);
     assert!(
         result.is_ok(),
@@ -372,11 +383,17 @@ fn spaced_package_qualifier_lookup_miss() {
     // not fall through to a confusing standard-include error.
     let input = r#"include package ("github.com/example/lib", "reference.conf")"#;
     let result = Parser::new().parse(input);
-    assert!(result.is_err(), "unregistered spaced package must be an error");
+    assert!(
+        result.is_err(),
+        "unregistered spaced package must be an error"
+    );
     match result {
         Err(hocon::HoconError::Resolve(_)) => { /* expected — lookup miss */ }
         Err(hocon::HoconError::Parse(e)) => {
-            panic!("spaced package form: got ParseError instead of ResolveError: {}", e);
+            panic!(
+                "spaced package form: got ParseError instead of ResolveError: {}",
+                e
+            );
         }
         Err(e) => panic!("unexpected error type: {}", e),
         Ok(_) => panic!("expected error for unregistered package"),

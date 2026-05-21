@@ -187,10 +187,7 @@ pub(crate) fn load_package_include(
     };
     if opts.include_stack.contains(&key) {
         return Err(ResolveError {
-            message: format!(
-                "circular package include: ({:?}, {:?})",
-                identifier, file
-            ),
+            message: format!("circular package include: ({:?}, {:?})", identifier, file),
             path: format!("package({:?}, {:?})", identifier, file),
             line,
             col,
@@ -200,7 +197,10 @@ pub(crate) fn load_package_include(
     // Registry lookup (E11 decision 4)
     // Borrow &str from the Arc-owned map to avoid cloning the content String on every
     // include call — tokenize/parse work on &str, so no owned copy is needed here.
-    let content: &str = match opts.package_registry.get(&(identifier.to_string(), file.to_string())) {
+    let content: &str = match opts
+        .package_registry
+        .get(&(identifier.to_string(), file.to_string()))
+    {
         Some(c) => c.as_str(),
         None => {
             let _ = required; // required semantics: miss is always an error for package includes

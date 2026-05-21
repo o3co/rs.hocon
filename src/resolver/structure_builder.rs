@@ -79,12 +79,7 @@ impl<'a> StructureBuilder<'a> {
             } = &field.value
             {
                 let mut included = load_package_include(
-                    identifier,
-                    file,
-                    *required,
-                    pos.line,
-                    pos.col,
-                    self.opts,
+                    identifier, file, *required, pos.line, pos.col, self.opts,
                 )?;
                 if !path_prefix.is_empty() {
                     relativize_res_obj(&mut included, path_prefix);

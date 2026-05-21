@@ -451,9 +451,7 @@ impl<'a> Parser<'a> {
                         {
                             file_prefix_consumed = true;
                             self.advance(); // consume "(file(..." token; path follows
-                        } else if after_paren == "package("
-                            || after_paren.starts_with("package(")
-                        {
+                        } else if after_paren == "package(" || after_paren.starts_with("package(") {
                             package_prefix_consumed = true;
                             self.advance();
                         }
@@ -489,8 +487,7 @@ impl<'a> Parser<'a> {
             // the lexer emits `package` as a standalone Unquoted token — handle that form
             // for consistency with how `file(...)` accepts the spaced `file (...)` form.
             let is_package_fused = self.peek_kind() == TokenKind::Unquoted
-                && (self.peek_value() == "package("
-                    || self.peek_value().starts_with("package("));
+                && (self.peek_value() == "package(" || self.peek_value().starts_with("package("));
             let is_package_spaced = !package_prefix_consumed
                 && self.peek_kind() == TokenKind::Unquoted
                 && self.peek_value() == "package";
@@ -577,9 +574,7 @@ impl<'a> Parser<'a> {
 
                 // Consume closing ")" — required; must be the next Unquoted token.
                 // (e.g. ")" for bare form or "))" for required(package(...)) form)
-                if self.peek_kind() == TokenKind::Unquoted
-                    && self.peek_value().starts_with(')')
-                {
+                if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with(')') {
                     self.advance();
                 } else {
                     return Err(ParseError {
@@ -615,8 +610,8 @@ impl<'a> Parser<'a> {
                 && (self.peek_value() == "package("
                     || self.peek_value().starts_with("package(")
                     || self.peek_value() == "package"); // spaced form: `include package (...)`
-            // package_prefix_consumed can be true when required(package(... was tokenized
-            // as a fused token; the normalization above sets it regardless of feature flag.
+                                                        // package_prefix_consumed can be true when required(package(... was tokenized
+                                                        // as a fused token; the normalization above sets it regardless of feature flag.
             if is_package_token || package_prefix_consumed {
                 return Err(ParseError {
                     message: "include package(...) requires the 'include-package' feature".into(),
@@ -868,7 +863,9 @@ fn validate_package_file_arg(file: &str, line: usize, col: usize) -> Result<(), 
     }
     if file.starts_with('/') {
         return Err(ParseError {
-            message: "include package(): file argument must not be an absolute path (E11 decision 6)".into(),
+            message:
+                "include package(): file argument must not be an absolute path (E11 decision 6)"
+                    .into(),
             line,
             col,
         });

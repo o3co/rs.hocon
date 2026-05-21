@@ -17,10 +17,7 @@ pub(crate) enum IncludeKey {
     Path(PathBuf),
     /// A package include (`package("identifier", "file")` qualifier) — E11.
     #[cfg(feature = "include-package")]
-    Package {
-        identifier: String,
-        file: String,
-    },
+    Package { identifier: String, file: String },
 }
 
 // ---- Public types ----
