@@ -113,6 +113,7 @@ pub mod config;
 pub mod error;
 pub mod lexer;
 pub(crate) mod numeric_array;
+pub mod options;
 pub mod parser;
 pub(crate) mod properties;
 pub mod resolver;
@@ -123,6 +124,7 @@ pub mod serde;
 
 pub use config::{Config, Period};
 pub use error::{ConfigError, HoconError, ParseError, ResolveError};
+pub use options::{ParseOptions, ResolveOptions};
 pub use value::{HoconValue, ScalarType, ScalarValue};
 
 // Lexer surface intentionally narrow — only the items integration tests
