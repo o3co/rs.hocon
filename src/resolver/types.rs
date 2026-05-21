@@ -127,6 +127,11 @@ pub struct ConcatPlaceholder {
 pub struct AppendPlaceholder {
     pub existing: Box<ResolverValue>,
     pub elem: Box<ResolverValue>,
+    /// Source position of the `+=` field — populated by the structure
+    /// builder so resolve-time errors (e.g. S13b.2 non-array prior) can
+    /// report a useful location instead of `0:0`.
+    pub line: usize,
+    pub col: usize,
 }
 
 #[derive(Debug, Clone, Default)]

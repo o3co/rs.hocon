@@ -582,16 +582,11 @@ impl<'a> SubstitutionResolver<'a> {
                 return Err(ResolveError {
                     message: format!(
                         "'+=' on non-array value: prior value is {} (spec L732)",
-                        match other {
-                            HoconValue::Object(_) => "object",
-                            HoconValue::Scalar(_) => "scalar",
-                            HoconValue::Placeholder(_) => "placeholder",
-                            HoconValue::Array(_) => unreachable!(),
-                        },
+                        type_name(&other),
                     ),
-                    path: String::new(),
-                    line: 0,
-                    col: 0,
+                    path: self.resolving_field_path.join("."),
+                    line: a.line,
+                    col: a.col,
                 });
             }
         };
