@@ -41,7 +41,12 @@ fn issue106_self_ref_append_through_include() {
     );
     let cfg = hocon::parse(&input).unwrap();
     let steps = cfg.get_list("steps").unwrap();
-    assert_eq!(steps.len(), 2, "expected 2 steps (base + child), got {}", steps.len());
+    assert_eq!(
+        steps.len(),
+        2,
+        "expected 2 steps (base + child), got {}",
+        steps.len()
+    );
 }
 
 #[test]
