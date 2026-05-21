@@ -35,18 +35,6 @@ pub(crate) struct SubstitutionResolver<'a> {
 }
 
 impl<'a> SubstitutionResolver<'a> {
-    pub fn new(root: &'a ResObj, env: &'a HashMap<String, String>) -> Self {
-        SubstitutionResolver {
-            root,
-            env,
-            resolving: HashSet::new(),
-            cache: HashMap::new(),
-            use_system_environment: true,
-            allow_unresolved: false,
-            resolving_field_path: Vec::new(),
-        }
-    }
-
     pub fn new_with_opts(
         root: &'a ResObj,
         env: &'a HashMap<String, String>,
@@ -116,9 +104,9 @@ impl<'a> SubstitutionResolver<'a> {
     ) -> Result<Option<HoconValue>, ResolveError> {
         match v {
             ResolverValue::Subst(s) => self.resolve_subst(s, scope),
-            ResolverValue::Concat(c) => self
-                .resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
-                .map(Some),
+            ResolverValue::Concat(c) => {
+                self.resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
+            }
             ResolverValue::Append(a) => self.resolve_append(a, scope).map(Some),
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
             ResolverValue::UnresolvedArray(items) => {
@@ -464,7 +452,7 @@ impl<'a> SubstitutionResolver<'a> {
         line: usize,
         col: usize,
         scope: &ResObj,
-    ) -> Result<HoconValue, ResolveError> {
+    ) -> Result<Option<HoconValue>, ResolveError> {
         let mut resolved: Vec<(HoconValue, bool)> = Vec::new();
         for (i, n) in nodes.iter().enumerate() {
             let is_sep = separator_flags.get(i).copied().unwrap_or(false);
@@ -473,11 +461,16 @@ impl<'a> SubstitutionResolver<'a> {
             }
         }
 
+        // All operands collapsed (all optional substitutions undefined):
+        // Per HOCON spec § "Optional substitution materialisation in concat contexts",
+        // when every operand in a concat resolves to undefined, the entire field
+        // is omitted (same rule as a standalone undefined optional substitution).
+        // E.g. `a = ${?x}${?y}` with both undefined → `{}` (no `a` key).
         if resolved.is_empty() {
-            return Ok(HoconValue::Scalar(ScalarValue::null()));
+            return Ok(None);
         }
         if resolved.len() == 1 {
-            return Ok(resolved.into_iter().next().unwrap().0);
+            return Ok(Some(resolved.into_iter().next().unwrap().0));
         }
 
         // Pairwise left-to-right fold (NORMATIVE per spec §"Multi-piece concat is
@@ -524,23 +517,52 @@ impl<'a> SubstitutionResolver<'a> {
                 .collect();
 
             if non_sep.is_empty() {
-                return Ok(HoconValue::Scalar(ScalarValue::null()));
+                // All operands were separators (unusual): treat as omitted.
+                return Ok(None);
             }
             if non_sep.len() == 1 {
-                return Ok(non_sep.into_iter().next().unwrap());
+                return Ok(Some(non_sep.into_iter().next().unwrap()));
             }
 
             let mut iter = non_sep.into_iter();
             let first = iter.next().unwrap();
             return iter
                 .try_fold(first, |l, r| join_pair(l, r, line, col))
-                .map(Ok)?;
+                .map(|v| Ok(Some(v)))?;
         }
 
         // Scalar-only concat: include separators so whitespace contributes to the result
         // (e.g., "foo bar" where the space token is a separator).
+        //
+        // Allow-unresolved: if any operand is a Placeholder, the entire concat result
+        // is unresolved.  We cannot produce a concrete string because we don't know
+        // the actual values yet.  Return a combined Placeholder so that
+        // `is_resolved()` stays false and callers get a proper NotResolved error.
+        // (dr14: `a = ${x} ${y}` with allow_unresolved=true — both undefined.)
+        let has_placeholder = resolved
+            .iter()
+            .any(|(v, _)| matches!(v, HoconValue::Placeholder(_)));
+        if has_placeholder {
+            use crate::value::PlaceholderValue;
+            // Build a combined path from all placeholder operands for diagnostics.
+            let path: String = resolved
+                .iter()
+                .filter_map(|(v, _)| {
+                    if let HoconValue::Placeholder(pv) = v {
+                        Some(pv.path.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("+");
+            return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                path,
+                optional: false,
+            })));
+        }
         let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
-        Ok(HoconValue::Scalar(ScalarValue::string(s)))
+        Ok(Some(HoconValue::Scalar(ScalarValue::string(s))))
     }
 
     fn resolve_append(

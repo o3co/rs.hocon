@@ -1,0 +1,45 @@
+# dr12 — Origin preserved in resolve error message
+#
+# Source is parsed with an explicit originDescription so that error messages
+# include a human-readable source name. The config contains an unresolvable
+# required substitution `${missing}` at path `bad`.
+#
+# When resolve(allowUnresolved=false) fails, the error message MUST reference
+# either the path (`bad`) or the originDescription ("scenario-dr12-input.conf")
+# so callers can locate the problem.
+#
+# Per spec § "Origin preservation":
+#   "Error messages MUST include the relevant Origin."
+#
+# Per README § "Per-impl override notes — dr12":
+#   Lightbend formats positions differently; generator emits errorContains
+#   with a Lightbend-format substring; per-impl tests check their format.
+#
+# xref: E12-origin, go.hocon#99 (acceptance criterion: useful source position in errors)
+
+description: Resolve error on ${missing} at path `bad` must include origin info (path or source name) in message.
+xref: [E12-origin, go.hocon#99]
+
+sources:
+  receiver:
+    parseString: |
+      bad = ${missing}
+    parseOptions:
+      resolveSubstitutions: false
+      originDescription: "scenario-dr12-input.conf"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: error
+  errorAt: 1
+  errorCategory: ResolveError
+  # Match the originDescription substring. Lightbend's message format is
+  # `<origin>: <line>: Could not resolve substitution to a value: ${missing}`.
+  # Other impls may include the path `bad` and/or the substitution `${missing}`
+  # in addition to or instead of the origin; per-impl tests assert on the
+  # impl's actual format. The cross-impl invariant is: the message contains
+  # SOME origin information (origin name OR path OR substitution target).
+  errorContains: "scenario-dr12-input.conf"

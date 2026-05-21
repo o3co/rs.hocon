@@ -1,0 +1,51 @@
+# dr03 — Multi-layer fallback (3 layers, each contributing a unique key)
+#
+# Three fallback layers are composed via WithFallback; each layer contributes
+# one key that the others do not define. After a single top-level resolve(),
+# all three keys must be visible in the final Config.
+#
+# Demonstrates that WithFallback chains correctly accumulate distinct keys
+# and that substitutions across layers resolve when the target key lives in
+# a different fallback position.
+#
+# xref: E12-multi-layer, go.hocon#99
+
+description: Three fallback layers each contributing a distinct key; all visible after resolve.
+xref: [go.hocon#99, E12-multi-layer]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${va}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb1:
+    fromMap:
+      va: "alpha"
+      b: "beta"
+
+  fb2:
+    fromMap:
+      c: "gamma"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb1, as: r1 }
+  - { op: withFallback, this: r1, other: fb2, as: r2 }
+  - { op: resolve, this: r2, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": "alpha",
+      "b": "beta",
+      "c": "gamma",
+      "va": "alpha"
+    }
+  getter:
+    - { path: "a", expectString: "alpha" }
+    - { path: "b", expectString: "beta" }
+    - { path: "c", expectString: "gamma" }

@@ -18,7 +18,10 @@ fn source_keys_absent_from_result() {
     let src = hocon::parse(r#"value = "found""#).unwrap();
     let out = r.resolve_with(&src, ResolveOptions::defaults()).unwrap();
     assert_eq!(out.get_string("r").unwrap(), "found");
-    assert!(!out.has("value"), "source key 'value' must not appear in result");
+    assert!(
+        !out.has("value"),
+        "source key 'value' must not appear in result"
+    );
 }
 
 #[test]
@@ -33,7 +36,9 @@ fn unresolved_source_raises_not_resolved_error() {
         ParseOptions::defaults().with_resolve_substitutions(false),
     )
     .unwrap();
-    let err = r.resolve_with(&src, ResolveOptions::defaults()).unwrap_err();
+    let err = r
+        .resolve_with(&src, ResolveOptions::defaults())
+        .unwrap_err();
     match err {
         hocon::HoconError::NotResolved(_) => {}
         other => panic!("expected HoconError::NotResolved, got {:?}", other),
@@ -58,8 +63,11 @@ fn nested_keys_do_not_leak_from_source() {
         ParseOptions::defaults().with_resolve_substitutions(false),
     )
     .unwrap();
-    let src = hocon::parse(r#"a { z = 99 }
-                               y = "ok""#).unwrap();
+    let src = hocon::parse(
+        r#"a { z = 99 }
+                               y = "ok""#,
+    )
+    .unwrap();
     let out = r.resolve_with(&src, ResolveOptions::defaults()).unwrap();
     assert_eq!(out.get_string("a.x").unwrap(), "ok");
     assert!(

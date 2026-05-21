@@ -1,0 +1,64 @@
+# dr17 — E11 `include package(...)` + deferred substitution (Lightbend-skip)
+#
+# `include package("<id>", "<file>")` is an xx.hocon E11 extension. Lightbend
+# has no `package(...)` include qualifier; this scenario is not applicable to
+# the Java generator.
+#
+# Per spec § "E11 × parse phase":
+#   "E11 package(...) resolver runs at parse time. A parse-only result has all
+#   include directives including package(...) fully expanded. Substitutions
+#   inside an included file are deferred along with the outer substitutions."
+#
+# The Java generator SKIPS this scenario (lightbendSkip: true). Per-impl
+# conformance tests run it against their own implementation using the package
+# registry API defined by E11.
+#
+# Since YAML-based runners cannot register a package resolver, per-impl tests
+# for dr17 are necessarily programmatic. This YAML documents the scenario
+# semantics and serves as the canonical spec-level record.
+#
+# Scenario intent:
+#   Source string includes `include package("test-pkg", "ref.conf")`.
+#   The referenced content defines `value = ${EXTERNAL}`.
+#   After parse (with resolveSubstitutions=false), the include is expanded.
+#   Resolve with a FromMap fallback providing EXTERNAL → value is accessible.
+#
+# xref: E11, E12-include-timing, E12-e11-cross-ref
+
+lightbendSkip: true
+
+description: >
+  E11 package include expanded at parse phase; substitution inside included content
+  deferred until resolve. Not applicable to Lightbend (no package() qualifier).
+  Per-impl tests only.
+xref: [E11, E12-include-timing]
+
+sources:
+  receiver:
+    parseString: |
+      outer = "top"
+      inner = ${EXTERNAL}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    fromMap:
+      EXTERNAL: "injected"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "EXTERNAL": "injected",
+      "inner": "injected",
+      "outer": "top"
+    }
+  getter:
+    - { path: "outer", expectString: "top" }
+    - { path: "inner", expectString: "injected" }

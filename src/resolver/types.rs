@@ -98,7 +98,7 @@ pub struct AppendPlaceholder {
     pub elem: Box<ResolverValue>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResObj {
     pub fields: IndexMap<String, ResolverValue>,
     pub prior_values: IndexMap<String, ResolverValue>,
@@ -106,9 +106,6 @@ pub struct ResObj {
 
 impl ResObj {
     pub fn new() -> Self {
-        ResObj {
-            fields: IndexMap::new(),
-            prior_values: IndexMap::new(),
-        }
+        Self::default()
     }
 }

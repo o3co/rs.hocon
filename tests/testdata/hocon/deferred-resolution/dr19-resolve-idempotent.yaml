@@ -1,0 +1,47 @@
+# dr19 — Resolve is idempotent (programmatic assertion; YAML records single resolve)
+#
+# Per spec § "Idempotency of Resolve":
+#   "Resolve on an already-resolved Config is a no-op that returns an equivalent
+#   Config (either the same instance or a copy with identical value tree).
+#   Matches Lightbend's documented resolve() behaviour: 'Resolving an already-
+#   resolved config is a harmless no-op'."
+#
+# The full assertion (c.Resolve().Resolve() == c.Resolve()) is not expressible
+# in scenario YAML v1 because there is no "compare two builds" op. Per-impl
+# tests verify the idempotency property programmatically.
+#
+# This YAML records the spec assertion at the single-resolve level and serves
+# as the canonical spec-level fixture for the scenario. The result of one
+# resolve is the expected state; the programmatic double-resolve verification
+# is per-impl only.
+#
+# xref: E12-idempotency
+
+description: >
+  Resolve is idempotent (c.Resolve().Resolve() == c.Resolve()). YAML records
+  single-resolve outcome only; per-impl tests verify double-resolve programmatically.
+xref: [E12-idempotency]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${b}
+      b = 7
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": 7,
+      "b": 7
+    }
+  getter:
+    - { path: "a", expectInt: 7 }
+    - { path: "b", expectInt: 7 }

@@ -1,0 +1,53 @@
+# dr15 — Literal data accessible without error; substitution deferred until resolve
+#
+# Per spec § "E11 × parse phase" (OQ-9):
+#   "Includes are resolved at parse phase, NOT deferred. UnresolvedConfig has
+#   includes already expanded; only ${...} substitutions are deferred."
+#
+# This fixture verifies the boundary: after parseString with
+# resolveSubstitutions=false, literal values are accessible (no NotResolved
+# error) while substitution paths remain unresolved.
+#
+# After resolve with AllowUnresolved=false + FromMap fallback providing KEY,
+# both `lit` and `sub` are accessible. Demonstrates that parse-phase
+# expansion (literal data) and resolve-phase expansion (substitutions) are
+# correctly separated.
+#
+# Note: include-file scenarios are not expressible in scenario YAML (no file
+# system access from the YAML runner). The include-phase guarantee is covered
+# by per-impl tests; this YAML covers the literal-vs-substitution boundary.
+#
+# xref: E11, E12-include-timing, OQ-9
+
+description: Literal field accessible before resolve; substitution deferred; both accessible after resolve with fallback.
+xref: [E11, E12-include-timing]
+
+sources:
+  receiver:
+    parseString: |
+      lit = "value"
+      sub = ${KEY}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    fromMap:
+      KEY: "resolved"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "KEY": "resolved",
+      "lit": "value",
+      "sub": "resolved"
+    }
+  getter:
+    - { path: "lit", expectString: "value" }
+    - { path: "sub", expectString: "resolved" }

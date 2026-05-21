@@ -3,7 +3,7 @@ use crate::value::HoconValue;
 use std::fs;
 
 use super::structure_builder::StructureBuilder;
-use super::types::{ResObj, InternalResolveOptions, ResolverValue};
+use super::types::{InternalResolveOptions, ResObj, ResolverValue};
 use super::utils::deep_merge_res_obj_into;
 
 pub(crate) fn load_include(

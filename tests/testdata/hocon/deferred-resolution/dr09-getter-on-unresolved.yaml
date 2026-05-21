@@ -1,0 +1,36 @@
+# dr09 — Getter on unresolved path under AllowUnresolved=true
+#
+# AllowUnresolved=true allows Resolve() to succeed even if some substitutions
+# remain. The resolved path returns its value normally; the unresolved path
+# raises NotResolved when accessed via a getter.
+#
+# Emphasises the getter-level contract: AllowUnresolved does NOT make getters
+# lenient. Only the Resolve() call itself becomes non-erroring.
+#
+# Per spec § "Getters on unresolved Config":
+#   "AllowUnresolved=true does NOT make getters lenient — it only makes
+#   Resolve() itself non-erroring."
+#
+# xref: E12-resolve-options, E12-getter-unresolved
+
+description: AllowUnresolved=true; getter on resolved path returns value, getter on unresolved path → NotResolved.
+xref: [E12-resolve-options, E12-getter-unresolved]
+
+sources:
+  receiver:
+    parseString: |
+      found = "present"
+      missing = ${__HOCON_DR09_ABSENT__}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: true, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: false
+  getter:
+    - { path: "found", expectString: "present" }
+    - { path: "missing", expectError: NotResolved }

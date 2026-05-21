@@ -8,8 +8,8 @@ use crate::error::ResolveError;
 use crate::parser::AstNode;
 use crate::value::HoconValue;
 
-pub use types::{InternalResolveOptions, ResObj};
 pub use types::ResolverValue;
+pub use types::{InternalResolveOptions, ResObj};
 
 use structure_builder::StructureBuilder;
 use substitution_resolver::SubstitutionResolver;
@@ -27,13 +27,22 @@ pub fn build_tree(ast: AstNode, opts: &InternalResolveOptions) -> Result<ResObj,
 }
 
 /// Phase 2: resolve substitution/concat placeholders in tree.
-pub fn resolve_tree(tree: ResObj, opts: &InternalResolveOptions) -> Result<HoconValue, ResolveError> {
-    SubstitutionResolver::new_with_opts(&tree, &opts.env, opts.use_system_environment, opts.allow_unresolved).resolve()
+pub fn resolve_tree(
+    tree: ResObj,
+    opts: &InternalResolveOptions,
+) -> Result<HoconValue, ResolveError> {
+    SubstitutionResolver::new_with_opts(
+        &tree,
+        &opts.env,
+        opts.use_system_environment,
+        opts.allow_unresolved,
+    )
+    .resolve()
 }
 
 /// Returns true if obj or any nested ResObj contains an unresolved Subst or Concat placeholder.
 pub fn contains_placeholders(obj: &ResObj) -> bool {
-    obj.fields.values().any(|v| rv_has_placeholder(v))
+    obj.fields.values().any(rv_has_placeholder)
 }
 
 fn rv_has_placeholder(v: &types::ResolverValue) -> bool {
@@ -89,7 +98,10 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
                         ResolverValue::Obj(o) => o,
                         _ => unreachable!(),
                     };
-                    result.fields.insert(k.clone(), ResolverValue::Obj(merge_unresolved(rec_obj, fb_obj)));
+                    result.fields.insert(
+                        k.clone(),
+                        ResolverValue::Obj(merge_unresolved(rec_obj, fb_obj)),
+                    );
                     // Carry receiver's own prior for this key if it had one.
                     if let Some(rp) = recv_priors.shift_remove(&k) {
                         result.prior_values.insert(k, rp);
@@ -103,7 +115,7 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
             } else {
                 // Non-obj collision: receiver wins; capture existing (fallback's value) as prior.
                 let prior = result.fields.insert(k.clone(), rv).unwrap(); // replace, get old
-                // prior = the fallback value we just displaced
+                                                                          // prior = the fallback value we just displaced
                 result.prior_values.entry(k.clone()).or_insert(prior);
             }
         } else {
@@ -134,7 +146,7 @@ pub(crate) fn res_obj_has_priors(obj: &ResObj) -> bool {
 pub(crate) fn contains_placeholders_in_hocon_map(
     map: &indexmap::IndexMap<String, crate::value::HoconValue>,
 ) -> bool {
-    map.values().any(|v| hocon_value_has_placeholder(v))
+    map.values().any(hocon_value_has_placeholder)
 }
 
 fn hocon_value_has_placeholder(v: &crate::value::HoconValue) -> bool {
@@ -164,7 +176,12 @@ fn resolver_value_to_hocon(v: &types::ResolverValue) -> crate::value::HoconValue
     match v {
         ResolverValue::Resolved(hv) => hv.clone(),
         ResolverValue::Subst(s) => {
-            let path = s.segments.iter().map(|seg| seg.text.as_str()).collect::<Vec<_>>().join(".");
+            let path = s
+                .segments
+                .iter()
+                .map(|seg| seg.text.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
             HoconValue::Placeholder(PlaceholderValue {
                 path,
                 optional: s.optional,
@@ -174,9 +191,7 @@ fn resolver_value_to_hocon(v: &types::ResolverValue) -> crate::value::HoconValue
             path: "<concat>".into(),
             optional: false,
         }),
-        ResolverValue::Obj(inner) => {
-            HoconValue::Object(res_obj_to_hocon_partial(inner))
-        }
+        ResolverValue::Obj(inner) => HoconValue::Object(res_obj_to_hocon_partial(inner)),
         ResolverValue::UnresolvedArray(items) => {
             HoconValue::Array(items.iter().map(resolver_value_to_hocon).collect())
         }
@@ -205,11 +220,15 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
         HoconValue::Placeholder(pv) => {
             // Reconstruct a Subst-like placeholder from the path string.
             use crate::lexer::Segment;
-            let segments: Vec<Segment> = pv.path.split('.').map(|part| Segment {
-                text: part.to_owned(),
-                line: 0,
-                col: 0,
-            }).collect();
+            let segments: Vec<Segment> = pv
+                .path
+                .split('.')
+                .map(|part| Segment {
+                    text: part.to_owned(),
+                    line: 0,
+                    col: 0,
+                })
+                .collect();
             ResolverValue::Subst(SubstPlaceholder {
                 segments,
                 optional: pv.optional,
@@ -219,13 +238,9 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
                 prefix_len: 0,
             })
         }
-        HoconValue::Object(inner) => {
-            ResolverValue::Obj(hocon_map_to_res_obj(inner))
-        }
+        HoconValue::Object(inner) => ResolverValue::Obj(hocon_map_to_res_obj(inner)),
         HoconValue::Array(items) => {
-            ResolverValue::UnresolvedArray(
-                items.iter().map(hocon_value_to_resolver).collect()
-            )
+            ResolverValue::UnresolvedArray(items.iter().map(hocon_value_to_resolver).collect())
         }
         HoconValue::Scalar(_) => ResolverValue::Resolved(v.clone()),
     }

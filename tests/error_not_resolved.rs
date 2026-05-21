@@ -11,7 +11,9 @@ use std::error::Error;
 
 #[test]
 fn not_resolved_error_display_contains_path() {
-    let e = NotResolvedError { path: "foo.bar".into() };
+    let e = NotResolvedError {
+        path: "foo.bar".into(),
+    };
     let msg = format!("{}", e);
     assert!(
         msg.contains("foo.bar"),
@@ -27,20 +29,25 @@ fn not_resolved_error_display_contains_path() {
 
 #[test]
 fn not_resolved_error_implements_error() {
-    let e = NotResolvedError { path: "a.b.c".into() };
-    let _: &dyn Error = &e;  // must compile — impl Error
+    let e = NotResolvedError {
+        path: "a.b.c".into(),
+    };
+    let _: &dyn Error = &e; // must compile — impl Error
 }
 
 #[test]
 fn not_resolved_error_source_is_none() {
     let e = NotResolvedError { path: "x".into() };
-    assert!(e.source().is_none(), "source must be None (no underlying cause)");
+    assert!(
+        e.source().is_none(),
+        "source must be None (no underlying cause)"
+    );
 }
 
 #[test]
 fn not_resolved_error_debug() {
     let e = NotResolvedError { path: "p".into() };
-    let _ = format!("{:?}", e);  // must not panic
+    let _ = format!("{:?}", e); // must not panic
 }
 
 #[test]
@@ -49,5 +56,8 @@ fn hocon_error_wraps_not_resolved() {
     let e = NotResolvedError { path: "x.y".into() };
     let wrapped = HoconError::NotResolved(e);
     let msg = format!("{}", wrapped);
-    assert!(msg.contains("x.y"), "HoconError::NotResolved display must include path");
+    assert!(
+        msg.contains("x.y"),
+        "HoconError::NotResolved display must include path"
+    );
 }

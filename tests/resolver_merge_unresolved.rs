@@ -6,7 +6,10 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-use hocon::resolver::{merge_unresolved, types::{ResObj, ResolverValue}};
+use hocon::resolver::{
+    merge_unresolved,
+    types::{ResObj, ResolverValue},
+};
 use hocon::value::{HoconValue, ScalarValue};
 
 fn scalar(s: &str) -> ResolverValue {
@@ -90,7 +93,10 @@ fn merge_unresolved_receiver_scalar_blocks_fallback_obj() {
         other => panic!("expected scalar 42, got {:?}", other),
     }
     // Fallback obj captured as prior
-    assert!(merged.prior_values.contains_key("a"), "fallback obj must be captured as prior");
+    assert!(
+        merged.prior_values.contains_key("a"),
+        "fallback obj must be captured as prior"
+    );
 }
 
 #[test]
@@ -100,5 +106,8 @@ fn merge_unresolved_fallback_only_key_appears() {
     fallback.fields.insert("b".into(), scalar("from-fallback"));
 
     let merged = merge_unresolved(receiver, fallback);
-    assert!(merged.fields.contains_key("b"), "fallback-only key b must appear in merged");
+    assert!(
+        merged.fields.contains_key("b"),
+        "fallback-only key b must appear in merged"
+    );
 }

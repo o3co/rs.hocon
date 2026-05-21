@@ -1,0 +1,56 @@
+# dr21 — Transitive substitution across three fallback layers
+#
+# Receiver: `a = ${b}`        (a references b, defined in fb1)
+# fb1:      `b = ${c}`        (b references c, defined in fb2)
+# fb2:      `c = 1`           (c is the concrete value)
+#
+# After composing three layers and resolving once at the top, the transitive
+# chain `a → b → c → 1` must resolve completely → `a = 1, b = 1, c = 1`.
+#
+# Per spec § "Transitive substitution resolution" and § "Single-pass resolution":
+#   The single top-level Resolve() operation walks the merged tree transitively.
+#   Substitutions in any layer resolve against the full merged stack.
+#
+# xref: E12-transitive, E12-multi-layer, E12-single-pass
+
+description: Transitive substitution `a = ${b}` (fb1) `b = ${c}` (fb2) `c = 1` across 3 layers → all resolve to 1.
+xref: [E12-transitive, E12-multi-layer, E12-single-pass]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${b}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb1:
+    parseString: |
+      b = ${c}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb2:
+    parseString: |
+      c = 1
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb1, as: r1 }
+  - { op: withFallback, this: r1, other: fb2, as: r2 }
+  - { op: resolve, this: r2, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": 1,
+      "b": 1,
+      "c": 1
+    }
+  getter:
+    - { path: "a", expectInt: 1 }
+    - { path: "b", expectInt: 1 }
+    - { path: "c", expectInt: 1 }

@@ -126,10 +126,10 @@ fn parse_bool_coercion() {
     "#,
     )
     .unwrap();
-    assert_eq!(config.get_bool("a").unwrap(), true);
-    assert_eq!(config.get_bool("b").unwrap(), false);
-    assert_eq!(config.get_bool("c").unwrap(), true);
-    assert_eq!(config.get_bool("d").unwrap(), false);
+    assert!(config.get_bool("a").unwrap());
+    assert!(!config.get_bool("b").unwrap());
+    assert!(config.get_bool("c").unwrap());
+    assert!(!config.get_bool("d").unwrap());
 }
 
 #[test]

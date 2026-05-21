@@ -1,0 +1,33 @@
+# dr07 — AllowUnresolved=true partial resolution + getter assertions
+#
+# When AllowUnresolved=true, resolve() does NOT error on substitutions that
+# can't be resolved. Resolvable paths complete normally; unresolved paths
+# survive as placeholders. Getters on resolved paths return the value; getters
+# on unresolved paths raise NotResolved.
+#
+# Per spec § "Required substitution under AllowUnresolved=true": IsResolved
+# returns false because at least one substitution remained.
+
+description: AllowUnresolved=true allows partial resolution; specific path getters demonstrate the mix.
+xref: [E12-resolve-options]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${avail}
+      b = ${unavail}
+      avail = "hello"
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: true, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: false
+  getter:
+    - { path: "a", expectString: "hello" }
+    - { path: "avail", expectString: "hello" }
+    - { path: "b", expectError: NotResolved }

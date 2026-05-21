@@ -1,0 +1,34 @@
+# dr14 — Deferred concat placeholder survives under AllowUnresolved=true
+#
+# `a = ${x} ${y}` where both ${x} and ${y} are undefined. With
+# AllowUnresolved=true, Resolve() MUST NOT error — it leaves `a` as a concat
+# placeholder with both operands unresolved.
+#
+# Per spec § "s10 × AllowUnresolved":
+#   "All operands unresolved: no type-check; concat remains as concat-placeholder.
+#   Getter on this path → NotResolved."
+#
+# The getter on `a` MUST raise NotResolved, demonstrating that the concat
+# placeholder is retained and getters still enforce resolution status.
+#
+# xref: S10, E12-allow-unresolved, E12-getter-unresolved
+
+description: Fully-unresolved concat `${x} ${y}` (both undef) survives as placeholder under AllowUnresolved=true; getter → NotResolved.
+xref: [S10, E12-allow-unresolved, E12-getter-unresolved]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${x} ${y}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: true, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: false
+  getter:
+    - { path: "a", expectError: NotResolved }

@@ -1,0 +1,32 @@
+# dr06 — Required self-reference, no fallback prior → ResolveError
+#
+# `${a}` (required, not optional `${?a}`) in the definition of `a` looks at the
+# prior value of `a`. If there is no prior — neither earlier in the same source
+# nor in any fallback layer — resolve MUST raise ResolveError per S13a.
+#
+# Template for error scenarios.
+
+description: Required self-reference with no prior value (neither same-source nor fallback) → CycleError.
+xref: [S13a, S13a-merge-extension]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${a} extra
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+# Lightbend reports `${a} = ${a}`-with-no-prior as a cycle (the substitution
+# would have to look back at the very value it's defining). Per spec § s13a
+# this is the correct cross-impl category. Impls that don't distinguish cycles
+# from generic unresolved errors MAY surface this as ResolveError; per-impl
+# override lists can map accordingly. The fixture pins the more-specific
+# Lightbend-faithful category.
+expect:
+  outcome: error
+  errorAt: 1
+  errorCategory: CycleError

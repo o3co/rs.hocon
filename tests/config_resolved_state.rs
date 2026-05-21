@@ -11,7 +11,10 @@ use hocon::ParseOptions;
 #[test]
 fn fused_parse_is_resolved() {
     let c = hocon::parse(r#"a = 1"#).unwrap();
-    assert!(c.is_resolved(), "fused parse must produce a resolved Config");
+    assert!(
+        c.is_resolved(),
+        "fused parse must produce a resolved Config"
+    );
 }
 
 #[test]

@@ -1,0 +1,40 @@
+# dr11b — ResolveWith with unresolved source → NotResolved error
+#
+# Per spec § "Precondition on ResolveWith source": source MUST be resolved (or
+# substitution-free). If source is unresolved, ResolveWith MUST raise
+# NotResolved BEFORE attempting to resolve the receiver.
+
+description: ResolveWith with an unresolved source config raises NotResolved (MUST per E12 precondition).
+xref: [E12-resolve-with-precondition]
+
+# Intentional Lightbend divergence. Lightbend's resolveWith does NOT precondition-
+# check the source; it attempts resolution which then fails with
+# ConfigException.UnresolvedSubstitution (ResolveError). The E12 spec is
+# deliberately stricter: it requires a precondition check that raises NotResolved
+# BEFORE the receiver is touched, to make the error surface clearly identify the
+# user's mistake (passing an unresolved source). Per-impl tests assert the
+# NotResolved category; the Lightbend generator skips this scenario.
+lightbendSkip: true
+
+sources:
+  receiver:
+    parseString: |
+      r = ${value}
+    parseOptions:
+      resolveSubstitutions: false
+
+  bad-source:
+    parseString: |
+      value = ${still-unresolved}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: take, source: bad-source, as: s0 }
+  - { op: resolveWith, this: r0, source: s0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: error
+  errorAt: 2
+  errorCategory: NotResolved

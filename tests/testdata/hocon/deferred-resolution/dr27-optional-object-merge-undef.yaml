@@ -1,0 +1,39 @@
+# dr27 — Optional substitution in object merge (undefined) → empty object contribution
+#
+# `a = ${?x} { k = 1 }` where x is undefined. The undefined ${?x} materialises
+# as an empty object in object-merge context (no keys contributed).
+# Result: `a = { k = 1 }`.
+#
+# Per spec § "Optional substitution materialisation in concat contexts":
+#   "Object merge: Empty object (no keys contributed).
+#   Example: `a = ${?x} { k = 1 }` (x undef) → a = {k:1}"
+#
+# Per HOCON.md §Concatenation L387–L441.
+#
+# xref: E12-optional-subst, HOCON.md-L387
+
+description: "Optional object merge `a = ${?x} { k = 1 }` (x undef) resolves to a = {k: 1}."
+xref: [E12-optional-subst]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${?x} { k = 1 }
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": {
+        "k": 1
+      }
+    }
+  getter:
+    - { path: "a.k", expectInt: 1 }

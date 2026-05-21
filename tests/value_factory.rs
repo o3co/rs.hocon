@@ -16,21 +16,25 @@ mod from_map_tests {
         let values = json!({
             "flag": true,
             "count": 42,
-            "ratio": 3.14,
+            "ratio": 2.72,
             "label": "hello",
             "nothing": null
         });
         let map = values.as_object().unwrap().clone();
         let c = from_map(map, None).expect("from_map must succeed");
         assert!(c.is_resolved(), "from_map must produce a resolved Config");
-        assert_eq!(c.get_bool("flag").unwrap(), true);
+        assert!(c.get_bool("flag").unwrap());
         assert_eq!(c.get_i64("count").unwrap(), 42);
-        assert!((c.get_f64("ratio").unwrap() - 3.14).abs() < 1e-10);
+        assert!((c.get_f64("ratio").unwrap() - 2.72).abs() < 1e-10);
         assert_eq!(c.get_string("label").unwrap(), "hello");
         // null scalar -> get_string returns "null", get_string_option returns Some("null")
         // The plan says null -> None but rs.hocon treats null as a scalar string "null".
         // Verify the value is present and is "null".
-        assert_eq!(c.get_string("nothing").unwrap(), "null", "null scalar -> raw string 'null'");
+        assert_eq!(
+            c.get_string("nothing").unwrap(),
+            "null",
+            "null scalar -> raw string 'null'"
+        );
     }
 
     #[test]
@@ -74,9 +78,7 @@ mod from_map_tests {
         // test that a normal float works and our guard path is covered.
         map.insert(
             "f".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(1.5).expect("1.5 is finite"),
-            ),
+            serde_json::Value::Number(serde_json::Number::from_f64(1.5).expect("1.5 is finite")),
         );
         let c = from_map(map, None).expect("finite float must succeed");
         assert!((c.get_f64("f").unwrap() - 1.5).abs() < 1e-10);

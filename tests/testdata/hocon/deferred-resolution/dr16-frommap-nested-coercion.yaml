@@ -1,0 +1,56 @@
+# dr16 — FromMap type coercion: bool, int, float, string, list, nested map, null
+#
+# Verifies that FromMap correctly coerces all HOCON scalar types, lists,
+# nested maps, and null from in-memory values.
+#
+# Per spec § "Value factories — Type coercion table":
+#   - null  → HOCON null
+#   - bool  → HOCON boolean
+#   - int   → HOCON number (integral)
+#   - float → HOCON number (non-integral)
+#   - string → HOCON string
+#   - list  → HOCON array
+#   - nested map → HOCON object
+#
+# xref: E12-frommap, E12-frommap-coercion
+
+description: FromMap with all scalar types, list, nested map, and null — verify coercion correctness.
+xref: [E12-frommap, E12-frommap-coercion]
+
+sources:
+  fm:
+    fromMap:
+      flag: true
+      count: 42
+      ratio: 3.14
+      label: "hello"
+      items: [1, 2, 3]
+      nested:
+        inner: "deep"
+      nothing: null
+
+build:
+  - { op: take, source: fm, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "count": 42,
+      "flag": true,
+      "items": [1, 2, 3],
+      "label": "hello",
+      "nested": {
+        "inner": "deep"
+      },
+      "nothing": null,
+      "ratio": 3.14
+    }
+  getter:
+    - { path: "flag",         expectString: "true" }
+    - { path: "count",        expectInt:    42 }
+    - { path: "label",        expectString: "hello" }
+    - { path: "nested.inner", expectString: "deep" }
+    - { path: "items",        expectArray:  [1, 2, 3] }

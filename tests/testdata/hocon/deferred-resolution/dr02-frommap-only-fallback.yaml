@@ -1,0 +1,41 @@
+# dr02 — FromMap-only fallback
+#
+# Receiver contains a substitution ${KEY}. A FromMap fallback provides the
+# value for KEY. After WithFallback + resolve the substitution is satisfied.
+# Demonstrates that FromMap is a first-class fallback source with no parseString.
+#
+# xref: E12-frommap, go.hocon#99
+
+description: Receiver substitution ${KEY} resolved via FromMap-only fallback layer.
+xref: [go.hocon#99, E12-frommap]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${KEY}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    fromMap:
+      KEY: "v"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  # WithFallback merges the fallback's keys into the result; `KEY` therefore
+  # appears at top level alongside the receiver's `a`. Use ResolveWith if you
+  # want the source's keys suppressed — see dr11a.
+  json: |-
+    {
+      "KEY": "v",
+      "a": "v"
+    }
+  getter:
+    - { path: "a", expectString: "v" }
+    - { path: "KEY", expectString: "v" }

@@ -11,8 +11,14 @@ use hocon::{ParseOptions, ResolveOptions};
 #[test]
 fn parse_options_defaults() {
     let opts = ParseOptions::defaults();
-    assert!(opts.resolve_substitutions, "resolve_substitutions must default true");
-    assert!(opts.origin_description.is_none(), "origin_description must default None");
+    assert!(
+        opts.resolve_substitutions,
+        "resolve_substitutions must default true"
+    );
+    assert!(
+        opts.origin_description.is_none(),
+        "origin_description must default None"
+    );
 }
 
 #[test]
@@ -41,8 +47,14 @@ fn parse_options_chainable() {
 #[test]
 fn resolve_options_defaults() {
     let opts = ResolveOptions::defaults();
-    assert!(opts.use_system_environment, "use_system_environment must default true");
-    assert!(!opts.allow_unresolved, "allow_unresolved must default false");
+    assert!(
+        opts.use_system_environment,
+        "use_system_environment must default true"
+    );
+    assert!(
+        !opts.allow_unresolved,
+        "allow_unresolved must default false"
+    );
 }
 
 #[test]

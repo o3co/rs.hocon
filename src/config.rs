@@ -111,7 +111,11 @@ impl Config {
             resolved,
             parse_base_dir,
             origin_description,
-            unresolved_tree: if resolved && !has_priors { None } else { Some(tree) },
+            unresolved_tree: if resolved && !has_priors {
+                None
+            } else {
+                Some(tree)
+            },
         }
     }
 
@@ -134,7 +138,10 @@ impl Config {
     /// Idempotent on already-resolved Configs. On unresolved Configs, runs
     /// `resolver::resolve_tree` (phase 2) on the stored `unresolved_tree`
     /// (priors preserved for S13a self-ref) or reconstructed ResObj.
-    pub fn resolve(&self, opts: crate::options::ResolveOptions) -> Result<Config, crate::error::HoconError> {
+    pub fn resolve(
+        &self,
+        opts: crate::options::ResolveOptions,
+    ) -> Result<Config, crate::error::HoconError> {
         use crate::error::{HoconError, ParseError};
         if self.is_resolved() {
             return Ok(Config {
@@ -951,7 +958,8 @@ fn type_mismatch(path: &str, expected: &str) -> ConfigError {
 
 fn not_resolved(path: &str) -> ConfigError {
     ConfigError {
-        message: "value is not resolved (call Config::resolve() before accessing values)".to_string(),
+        message: "value is not resolved (call Config::resolve() before accessing values)"
+            .to_string(),
         path: path.to_string(),
     }
 }
@@ -1028,11 +1036,11 @@ mod tests {
 
     #[test]
     fn get_string_coerces_float() {
-        let c = make_config(vec![("ratio", fv(3.14))]);
-        // f64::to_string may produce "3.14" or similar; just check it parses back
+        let c = make_config(vec![("ratio", fv(2.72))]);
+        // f64::to_string may produce "2.72" or similar; just check it parses back
         let s = c.get_string("ratio").unwrap();
         let v: f64 = s.parse().unwrap();
-        assert!((v - 3.14).abs() < 1e-10);
+        assert!((v - 2.72).abs() < 1e-10);
     }
 
     #[test]
@@ -1089,14 +1097,14 @@ mod tests {
 
     #[test]
     fn get_f64_returns_float() {
-        let c = make_config(vec![("rate", fv(3.14))]);
-        assert!((c.get_f64("rate").unwrap() - 3.14).abs() < f64::EPSILON);
+        let c = make_config(vec![("rate", fv(2.72))]);
+        assert!((c.get_f64("rate").unwrap() - 2.72).abs() < f64::EPSILON);
     }
 
     #[test]
     fn get_f64_coerces_numeric_string() {
-        let c = make_config(vec![("rate", sv("3.14"))]);
-        assert!((c.get_f64("rate").unwrap() - 3.14).abs() < f64::EPSILON);
+        let c = make_config(vec![("rate", sv("2.72"))]);
+        assert!((c.get_f64("rate").unwrap() - 2.72).abs() < f64::EPSILON);
     }
 
     #[test]

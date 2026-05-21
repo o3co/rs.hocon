@@ -153,10 +153,7 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
 /// `opts.resolve_substitutions = true` (default): fused parse + resolve, same
 /// as [`parse`]. `opts.resolve_substitutions = false`: phase 1 only; returned
 /// `Config` may have `is_resolved() = false`. Use [`Config::resolve`] later.
-pub fn parse_string_with_options(
-    input: &str,
-    opts: ParseOptions,
-) -> Result<Config, HoconError> {
+pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
     assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
@@ -193,7 +190,11 @@ pub fn parse_string_with_options(
     } else {
         // Deferred path: phase 1 only.
         let tree = resolver::build_tree(ast, &internal_opts)?;
-        Ok(Config::new_from_res_obj(tree, opts.base_dir, opts.origin_description))
+        Ok(Config::new_from_res_obj(
+            tree,
+            opts.base_dir,
+            opts.origin_description,
+        ))
     }
 }
 

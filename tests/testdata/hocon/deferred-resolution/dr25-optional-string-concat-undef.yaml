@@ -1,0 +1,39 @@
+# dr25 — Optional substitution in string concat (undefined) → empty string contribution
+#
+# `a = ${?x} "tail"` where x is undefined. The undefined ${?x} materialises
+# as an empty string in string-concat context. The leading space between
+# ${?x} and "tail" is preserved per HOCON whitespace-in-concat rules.
+# Result: `a = " tail"` (space + tail).
+#
+# Per spec § "Optional substitution materialisation in concat contexts":
+#   "String concat: Empty string.
+#   Example: `a = ${?x} 'tail'` → a = ' tail' (leading space preserved)"
+#
+# Per HOCON.md §Concatenation L387–L441 (whitespace between concat elements
+# is preserved as a literal space character when the optional sub collapses).
+#
+# xref: E12-optional-subst, HOCON.md-L387
+
+description: Optional string concat `a = ${?x} "tail"` (x undef) → `a = " tail"` (leading space preserved).
+xref: [E12-optional-subst]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${?x} "tail"
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": " tail"
+    }
+  getter:
+    - { path: "a", expectString: " tail" }

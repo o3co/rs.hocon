@@ -11,8 +11,11 @@ use hocon::{ParseOptions, ResolveOptions};
 #[test]
 fn both_resolved_preserves_existing_semantics() {
     let a = hocon::parse(r#"a = 1"#).unwrap();
-    let b = hocon::parse(r#"a = 99
-                             c = 3"#).unwrap();
+    let b = hocon::parse(
+        r#"a = 99
+                             c = 3"#,
+    )
+    .unwrap();
     let m = a.with_fallback(&b);
     assert!(m.is_resolved());
     assert_eq!(m.get_i64("a").unwrap(), 1);

@@ -1,0 +1,45 @@
+# dr22 — Hidden substitution not evaluated within a single source
+#
+# ```hocon
+# foo = ${nonexist}
+# foo = 42
+# ```
+#
+# The first `foo = ${nonexist}` is overridden by the second `foo = 42`.
+# The overridden definition (with its substitution placeholder) is dropped
+# from the resolution tree and MUST NOT be evaluated.
+#
+# Per spec § "Hidden substitutions are not evaluated":
+#   "HOCON.md §Substitutions L670–L703: substitutions in overridden values
+#   are discarded before resolution. This MUST resolve to {foo: 42} without
+#   error."
+#
+# Resolve with allowUnresolved=false MUST succeed and yield `{foo: 42}`.
+# `nonexist` being absent does NOT cause a ResolveError.
+#
+# xref: E12-hidden-subst, HOCON.md-L670
+
+description: Overridden `foo = ${nonexist}` is hidden by later `foo = 42`; hidden substitution not evaluated → succeeds.
+xref: [E12-hidden-subst]
+
+sources:
+  receiver:
+    parseString: |
+      foo = ${nonexist}
+      foo = 42
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "foo": 42
+    }
+  getter:
+    - { path: "foo", expectInt: 42 }

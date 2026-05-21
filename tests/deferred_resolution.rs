@@ -28,13 +28,19 @@ fn no_env_opts() -> ResolveOptions {
 #[test]
 fn fused_parse_is_resolved() {
     let c = hocon::parse(r#"a = 1"#).unwrap();
-    assert!(c.is_resolved(), "fused parse must produce a resolved Config");
+    assert!(
+        c.is_resolved(),
+        "fused parse must produce a resolved Config"
+    );
 }
 
 #[test]
 fn deferred_parse_with_subst_is_not_resolved() {
     let c = deferred_parse(r#"a = ${b}"#);
-    assert!(!c.is_resolved(), "deferred parse with substitution must be unresolved");
+    assert!(
+        !c.is_resolved(),
+        "deferred parse with substitution must be unresolved"
+    );
 }
 
 #[test]
@@ -81,7 +87,9 @@ fn empty_resolve_is_noop() {
 #[test]
 fn getter_on_unresolved_path_returns_error() {
     let c = deferred_parse(r#"a = ${b}"#);
-    let err = c.get_string("a").expect_err("must error on unresolved path");
+    let err = c
+        .get_string("a")
+        .expect_err("must error on unresolved path");
     // The error is a ConfigError with "not resolved" in message.
     let msg = format!("{}", err);
     assert!(
@@ -122,7 +130,10 @@ fn s13a_required_self_ref_with_fallback_dr05() {
 fn s13a_required_self_ref_no_fallback_dr06() {
     let r = deferred_parse(r#"a = ${a} extra"#);
     let result = r.resolve(no_env_opts());
-    assert!(result.is_err(), "required self-ref with no prior must error");
+    assert!(
+        result.is_err(),
+        "required self-ref with no prior must error"
+    );
 }
 
 // --- transitive cross-layer (dr21) ---
@@ -162,7 +173,10 @@ fn cross_layer_cycle_dr18() {
     let r = deferred_parse(r#"a = ${b}"#);
     let f = deferred_parse(r#"b = ${a}"#);
     let result = r.with_fallback(&f).resolve(no_env_opts());
-    assert!(result.is_err(), "cross-layer cycle must return ResolveError");
+    assert!(
+        result.is_err(),
+        "cross-layer cycle must return ResolveError"
+    );
 }
 
 // --- optional substitution materialisation (dr24-dr25) ---
@@ -206,7 +220,10 @@ fn composition_barrier_dr10() {
     let resolved = m.resolve(no_env_opts()).unwrap();
     assert_eq!(resolved.get_i64("a.x").unwrap(), 1);
     let a_cfg = resolved.get_config("a").unwrap();
-    assert!(!a_cfg.has("y"), "composition barrier: fb2's y must not contribute");
+    assert!(
+        !a_cfg.has("y"),
+        "composition barrier: fb2's y must not contribute"
+    );
 }
 
 // --- double-resolve idempotency (dr19) ---

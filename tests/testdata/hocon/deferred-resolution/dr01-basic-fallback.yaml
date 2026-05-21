@@ -1,0 +1,50 @@
+# dr01 — Basic fallback (issue #99 example)
+#
+# A caller parses HOCON containing two substitutions, then layers in a runtime
+# fallback (CI_RUN_NUMBER from FromMap) and a promoted-subtree fallback
+# (`variables`), then resolves. Verifies the canonical Lightbend lifecycle works
+# end-to-end for the externally-requested use case.
+
+description: Issue #99 example — parse with substitution, layer FromMap fallback, layer promoted subtree fallback, resolve.
+xref: [go.hocon#99]
+
+sources:
+  receiver:
+    parseString: |
+      version = ${shortversion}-${CI_RUN_NUMBER}
+      variables { shortversion = "1.2.3" }
+    parseOptions:
+      resolveSubstitutions: false
+
+  runtime:
+    fromMap:
+      CI_RUN_NUMBER: "42"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: extract, this: r0, path: variables, as: vars }
+  - { op: withFallback, this: r0, other: runtime, as: r1 }
+  - { op: withFallback, this: r1, other: vars, as: r2 }
+  - { op: resolve, this: r2, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  # All keys from all merged fallback layers appear in the result of
+  # WithFallback (only ResolveWith would suppress source keys — see dr11a).
+  # The runtime fallback contributes `CI_RUN_NUMBER`; the extracted `vars`
+  # contributes `shortversion`. The receiver contributes `variables` and
+  # `version`. After resolve, `version` is substituted.
+  json: |-
+    {
+      "CI_RUN_NUMBER": "42",
+      "shortversion": "1.2.3",
+      "variables": {
+        "shortversion": "1.2.3"
+      },
+      "version": "1.2.3-42"
+    }
+  getter:
+    - { path: "version", expectString: "1.2.3-42" }
+    - { path: "variables.shortversion", expectString: "1.2.3" }
+    - { path: "CI_RUN_NUMBER", expectString: "42" }

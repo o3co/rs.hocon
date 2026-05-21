@@ -4,7 +4,8 @@ use crate::value::{HoconValue, ScalarValue};
 
 use super::include_loader::load_include;
 use super::types::{
-    AppendPlaceholder, ConcatPlaceholder, ResObj, InternalResolveOptions, ResolverValue, SubstPlaceholder,
+    AppendPlaceholder, ConcatPlaceholder, InternalResolveOptions, ResObj, ResolverValue,
+    SubstPlaceholder,
 };
 use super::utils::{deep_merge_res_obj_into, relativize_res_obj};
 

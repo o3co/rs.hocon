@@ -1,0 +1,44 @@
+# dr11a — ResolveWith: source keys are NOT present in the result
+#
+# Per spec § "ResolveWith semantic":
+#   "Substitutions in receiver are looked up in source, but source's keys are
+#   NOT merged into the result. Differs from WithFallback(source).Resolve()
+#   because the latter includes source's keys in the resulting Config."
+#
+# Receiver: `r = ${value}` (one substitution, no `value` key of its own)
+# Source:   `{ value = "found" }` (already resolved)
+#
+# After ResolveWith(source):
+#   - `r` resolves to "found"
+#   - `value` key MUST NOT appear in the result (source's keys stay out)
+#
+# xref: E12-resolve-with, E12-resolve-with-precondition
+
+description: ResolveWith resolves receiver substitution from source, but source keys do not appear in result.
+xref: [E12-resolve-with, E12-resolve-with-precondition]
+
+sources:
+  receiver:
+    parseString: |
+      r = ${value}
+    parseOptions:
+      resolveSubstitutions: false
+
+  src:
+    parseString: |
+      value = "found"
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: take, source: src, as: s0 }
+  - { op: resolveWith, this: r0, source: s0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "r": "found"
+    }
+  getter:
+    - { path: "r", expectString: "found" }

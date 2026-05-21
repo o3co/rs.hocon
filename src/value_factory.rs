@@ -27,10 +27,7 @@ use crate::value::{HoconValue, ScalarType, ScalarValue};
 /// `origin_description` is the user-visible source name for error messages.
 /// Pass `None` to omit.
 pub fn empty(origin_description: Option<&str>) -> Config {
-    Config::new_with_meta(
-        IndexMap::new(),
-        origin_description.map(|s| s.to_owned()),
-    )
+    Config::new_with_meta(IndexMap::new(), origin_description.map(|s| s.to_owned()))
 }
 
 /// Construct a resolved `Config` from a `serde_json::Map<String, Value>`.
@@ -120,17 +117,13 @@ fn coerce_value(v: serde_json::Value) -> Result<HoconValue, String> {
                     value_type: ScalarType::Number,
                 }))
             } else {
-                Err(format!(
-                    "number {} cannot be represented as i64 or f64",
-                    n
-                ))
+                Err(format!("number {} cannot be represented as i64 or f64", n))
             }
         }
         Value::Array(arr) => {
             let mut items = Vec::with_capacity(arr.len());
             for (i, elem) in arr.into_iter().enumerate() {
-                let hv = coerce_value(elem)
-                    .map_err(|msg| format!("element[{}]: {}", i, msg))?;
+                let hv = coerce_value(elem).map_err(|msg| format!("element[{}]: {}", i, msg))?;
                 items.push(hv);
             }
             Ok(HoconValue::Array(items))

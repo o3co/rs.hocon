@@ -51,7 +51,10 @@ fn resolve_tree_allow_unresolved_does_not_error() {
     let tokens = tokenize("a = ${missing}").unwrap();
     let ast = parse_tokens(&tokens).unwrap();
     let tree = build_tree(ast, &base_opts()).unwrap();
-    assert!(contains_placeholders(&tree), "expected placeholder in unresolved tree");
+    assert!(
+        contains_placeholders(&tree),
+        "expected placeholder in unresolved tree"
+    );
     let opts = InternalResolveOptions {
         allow_unresolved: true,
         ..base_opts()
@@ -68,11 +71,18 @@ fn contains_placeholders_true_before_resolve_false_for_concrete() {
     let tokens = tokenize("a = ${b}\nb = 1").unwrap();
     let ast = parse_tokens(&tokens).unwrap();
     let tree = build_tree(ast, &base_opts()).unwrap();
-    assert!(contains_placeholders(&tree), "pre-resolve: must contain placeholders");
+    assert!(
+        contains_placeholders(&tree),
+        "pre-resolve: must contain placeholders"
+    );
 
     let mut concrete = ResObj::new();
-    concrete
-        .fields
-        .insert("x".into(), ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::number("1".into()))));
-    assert!(!contains_placeholders(&concrete), "fully concrete ResObj must not contain placeholders");
+    concrete.fields.insert(
+        "x".into(),
+        ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::number("1".into()))),
+    );
+    assert!(
+        !contains_placeholders(&concrete),
+        "fully concrete ResObj must not contain placeholders"
+    );
 }

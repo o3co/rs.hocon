@@ -1,0 +1,46 @@
+# dr18 — Cross-layer substitution cycle → CycleError
+#
+# Receiver: `a = ${b}`
+# Fallback:  `b = ${a}`
+#
+# After WithFallback, the merged tree contains a cycle: a → b → a.
+# Resolve MUST detect this and raise CycleError (or the closest impl
+# equivalent).
+#
+# Per spec § "Cross-layer cycle detection":
+#   "After WithFallback, resolving the merged tree must detect the a → b → a
+#   cycle and raise ResolveError (CycleError). The cycle-detection algorithm
+#   is impl-internal; the conformance requirement is that emerging-on-merge
+#   cycles are detected."
+#
+# Note: Lightbend raises ConfigException.UnresolvedSubstitution for cycles
+# (no dedicated CycleError distinction). Per-impl runners map their concrete
+# error to the CycleError category.
+#
+# xref: E12-cycle-detection
+
+description: Receiver `a = ${b}`, fallback `b = ${a}` — cross-layer cycle detected at resolve → CycleError.
+xref: [E12-cycle-detection]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${b}
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    parseString: |
+      b = ${a}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: error
+  errorAt: 2
+  errorCategory: CycleError
