@@ -111,11 +111,11 @@
 
 pub mod config;
 pub mod error;
-pub(crate) mod lexer;
+pub mod lexer;
 pub(crate) mod numeric_array;
-pub(crate) mod parser;
+pub mod parser;
 pub(crate) mod properties;
-pub(crate) mod resolver;
+pub mod resolver;
 pub mod value;
 
 #[cfg(feature = "serde")]
@@ -157,7 +157,7 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
     let tokens = lexer::tokenize(&content)?;
     assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
-    let mut opts = resolver::ResolveOptions::new(env.clone());
+    let mut opts = resolver::InternalResolveOptions::new(env.clone());
     if let Some(dir) = path.parent() {
         opts = opts.with_base_dir(dir.to_path_buf());
     }
@@ -177,7 +177,7 @@ pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Conf
     let tokens = lexer::tokenize(input)?;
     assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
-    let opts = resolver::ResolveOptions::new(env.clone());
+    let opts = resolver::InternalResolveOptions::new(env.clone());
     let value = resolver::resolve(ast, &opts)?;
     match value {
         HoconValue::Object(fields) => Ok(Config::new(fields)),

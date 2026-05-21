@@ -3,7 +3,7 @@ use crate::value::HoconValue;
 use std::fs;
 
 use super::structure_builder::StructureBuilder;
-use super::types::{ResObj, ResolveOptions, ResolverValue};
+use super::types::{ResObj, InternalResolveOptions, ResolverValue};
 use super::utils::deep_merge_res_obj_into;
 
 pub(crate) fn load_include(
@@ -12,7 +12,7 @@ pub(crate) fn load_include(
     is_file: bool,
     line: usize,
     col: usize,
-    opts: &ResolveOptions,
+    opts: &InternalResolveOptions,
     _path_prefix: &[String],
 ) -> Result<ResObj, ResolveError> {
     // file() includes resolve relative to CWD (or as absolute), NOT relative
@@ -88,7 +88,7 @@ pub(crate) fn load_include(
 
 fn load_single_include(
     candidate: &std::path::Path,
-    opts: &ResolveOptions,
+    opts: &InternalResolveOptions,
 ) -> Result<ResObj, ResolveError> {
     // Circular include detection
     if opts.include_stack.iter().any(|p| p.as_path() == candidate) {
@@ -151,7 +151,7 @@ fn load_single_include(
         col: e.col,
     })?;
 
-    let mut child_opts = ResolveOptions::new(opts.env.clone());
+    let mut child_opts = InternalResolveOptions::new(opts.env.clone());
     if let Some(parent) = candidate.parent() {
         child_opts = child_opts.with_base_dir(parent.to_path_buf());
     }

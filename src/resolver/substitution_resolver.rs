@@ -12,6 +12,10 @@ pub(crate) struct SubstitutionResolver<'a> {
     env: &'a HashMap<String, String>,
     resolving: HashSet<String>,
     cache: HashMap<String, HoconValue>,
+    /// When false, env-var fallback in resolve_subst_inner is skipped.
+    use_system_environment: bool,
+    /// When true, missing mandatory substitutions yield Ok(None) instead of Err.
+    allow_unresolved: bool,
     /// Path stack tracking the full dotted path of the field currently being
     /// assigned in `resolve_res_obj`.  Leaf keys are pushed on entry to each
     /// `for (key, val)` iteration and popped on exit, so nested objects build
@@ -37,6 +41,25 @@ impl<'a> SubstitutionResolver<'a> {
             env,
             resolving: HashSet::new(),
             cache: HashMap::new(),
+            use_system_environment: true,
+            allow_unresolved: false,
+            resolving_field_path: Vec::new(),
+        }
+    }
+
+    pub fn new_with_opts(
+        root: &'a ResObj,
+        env: &'a HashMap<String, String>,
+        use_system_environment: bool,
+        allow_unresolved: bool,
+    ) -> Self {
+        SubstitutionResolver {
+            root,
+            env,
+            resolving: HashSet::new(),
+            cache: HashMap::new(),
+            use_system_environment,
+            allow_unresolved,
             resolving_field_path: Vec::new(),
         }
     }
@@ -307,7 +330,7 @@ impl<'a> SubstitutionResolver<'a> {
         // S13c: env-var list expansion — `${X[]}` / `${?X[]}`.
         // When list_suffix=true and config lookup missed, delegate entirely to
         // resolve_env_list. The scalar env fallback below is SUPPRESSED (S13c.5).
-        if s.list_suffix {
+        if s.list_suffix && self.use_system_environment {
             let result = self.resolve_env_list(s, key)?;
             if let Some(ref r) = result {
                 self.cache.insert(key.to_string(), r.clone());
@@ -315,32 +338,41 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
-        // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior
-        let env_key = s
-            .segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(".");
-        let env_result = self.env.get(&env_key).cloned().or_else(|| {
-            if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
-                let original_key = s.segments[s.prefix_len..]
-                    .iter()
-                    .map(|s| s.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(".");
-                self.env.get(&original_key).cloned()
-            } else {
-                None
+        // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior.
+        // Gated by use_system_environment (E12 T1).
+        if self.use_system_environment {
+            let env_key = s
+                .segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            let env_result = self.env.get(&env_key).cloned().or_else(|| {
+                if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
+                    let original_key = s.segments[s.prefix_len..]
+                        .iter()
+                        .map(|s| s.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    self.env.get(&original_key).cloned()
+                } else {
+                    None
+                }
+            });
+            if let Some(env_val) = env_result {
+                let result = HoconValue::Scalar(ScalarValue::string(env_val));
+                self.cache.insert(key.to_string(), result.clone());
+                return Ok(Some(result));
             }
-        });
-        if let Some(env_val) = env_result {
-            let result = HoconValue::Scalar(ScalarValue::string(env_val));
-            self.cache.insert(key.to_string(), result.clone());
-            return Ok(Some(result));
         }
 
         if s.optional {
+            return Ok(None);
+        }
+
+        // allow_unresolved: return Ok(None) instead of Err for mandatory substitutions
+        // that could not be satisfied (E12 T1).
+        if self.allow_unresolved {
             return Ok(None);
         }
 
@@ -618,6 +650,7 @@ fn type_name(v: &HoconValue) -> &'static str {
     match v {
         HoconValue::Object(_) => "object",
         HoconValue::Array(_) => "array",
+        HoconValue::Placeholder(_) => "placeholder",
         HoconValue::Scalar(sv) => match sv.value_type {
             crate::value::ScalarType::Null => "null",
             crate::value::ScalarType::Boolean => "boolean",
@@ -639,6 +672,11 @@ fn stringify_value(v: &HoconValue) -> String {
             unreachable!(
                 "stringify_value invariant: type-check rejects Object in string-concat per S10.13"
             )
+        }
+        HoconValue::Placeholder(pv) => {
+            // Should not be called on unresolved placeholders in string concat;
+            // treat as empty string to avoid panic in allow_unresolved mode.
+            format!("${{{}}}", pv.path)
         }
     }
 }
