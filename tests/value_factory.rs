@@ -27,14 +27,22 @@ mod from_map_tests {
         assert_eq!(c.get_i64("count").unwrap(), 42);
         assert!((c.get_f64("ratio").unwrap() - 2.72).abs() < 1e-10);
         assert_eq!(c.get_string("label").unwrap(), "hello");
-        // null scalar -> get_string returns "null", get_string_option returns Some("null")
-        // The plan says null -> None but rs.hocon treats null as a scalar string "null".
-        // Verify the value is present and is "null".
-        assert_eq!(
-            c.get_string("nothing").unwrap(),
-            "null",
-            "null scalar -> raw string 'null'"
+        // null scalar -> get_string errors per S17.6 (HOCON L1252, fixed in #80).
+        // Probe via get() to confirm the field is structurally present as a
+        // null scalar — the round-trip preserves null, the typed accessor
+        // refuses to coerce it.
+        assert!(
+            c.get_string("nothing").is_err(),
+            "null scalar -> get_string must error (S17.6)"
         );
+        match c.get("nothing") {
+            Some(hocon::HoconValue::Scalar(ref s)) => assert_eq!(
+                s.value_type,
+                hocon::ScalarType::Null,
+                "null scalar must round-trip as Scalar(Null)"
+            ),
+            other => panic!("expected Scalar(Null), got {:?}", other),
+        }
     }
 
     #[test]
