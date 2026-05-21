@@ -15,4 +15,5 @@ docs/superpowers/
 
 # Fetched testdata from xx.hocon (run `make testdata` to populate)
 tests/testdata/expected/
+tests/testdata/hocon/
 .xx-hocon-version

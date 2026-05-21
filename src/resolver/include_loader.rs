@@ -128,8 +128,12 @@ fn load_single_include(
         col: e.col,
     })?;
 
-    // S3.1 empty-file guard: empty included files are invalid (HOCON.md L130).
-    // Mirrors the guard in `parse_with_env` / `parse_file_with_env` in src/lib.rs.
+    // Lightbend-compat carve-out (#105 cross-impl): an empty / whitespace-only /
+    // comment-only included file contributes an empty config rather than
+    // erroring with S3.1. Top-level parses (parse_string / parse_file on a
+    // top-level empty document) continue to enforce S3.1 in `parse_with_env` /
+    // `parse_file_with_env` (src/lib.rs); the carve-out is scoped to the
+    // file-include path only. E11 package includes are unchanged.
     let has_content = tokens.iter().any(|t| {
         !matches!(
             t.kind,
@@ -137,12 +141,7 @@ fn load_single_include(
         )
     });
     if !has_content {
-        return Err(ResolveError {
-            message: "empty file is not a valid HOCON document (HOCON.md L130)".into(),
-            path: candidate.display().to_string(),
-            line: 1,
-            col: 1,
-        });
+        return Ok(ResObj::new());
     }
 
     let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
