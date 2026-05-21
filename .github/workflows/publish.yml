@@ -26,16 +26,20 @@ jobs:
             cargo set-version "$TAG_VERSION"
           fi
 
-      - name: Cache expected JSON
-        # Mirror the cache pattern from test.yml so the publish job doesn't
-        # re-fetch fixtures on every tag push (avoids GitHub API rate-limit
-        # and transient network failures during release).
-        uses: actions/cache@v5
+      # Cache is split into restore+save so the save key is content-addressable
+      # via the post-fetch hash of `.xx-hocon-version`. On a fresh checkout,
+      # `.xx-hocon-version` is gitignored and absent at restore time, so the
+      # restore step relies on `restore-keys` to match the most recent entry.
+      # Mirrors the test.yml pattern so the publish job doesn't re-fetch on
+      # every tag push (avoids GitHub API rate-limit + transient network
+      # failures during release). (closes #101)
+      - name: Restore expected JSON cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             tests/testdata/expected
             .xx-hocon-version
-          key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
+          key: xx-hocon-expected-pending
           restore-keys: xx-hocon-expected-
 
       - name: Fetch expected JSON sidecars from xx.hocon
@@ -48,6 +52,18 @@ jobs:
         # publish regression. The Makefile's early-exit on matching pin SHA
         # makes this a no-op when the cache hit above is fresh.
         run: make testdata
+
+      # Default `if: success()` — skip the save if `make testdata` failed so
+      # we don't write a partial/missing-pin cache under the empty-hash key
+      # (which would collapse to the constant `xx-hocon-expected-` and
+      # recreate the bug this PR is fixing). Copilot review thread.
+      - name: Save expected JSON cache
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            tests/testdata/expected
+            .xx-hocon-version
+          key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
 
       - run: cargo test
       - run: cargo test --features serde
