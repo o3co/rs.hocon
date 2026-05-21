@@ -51,6 +51,19 @@ pub enum AstNode {
         is_file: bool,
         pos: Pos,
     },
+    /// `include package("identifier", "file")` — E11 package-include qualifier.
+    ///
+    /// Only produced when the `include-package` feature is enabled; the variant
+    /// exists behind `#[cfg(feature = "include-package")]` so downstream
+    /// exhaustive matches are unaffected on the default feature set.
+    #[cfg(feature = "include-package")]
+    #[non_exhaustive]
+    PackageInclude {
+        identifier: String,
+        file: String,
+        required: bool,
+        pos: Pos,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -402,6 +415,7 @@ impl<'a> Parser<'a> {
         //   "required("          — from `required(`
         //   "required(file("     — from `required(file(`
         //   "required"           — from `required` (space before `(`)
+        //   "required(package("  — from `required(package(`  [E11]
         //
         // We normalise all of these into: required=true, cursor pointing at the
         // inner content after the `(` of `required(`.
@@ -417,19 +431,19 @@ impl<'a> Parser<'a> {
         // Tracks whether `file(` has already been consumed as part of the
         // `required(file(` mega-token.
         let mut file_prefix_consumed = false;
+        // Tracks whether `package(` has already been consumed (E11).
+        let mut package_prefix_consumed = false;
 
         if required {
             if raw == "required" {
-                // Separate tokens: consume "required", then expect "(" (possibly fused with "file(")
+                // Separate tokens: consume "required", then expect "(" (possibly fused with "file(" or "package(")
                 self.advance();
                 if self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with('(') {
                     let val = self.peek_value().to_string();
                     if val == "(" {
                         self.advance(); // standalone "(" — inner content is next token
                     } else {
-                        // Token is "(file(...)" or similar — strip leading "(" and treat
-                        // the remainder as if it were emitted without "required(".
-                        // We do this by rewriting the token in place via file_prefix_consumed.
+                        // Token is "(file(...)" or "(package(..." or similar — strip leading "("
                         let after_paren = &val[1..]; // strip leading "("
                         if after_paren == "file("
                             || after_paren.starts_with("file(")
@@ -437,13 +451,18 @@ impl<'a> Parser<'a> {
                         {
                             file_prefix_consumed = true;
                             self.advance(); // consume "(file(..." token; path follows
+                        } else if after_paren == "package("
+                            || after_paren.starts_with("package(")
+                        {
+                            package_prefix_consumed = true;
+                            self.advance();
                         }
                         // else: bare "(content" — inner content; fall through to path reading below
                     }
                 }
             } else {
                 // raw starts with "required(" — consume this token.
-                // Check if `file(` is also embedded (e.g. "required(file(").
+                // Check if `file(` or `package(` is also embedded.
                 let after_req = &raw["required(".len()..];
                 if after_req == "file(" || after_req.starts_with("file(") {
                     file_prefix_consumed = true;
@@ -452,9 +471,130 @@ impl<'a> Parser<'a> {
                 if after_req == "file" {
                     file_prefix_consumed = true; // next token will be "("
                 }
+                // E11: "required(package(" fused token
+                if after_req == "package(" || after_req.starts_with("package(") {
+                    package_prefix_consumed = true;
+                }
                 self.advance(); // consume "required(..." token
             }
         }
+
+        // ── E11: package("identifier", "file") qualifier ─────────────────────
+        #[cfg(feature = "include-package")]
+        {
+            // Detect "package(" in current token (without required) OR already consumed
+            let is_package = package_prefix_consumed
+                || (self.peek_kind() == TokenKind::Unquoted
+                    && (self.peek_value() == "package("
+                        || self.peek_value().starts_with("package(")));
+
+            if is_package {
+                let err_line = self.peek_line();
+                let err_col = self.peek_col();
+
+                if !package_prefix_consumed {
+                    // Consume "package(" token
+                    self.advance();
+                }
+
+                // Expect first quoted string: identifier
+                if self.peek_kind() != TokenKind::QuotedString {
+                    return Err(ParseError {
+                        message: format!(
+                            "include package(): expected quoted identifier as first argument, got {:?}",
+                            self.peek_kind()
+                        ),
+                        line: err_line,
+                        col: err_col,
+                    });
+                }
+                let identifier = self.peek_value().to_string();
+                self.advance();
+
+                // E11 decision 1: identifier must be non-empty
+                if identifier.is_empty() {
+                    return Err(ParseError {
+                        message: "include package(): identifier must be non-empty".into(),
+                        line: err_line,
+                        col: err_col,
+                    });
+                }
+
+                // Expect comma separator
+                if self.peek_kind() != TokenKind::Comma {
+                    // One-arg form — reject per E11 decision 2
+                    return Err(ParseError {
+                        message: "include package() requires two arguments (identifier, file); \
+                                  one-arg form is not supported (E11 decision 2)"
+                            .into(),
+                        line: err_line,
+                        col: err_col,
+                    });
+                }
+                self.advance(); // consume comma
+
+                // Expect second quoted string: file
+                if self.peek_kind() != TokenKind::QuotedString {
+                    return Err(ParseError {
+                        message: format!(
+                            "include package(): expected quoted file as second argument, got {:?}",
+                            self.peek_kind()
+                        ),
+                        line: err_line,
+                        col: err_col,
+                    });
+                }
+                let file_arg = self.peek_value().to_string();
+                self.advance();
+
+                // E11 decision 6: validate file argument (on the unescaped string value
+                // already produced by the lexer — lexer unescapes quoted strings).
+                validate_package_file_arg(&file_arg, err_line, err_col)?;
+
+                // Consume closing ")" — will be part of the next Unquoted token
+                // (e.g. ")" or "))" for required form)
+                if self.peek_kind() == TokenKind::Unquoted
+                    && self.peek_value().starts_with(')')
+                {
+                    self.advance();
+                }
+
+                return Ok(AstField {
+                    key: vec![],
+                    value: AstNode::PackageInclude {
+                        identifier,
+                        file: file_arg,
+                        required,
+                        pos: p.clone(),
+                    },
+                    append: false,
+                    pos: p,
+                });
+            }
+        }
+
+        // ── Non-E11: detect one-arg package() form and reject it even without feature ──
+        // When include-package feature is OFF, package(...)  must still parse cleanly
+        // and not crash. We check for "package(" and emit a parse error.
+        #[cfg(not(feature = "include-package"))]
+        {
+            let is_package = self.peek_kind() == TokenKind::Unquoted
+                && (self.peek_value() == "package("
+                    || self.peek_value().starts_with("package("));
+            if is_package || (required && {
+                // Check if already consumed "required(package("
+                let _ = package_prefix_consumed;
+                false // can't be true without the feature flag
+            }) {
+                return Err(ParseError {
+                    message: "include package(...) requires the 'include-package' feature".into(),
+                    line: self.peek_line(),
+                    col: self.peek_col(),
+                });
+            }
+        }
+
+        // ── Standard include forms: bare / file() ────────────────────────────
 
         let path;
         let mut is_file = false;
@@ -525,6 +665,8 @@ impl<'a> Parser<'a> {
             pos: p,
         })
     }
+
+    // No helper methods for package validation in parser — it's a module-level fn.
 
     fn parse_value(&mut self) -> Result<AstNode, ParseError> {
         let p = self.current_pos();
@@ -659,6 +801,69 @@ impl<'a> Parser<'a> {
 
         Ok(AstNode::Array { items, pos: p })
     }
+}
+
+/// Validate the `file` argument of `include package("id", "file")` per E11 decision 6.
+///
+/// Validation runs on the HOCON-unescaped string (the value the lexer returns for
+/// `TokenKind::QuotedString`, which is already unescaped). This means `"x\\y.conf"`
+/// in source becomes `x\y.conf` (one backslash) at the parser level — and that
+/// single backslash is what the validator checks.
+///
+/// Rules (E11 decision 6):
+/// - non-empty string
+/// - forward-slash separators only (backslash `\` rejected)
+/// - no leading `/` (absolute paths rejected)
+/// - no `.` or `..` segments (path traversal rejected)
+/// - no consecutive `/` (e.g., `a//b.conf` rejected)
+#[cfg(feature = "include-package")]
+fn validate_package_file_arg(file: &str, line: usize, col: usize) -> Result<(), ParseError> {
+    if file.is_empty() {
+        return Err(ParseError {
+            message: "include package(): file argument must be non-empty (E11 decision 6)".into(),
+            line,
+            col,
+        });
+    }
+    if file.contains('\\') {
+        return Err(ParseError {
+            message: "include package(): file argument must use forward-slash separators only; \
+                      backslash is not allowed (E11 decision 6)"
+                .into(),
+            line,
+            col,
+        });
+    }
+    if file.starts_with('/') {
+        return Err(ParseError {
+            message: "include package(): file argument must not be an absolute path (E11 decision 6)".into(),
+            line,
+            col,
+        });
+    }
+    for segment in file.split('/') {
+        if segment.is_empty() {
+            return Err(ParseError {
+                message: "include package(): file argument must not contain consecutive slashes \
+                          (E11 decision 6)"
+                    .into(),
+                line,
+                col,
+            });
+        }
+        if segment == "." || segment == ".." {
+            return Err(ParseError {
+                message: format!(
+                    "include package(): file argument must not contain '.' or '..' segments; \
+                     got {:?} (E11 decision 6)",
+                    segment
+                ),
+                line,
+                col,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn parse_scalar_value(raw: &str) -> ScalarValue {

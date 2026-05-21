@@ -4,12 +4,37 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+// ---- Include cycle detection key ----
+
+/// Unified key for include-cycle detection.
+///
+/// Covers both filesystem-path includes (`include "..."` / `include file(...)`)
+/// and package includes (`include package("id", "file")`). A single stack of
+/// `IncludeKey` values replaces the former `Vec<PathBuf>` in `ResolveOptions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum IncludeKey {
+    /// A filesystem-path include (bare or `file(...)` qualifier).
+    Path(PathBuf),
+    /// A package include (`package("identifier", "file")` qualifier) — E11.
+    #[cfg(feature = "include-package")]
+    Package {
+        identifier: String,
+        file: String,
+    },
+}
+
 // ---- Public types ----
 
 pub struct ResolveOptions {
     pub env: HashMap<String, String>,
     pub base_dir: Option<PathBuf>,
-    pub include_stack: Vec<PathBuf>,
+    /// Include-cycle detection stack. Each entry represents a file/package
+    /// currently being loaded in the call chain above this resolver invocation.
+    pub include_stack: Vec<IncludeKey>,
+    /// Package registry for `include package(...)` — E11.
+    /// Only present when the `include-package` feature is enabled.
+    #[cfg(feature = "include-package")]
+    pub package_registry: std::sync::Arc<std::collections::HashMap<(String, String), String>>,
 }
 
 impl ResolveOptions {
@@ -18,6 +43,8 @@ impl ResolveOptions {
             env,
             base_dir: None,
             include_stack: Vec::new(),
+            #[cfg(feature = "include-package")]
+            package_registry: std::sync::Arc::new(std::collections::HashMap::new()),
         }
     }
 
