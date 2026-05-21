@@ -123,6 +123,12 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
             },
             HoconValue::Object(map) => visitor.visit_map(HoconMapAccess::new(map)),
             HoconValue::Array(items) => visitor.visit_seq(HoconSeqAccess::new(items)),
+            HoconValue::Placeholder(pv) => Err(DeserializeError {
+                message: format!(
+                    "cannot deserialize unresolved substitution at path {:?}: call Config::resolve() first",
+                    pv.path
+                ),
+            }),
         }
     }
 
@@ -541,6 +547,12 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
             },
             HoconValue::Object(map) => visitor.visit_map(OwnedHoconMapAccess::new(map)),
             HoconValue::Array(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
+            HoconValue::Placeholder(pv) => Err(DeserializeError {
+                message: format!(
+                    "cannot deserialize unresolved substitution at path {:?}: call Config::resolve() first",
+                    pv.path
+                ),
+            }),
         }
     }
 

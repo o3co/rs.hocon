@@ -118,6 +118,7 @@ pub mod parser;
 pub(crate) mod properties;
 pub mod resolver;
 pub mod value;
+mod value_factory;
 
 #[cfg(feature = "serde")]
 pub mod serde;
@@ -126,6 +127,10 @@ pub use config::{Config, Period};
 pub use error::{ConfigError, HoconError, NotResolvedError, ParseError, ResolveError};
 pub use options::{ParseOptions, ResolveOptions};
 pub use value::{HoconValue, ScalarType, ScalarValue};
+pub use value_factory::empty;
+
+#[cfg(feature = "serde")]
+pub use value_factory::from_map;
 
 // Lexer surface intentionally narrow — only the items integration tests
 // and diagnostic tooling need. The full lexer module is not part of the
