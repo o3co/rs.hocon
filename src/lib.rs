@@ -143,6 +143,69 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
     parse_with_env(input, &std::env::vars().collect())
 }
 
+/// Parse a HOCON string with explicit [`ParseOptions`].
+///
+/// `opts.resolve_substitutions = true` (default): fused parse + resolve, same
+/// as [`parse`]. `opts.resolve_substitutions = false`: phase 1 only; returned
+/// `Config` may have `is_resolved() = false`. Use [`Config::resolve`] later.
+pub fn parse_string_with_options(
+    input: &str,
+    opts: ParseOptions,
+) -> Result<Config, HoconError> {
+    let tokens = lexer::tokenize(input)?;
+    assert_non_empty_document(&tokens)?;
+    let ast = parser::parse_tokens(&tokens)?;
+
+    let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
+        if opts.resolve_substitutions {
+            std::env::vars().collect()
+        } else {
+            HashMap::new()
+        }
+    });
+
+    let mut internal_opts = resolver::InternalResolveOptions::new(env);
+    if let Some(ref bd) = opts.base_dir {
+        internal_opts = internal_opts.with_base_dir(bd.clone());
+    }
+
+    if opts.resolve_substitutions {
+        // Fused path: phase 1 + phase 2.
+        let value = resolver::resolve(ast, &internal_opts)?;
+        match value {
+            HoconValue::Object(fields) => {
+                let mut cfg = Config::new(fields);
+                cfg.parse_base_dir = opts.base_dir;
+                cfg.origin_description = opts.origin_description;
+                Ok(cfg)
+            }
+            _ => Err(HoconError::Parse(ParseError {
+                message: "root must be an object".into(),
+                line: 1,
+                col: 1,
+            })),
+        }
+    } else {
+        // Deferred path: phase 1 only.
+        let tree = resolver::build_tree(ast, &internal_opts)?;
+        Ok(Config::new_from_res_obj(tree, opts.base_dir, opts.origin_description))
+    }
+}
+
+/// Parse a HOCON file with explicit [`ParseOptions`].
+/// File's parent directory is used as base_dir (overrides opts.base_dir).
+pub fn parse_file_with_options<P: AsRef<Path>>(
+    path: P,
+    opts: ParseOptions,
+) -> Result<Config, HoconError> {
+    let path = path.as_ref();
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
+    let base_dir = path.parent().map(|p| p.to_path_buf());
+    let opts = ParseOptions { base_dir, ..opts };
+    parse_string_with_options(&content, opts)
+}
+
 /// Parse a HOCON file into a Config.
 pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Config, HoconError> {
     parse_file_with_env(path, &std::env::vars().collect())
