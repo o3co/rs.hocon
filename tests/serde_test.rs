@@ -137,6 +137,7 @@ fn deserialize_vec_from_numeric_keyed_object() {
 fn deserialize_vec_from_non_numeric_object_errors() {
     #[derive(Debug, Deserialize)]
     struct Cfg {
+        #[allow(dead_code)]
         items: Vec<String>,
     }
     let config = parse(r#"items = {"foo":"a","bar":"b"}"#).unwrap();

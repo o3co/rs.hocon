@@ -1,0 +1,32 @@
+# dr24 — Optional standalone substitution undefined → field omitted
+#
+# `a = ${?x}` where x is undefined. The field `a` MUST be omitted from the
+# resulting object — it does NOT appear as null or empty string.
+#
+# Per spec § "Optional substitution materialisation in concat contexts":
+#   "Standalone field value: Field is omitted from parent object.
+#   Example: `a = ${?x}` (x undef) → {} (no `a` key)"
+#
+# Per HOCON.md §Substitutions L626–L645.
+#
+# xref: E12-optional-subst, HOCON.md-L626
+
+description: Optional standalone `a = ${?x}` (x undefined) → field `a` omitted from result; expected JSON `{}`.
+xref: [E12-optional-subst]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${?x}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {}

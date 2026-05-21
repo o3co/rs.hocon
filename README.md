@@ -84,6 +84,8 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
 - Environment variable substitution (`${HOME}`)
 - Dot-separated path expressions (`server.host`)
 - Fallback configuration merging (`with_fallback`)
+- Deferred resolution lifecycle: `parse_string_with_options` → `with_fallback` → `resolve()`
+  per Lightbend `parseString` / `withFallback` / `resolve()` API (E12, v1.4.0)
 - Optional Serde deserialization support
 - Passes Lightbend equivalence tests (equiv01 through equiv05)
 
@@ -156,6 +158,40 @@ let raw: Option<&HoconValue> = config.get("server.host");
 let merged = app_config.with_fallback(&defaults);
 ```
 
+### Deferred Resolution (v1.4.0)
+
+Parse without resolving, add a runtime fallback, then resolve in a single pass:
+
+```rust
+use hocon::{parse_string_with_options, ParseOptions, ResolveOptions};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = parse_string_with_options(
+        r#"version = ${shortversion}-${CI_RUN_NUMBER}
+           variables { shortversion = "1.2.3" }"#,
+        ParseOptions::defaults().with_resolve_substitutions(false),
+    )?;
+    assert!(!cfg.is_resolved());
+
+    let runtime = hocon::empty(None); // or from_map with runtime values
+    let vars = cfg.get_config("variables")?;
+    let resolved = cfg
+        .with_fallback(&runtime)
+        .with_fallback(&vars)
+        .resolve(ResolveOptions::defaults())?;
+
+    println!("{}", resolved.get_string("version")?); // e.g. "1.2.3-42"
+    Ok(())
+}
+```
+
+You can also use `resolve_with` to supply a resolved source for substitution lookup
+without merging its keys into the result:
+
+```rust
+let resolved = cfg.resolve_with(&source_config, ResolveOptions::defaults())?;
+```
+
 ### Serde Deserialization
 
 Requires the `serde` feature.
@@ -182,6 +218,7 @@ let server: ServerConfig = config
 | `ParseError` | Syntax errors during lexing/parsing (includes line and column) |
 | `ResolveError` | Substitution failures, cyclic references, missing required variables |
 | `ConfigError` | Missing keys or type mismatches during value access |
+| `ConfigError` (use `.is_not_resolved()` to detect "value not yet resolved") | Getter called on a path containing an unresolved substitution placeholder (v1.4.0) |
 | `DeserializeError` | Serde deserialization failures (with `serde` feature) |
 
 ## HOCON Examples

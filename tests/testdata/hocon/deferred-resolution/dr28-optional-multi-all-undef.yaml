@@ -1,0 +1,33 @@
+# dr28 — Multiple optional substitutions, all undefined → field omitted
+#
+# `a = ${?x}${?y}` where both x and y are undefined. The entire value
+# consists only of undefined optional substitutions. Per HOCON materialisation
+# rules, when all operands collapse to empty and the result is an empty string,
+# the field itself is omitted (same rule as standalone undefined optional).
+#
+# Per spec § "Optional substitution materialisation in concat contexts":
+#   "String concat (multiple optional, all undef): Empty string; if entire
+#   value is empty, field is omitted.
+#   Example: `a = ${?x}${?y}` (both undef) → {} (no `a` key)"
+#
+# xref: E12-optional-subst, HOCON.md-L626
+
+description: "a = ${?x}${?y} — both undefined — field `a` omitted; expected JSON {}."
+xref: [E12-optional-subst]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${?x}${?y}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {}

@@ -1,0 +1,47 @@
+# dr23 — Hidden substitution dropped when receiver wins across fallback layers
+#
+# Receiver: `{ foo = 42 }`          (foo is a concrete int)
+# Fallback:  `{ foo = ${nonexist} }` (foo is an unresolvable substitution)
+#
+# After WithFallback, the receiver's `foo = 42` wins (receiver has priority).
+# The fallback's `foo = ${nonexist}` is a hidden/overridden value and MUST NOT
+# be evaluated. Resolve MUST succeed with `{foo: 42}`.
+#
+# Per spec § "Hidden substitutions are not evaluated":
+#   "The same rule applies across fallback layers. A.WithFallback(B) produces a
+#   merged tree where A's keys win. B.WithFallback(A): B's foo wins, A's sub
+#   is dropped — no error."
+#   Here receiver = A (wins), fallback = B (dropped).
+#
+# xref: E12-hidden-subst, HOCON.md-L670
+
+description: Receiver `foo = 42` wins over fallback `foo = ${nonexist}`; fallback substitution dropped → succeeds.
+xref: [E12-hidden-subst]
+
+sources:
+  receiver:
+    parseString: |
+      foo = 42
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    parseString: |
+      foo = ${nonexist}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "foo": 42
+    }
+  getter:
+    - { path: "foo", expectInt: 42 }

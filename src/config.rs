@@ -1,8 +1,9 @@
-use crate::error::ConfigError;
+use crate::error::{ConfigError, NotResolvedError};
 use crate::lexer::is_hocon_whitespace;
 use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarType};
 use indexmap::IndexMap;
+use std::path::PathBuf;
 
 /// A calendar period with year, month, and day components.
 ///
@@ -35,15 +36,270 @@ impl Period {
 /// `Config` wraps an ordered map of top-level keys to [`HoconValue`]s and
 /// provides typed getters that accept dot-separated paths
 /// (e.g., `"server.host"`).
-#[derive(Debug, Clone, PartialEq)]
+///
+/// After E12, `Config` may be *resolved* (no substitution placeholders remain)
+/// or *unresolved* (placeholders remain; call [`Config::resolve`] before
+/// accessing values that touch a placeholder). Check with [`Config::is_resolved`].
+#[derive(Debug, Clone)]
 pub struct Config {
-    root: IndexMap<String, HoconValue>,
+    pub(crate) root: IndexMap<String, HoconValue>,
+    /// Whether the tree contains no substitution placeholders.
+    pub(crate) resolved: bool,
+    /// Base directory for resolving relative include paths on re-resolution.
+    pub(crate) parse_base_dir: Option<PathBuf>,
+    /// User-visible source name carried for error messages (from ParseOptions).
+    pub(crate) origin_description: Option<String>,
+    /// Pre-resolution ResObj with prior_values; used by resolve() / resolve_with().
+    /// None for fully-resolved Configs.
+    pub(crate) unresolved_tree: Option<crate::resolver::types::ResObj>,
+}
+
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.resolved == other.resolved
+            && self.parse_base_dir == other.parse_base_dir
+            && self.origin_description == other.origin_description
+    }
 }
 
 impl Config {
     /// Create a `Config` from a pre-built ordered map of key-value pairs.
+    /// Marks the config as resolved (no substitution placeholders).
     pub fn new(root: IndexMap<String, HoconValue>) -> Self {
-        Self { root }
+        Self {
+            root,
+            resolved: true,
+            parse_base_dir: None,
+            origin_description: None,
+            unresolved_tree: None,
+        }
+    }
+
+    /// Create a fully-resolved `Config` with optional metadata.
+    pub(crate) fn new_with_meta(
+        root: IndexMap<String, HoconValue>,
+        origin_description: Option<String>,
+    ) -> Self {
+        Self {
+            root,
+            resolved: true,
+            parse_base_dir: None,
+            origin_description,
+            unresolved_tree: None,
+        }
+    }
+
+    /// Create an unresolved `Config` from a `ResObj` tree.
+    /// `resolved` is derived from actual tree content so a deferred parse of a
+    /// substitution-free document still reports `is_resolved() = true`.
+    pub(crate) fn new_from_res_obj(
+        tree: crate::resolver::types::ResObj,
+        parse_base_dir: Option<PathBuf>,
+        origin_description: Option<String>,
+    ) -> Self {
+        let root = crate::resolver::res_obj_to_hocon_partial(&tree);
+        let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&root);
+        // Keep the ResObj in unresolved_tree if either:
+        // - There are placeholders (resolved=false), OR
+        // - There are prior_values anywhere in the tree (composition barrier info
+        //   for future with_fallback calls). This ensures barriers survive when
+        //   the merged config is placeholder-free.
+        let has_priors = crate::resolver::res_obj_has_priors(&tree);
+        Self {
+            root,
+            resolved,
+            parse_base_dir,
+            origin_description,
+            unresolved_tree: if resolved && !has_priors {
+                None
+            } else {
+                Some(tree)
+            },
+        }
+    }
+
+    /// Returns `true` if the config's value tree contains no unresolved
+    /// substitution placeholders. Whole-config granularity per E12 decision 11.
+    pub fn is_resolved(&self) -> bool {
+        if self.resolved {
+            return true;
+        }
+        !crate::resolver::contains_placeholders_in_hocon_map(&self.root)
+    }
+
+    /// The user-visible source name associated with this config, if any.
+    pub fn origin_description(&self) -> Option<&str> {
+        self.origin_description.as_deref()
+    }
+
+    /// Perform substitution resolution, producing a fully resolved `Config`.
+    ///
+    /// Idempotent on already-resolved Configs. On unresolved Configs, runs
+    /// `resolver::resolve_tree` (phase 2) on the stored `unresolved_tree`
+    /// (priors preserved for S13a self-ref) or reconstructed ResObj.
+    pub fn resolve(
+        &self,
+        opts: crate::options::ResolveOptions,
+    ) -> Result<Config, crate::error::HoconError> {
+        use crate::error::{HoconError, ParseError};
+        if self.is_resolved() {
+            return Ok(Config {
+                root: self.root.clone(),
+                resolved: true,
+                parse_base_dir: self.parse_base_dir.clone(),
+                origin_description: self.origin_description.clone(),
+                unresolved_tree: None,
+            });
+        }
+
+        let tree = match &self.unresolved_tree {
+            Some(t) => t.clone(),
+            None => crate::resolver::hocon_map_to_res_obj(&self.root),
+        };
+
+        let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
+            std::env::vars().collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+        let internal_opts = crate::resolver::InternalResolveOptions::new(env)
+            .with_base_dir_opt(self.parse_base_dir.clone())
+            .with_allow_unresolved(opts.allow_unresolved)
+            .with_use_system_environment(opts.use_system_environment);
+
+        // T1+T2 fix: clone the pre-resolution tree before consuming it.
+        // If resolution produces a still-unresolved output (allow_unresolved=true
+        // with remaining placeholders), we store this pre-resolution tree as
+        // unresolved_tree instead of reconstructing it from the HoconValue output.
+        // Reconstruction via hocon_map_to_res_obj loses ConcatPlaceholder structure
+        // (concat becomes a sentinel Placeholder), so subsequent with_fallback() /
+        // resolve() cycles would fail to re-resolve concat values (T2 root cause).
+        // The pre-resolution tree retains all Concat/Subst structure for correct
+        // re-resolution once missing values become available.
+        let pre_resolution_tree = if opts.allow_unresolved {
+            Some(tree.clone())
+        } else {
+            None
+        };
+
+        let resolved_value = crate::resolver::resolve_tree(tree, &internal_opts)?;
+        match resolved_value {
+            HoconValue::Object(fields) => {
+                let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&fields);
+                let unresolved_tree = if resolved {
+                    None
+                } else {
+                    // Use the pre-resolution tree (retains ConcatPlaceholder structure).
+                    pre_resolution_tree
+                };
+                Ok(Config {
+                    root: fields,
+                    resolved,
+                    parse_base_dir: self.parse_base_dir.clone(),
+                    origin_description: self.origin_description.clone(),
+                    unresolved_tree,
+                })
+            }
+            _ => Err(HoconError::Parse(ParseError {
+                message: "root must be an object".into(),
+                line: 1,
+                col: 1,
+            })),
+        }
+    }
+
+    /// Resolve substitutions using `source` for lookup; source keys NOT in result.
+    ///
+    /// Differs from `self.with_fallback(source).resolve(opts)` which DOES
+    /// include source keys in the result.
+    ///
+    /// Precondition: `source.is_resolved()` must be `true`. If not,
+    /// returns `Err(HoconError::NotResolved(...))` immediately (E12 decision 10).
+    ///
+    /// The filter is RECURSIVE: only paths in receiver's pre-merge shape are kept.
+    pub fn resolve_with(
+        &self,
+        source: &Config,
+        opts: crate::options::ResolveOptions,
+    ) -> Result<Config, crate::error::HoconError> {
+        use crate::error::{HoconError, ParseError};
+        if !source.is_resolved() {
+            return Err(HoconError::NotResolved(NotResolvedError {
+                path: "<source>".into(),
+            }));
+        }
+
+        if self.is_resolved() {
+            return Ok(Config {
+                root: self.root.clone(),
+                resolved: true,
+                parse_base_dir: self.parse_base_dir.clone(),
+                origin_description: self.origin_description.clone(),
+                unresolved_tree: None,
+            });
+        }
+
+        // Snapshot receiver key shape BEFORE merge.
+        let receiver_root_snapshot = self.root.clone();
+
+        let recv_obj = match &self.unresolved_tree {
+            Some(t) => t.clone(),
+            None => crate::resolver::hocon_map_to_res_obj(&self.root),
+        };
+        let src_obj = crate::resolver::hocon_map_to_res_obj(&source.root);
+        let merged = crate::resolver::merge_unresolved(recv_obj, src_obj);
+
+        let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
+            std::env::vars().collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+        let internal_opts = crate::resolver::InternalResolveOptions::new(env)
+            .with_base_dir_opt(self.parse_base_dir.clone())
+            .with_allow_unresolved(opts.allow_unresolved)
+            .with_use_system_environment(opts.use_system_environment);
+
+        // T1+T2 fix (resolve_with): same as resolve() — clone pre-resolution merged
+        // tree before consuming it, so that ConcatPlaceholder structure is preserved
+        // for re-resolution when allow_unresolved=true leaves placeholders.
+        let pre_resolution_tree = if opts.allow_unresolved {
+            Some(merged.clone())
+        } else {
+            None
+        };
+
+        let resolved_value = crate::resolver::resolve_tree(merged, &internal_opts)?;
+
+        let filtered = match resolved_value {
+            HoconValue::Object(mut fields) => {
+                // Recursive filter using receiver's pre-merge shape.
+                filter_hocon_object_by_receiver(&mut fields, &receiver_root_snapshot);
+                fields
+            }
+            _ => {
+                return Err(HoconError::Parse(ParseError {
+                    message: "root must be an object".into(),
+                    line: 1,
+                    col: 1,
+                }));
+            }
+        };
+
+        let resolved = !crate::resolver::contains_placeholders_in_hocon_map(&filtered);
+        let unresolved_tree = if resolved {
+            None
+        } else {
+            // Use the pre-resolution tree (retains ConcatPlaceholder structure).
+            pre_resolution_tree
+        };
+        Ok(Config {
+            root: filtered,
+            resolved,
+            parse_base_dir: self.parse_base_dir.clone(),
+            origin_description: self.origin_description.clone(),
+            unresolved_tree,
+        })
     }
 
     // Walk the dot-separated path through nested objects.
@@ -66,6 +322,7 @@ impl Config {
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Scalar(sv)) => Ok(sv.raw.clone()),
             _ => Err(type_mismatch(path, "String")),
         }
@@ -79,6 +336,7 @@ impl Config {
     pub fn get_i64(&self, path: &str) -> Result<i64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Scalar(sv)) => {
                 // Try direct i64 parse first
                 if let Ok(n) = sv.raw.parse::<i64>() {
@@ -112,6 +370,7 @@ impl Config {
     pub fn get_f64(&self, path: &str) -> Result<f64, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Scalar(sv)) => sv
                 .raw
                 .parse::<f64>()
@@ -128,6 +387,7 @@ impl Config {
     pub fn get_bool(&self, path: &str) -> Result<bool, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Scalar(sv)) => match sv.raw.to_lowercase().as_str() {
                 "true" | "yes" | "on" => Ok(true),
                 "false" | "no" | "off" => Ok(false),
@@ -143,6 +403,7 @@ impl Config {
     pub fn get_config(&self, path: &str) -> Result<Config, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Object(map)) => Ok(Config::new(map.clone())),
             _ => Err(type_mismatch(path, "Object")),
         }
@@ -158,6 +419,7 @@ impl Config {
     pub fn get_list(&self, path: &str) -> Result<Vec<HoconValue>, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             Some(HoconValue::Array(items)) => Ok(items.clone()),
             Some(v @ HoconValue::Object(_)) => {
                 // S15: attempt numeric-keyed object → array conversion.
@@ -251,6 +513,7 @@ impl Config {
                     path: path.to_string(),
                 })
             }
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected duration at {}", path),
                 path: path.to_string(),
@@ -305,6 +568,7 @@ impl Config {
                 }
                 Ok(n)
             }
+            HoconValue::Placeholder(_) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected byte size at {}", path),
                 path: path.to_string(),
@@ -344,6 +608,7 @@ impl Config {
                     path: path.to_string(),
                 })
             }
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected period at {}", path),
                 path: path.to_string(),
@@ -380,26 +645,28 @@ impl Config {
     /// # Ok(())
     /// # }
     /// ```
+    /// Merge this config with a fallback. Receiver's keys win; missing keys
+    /// come from fallback. Nested objects are deep-merged.
+    ///
+    /// Accepts both resolved and unresolved operands (E12 decision 5).
+    /// Non-object collision captures fallback value as prior for S13a
+    /// cross-layer self-reference. Result is resolved iff merged tree
+    /// contains no placeholders.
     pub fn with_fallback(&self, fallback: &Config) -> Config {
-        let mut merged = self.root.clone();
-        for (key, fallback_val) in &fallback.root {
-            if let Some(receiver_val) = merged.get(key) {
-                // Both sides have this key — deep merge if both are objects
-                if let (HoconValue::Object(recv_map), HoconValue::Object(fb_map)) =
-                    (receiver_val, fallback_val)
-                {
-                    let recv_cfg = Config::new(recv_map.clone());
-                    let fb_cfg = Config::new(fb_map.clone());
-                    let deep = recv_cfg.with_fallback(&fb_cfg);
-                    merged.insert(key.clone(), HoconValue::Object(deep.root));
-                }
-                // else: receiver value wins, no insert needed
-            } else {
-                // Key missing in receiver — take from fallback
-                merged.insert(key.clone(), fallback_val.clone());
-            }
-        }
-        Config::new(merged)
+        let recv_obj = match &self.unresolved_tree {
+            Some(t) => t.clone(),
+            None => crate::resolver::hocon_map_to_res_obj(&self.root),
+        };
+        let fb_obj = match &fallback.unresolved_tree {
+            Some(t) => t.clone(),
+            None => crate::resolver::hocon_map_to_res_obj(&fallback.root),
+        };
+        let merged = crate::resolver::merge_unresolved(recv_obj, fb_obj);
+        Config::new_from_res_obj(
+            merged,
+            self.parse_base_dir.clone(),
+            self.origin_description.clone(),
+        )
     }
 }
 
@@ -728,6 +995,33 @@ fn type_mismatch(path: &str, expected: &str) -> ConfigError {
     }
 }
 
+fn not_resolved(path: &str) -> ConfigError {
+    ConfigError {
+        message: "value is not resolved (call Config::resolve() before accessing values)"
+            .to_string(),
+        path: path.to_string(),
+    }
+}
+
+/// Recursively retain only keys present in `receiver_shape` (the receiver's
+/// pre-merge key layout). For nested objects, recurse depth-first.
+fn filter_hocon_object_by_receiver(
+    resolved: &mut IndexMap<String, HoconValue>,
+    receiver_shape: &IndexMap<String, HoconValue>,
+) {
+    resolved.retain(|k, v| {
+        if !receiver_shape.contains_key(k) {
+            return false;
+        }
+        if let (HoconValue::Object(inner_res), Some(HoconValue::Object(inner_recv))) =
+            (v, receiver_shape.get(k))
+        {
+            filter_hocon_object_by_receiver(inner_res, inner_recv);
+        }
+        true
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -781,11 +1075,11 @@ mod tests {
 
     #[test]
     fn get_string_coerces_float() {
-        let c = make_config(vec![("ratio", fv(3.14))]);
-        // f64::to_string may produce "3.14" or similar; just check it parses back
+        let c = make_config(vec![("ratio", fv(2.72))]);
+        // f64::to_string may produce "2.72" or similar; just check it parses back
         let s = c.get_string("ratio").unwrap();
         let v: f64 = s.parse().unwrap();
-        assert!((v - 3.14).abs() < 1e-10);
+        assert!((v - 2.72).abs() < 1e-10);
     }
 
     #[test]
@@ -842,14 +1136,14 @@ mod tests {
 
     #[test]
     fn get_f64_returns_float() {
-        let c = make_config(vec![("rate", fv(3.14))]);
-        assert!((c.get_f64("rate").unwrap() - 3.14).abs() < f64::EPSILON);
+        let c = make_config(vec![("rate", fv(2.72))]);
+        assert!((c.get_f64("rate").unwrap() - 2.72).abs() < f64::EPSILON);
     }
 
     #[test]
     fn get_f64_coerces_numeric_string() {
-        let c = make_config(vec![("rate", sv("3.14"))]);
-        assert!((c.get_f64("rate").unwrap() - 3.14).abs() < f64::EPSILON);
+        let c = make_config(vec![("rate", sv("2.72"))]);
+        assert!((c.get_f64("rate").unwrap() - 2.72).abs() < f64::EPSILON);
     }
 
     #[test]

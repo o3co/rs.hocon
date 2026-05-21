@@ -1,0 +1,51 @@
+# dr29 — Empty Config edge cases
+#
+# This YAML covers one directly expressible edge:
+#   `{ a = 1 }.WithFallback(Empty()) → { a: 1 }`
+#
+# The other two edges are not expressible in scenario YAML v1 (no "compare two
+# builds" op and Empty().Resolve() produces an empty JSON object that is
+# trivially expressible but uninteresting without comparing to a second build):
+#
+#   (a) Empty().Resolve() → {} (empty resolved Config; no error)
+#   (b) Empty().WithFallback(c) → equivalent to c (receiver is empty, fallback
+#       supplies all keys)
+#
+# Per-impl tests cover edges (a) and (b) programmatically. This YAML documents
+# the scenario family and verifies the WithFallback(Empty()) no-op case.
+#
+# Per spec § "Value factories":
+#   "Empty(o) is equivalent to FromMap({}, o). Impls MAY implement one in terms
+#   of the other."
+#
+# xref: E12-empty, E12-frommap
+
+description: >
+  `{ a = 1 }.WithFallback(Empty())` → `{a: 1}`. Other edges (Empty().Resolve(),
+  Empty().WithFallback(c)) verified programmatically per-impl.
+xref: [E12-empty, E12-frommap]
+
+sources:
+  receiver:
+    parseString: |
+      a = 1
+    parseOptions:
+      resolveSubstitutions: false
+
+  empty:
+    fromMap: {}
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: empty, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": 1
+    }
+  getter:
+    - { path: "a", expectInt: 1 }

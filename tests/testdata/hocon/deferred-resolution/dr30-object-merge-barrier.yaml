@@ -1,0 +1,48 @@
+# dr30 — Receiver non-object scalar blocks fallback object merge
+#
+# Receiver: `{ a = 42 }`        (a is a scalar integer — non-object)
+# Fallback:  `{ a = { k = 1 } }` (a is an object)
+#
+# Per HOCON object-merge semantics (HOCON.md L1485) and spec § "Composition":
+#   "Non-object values do not merge."
+# The receiver's `a = 42` is a non-object scalar. The fallback's `a = { k = 1 }`
+# is an object. Object merge does NOT happen here because the receiver value
+# is not an object. Receiver wins. Result: `{ a: 42 }`.
+#
+# This is the symmetric counterpart to dr10 (where the barrier was in the
+# middle of the fallback chain). Here the barrier is in the receiver itself.
+#
+# Expected: `{a: 42}` — NOT `{a: {k:1}}` or a merged form.
+#
+# xref: E12-composition, HOCON.md-L1485
+
+description: "Receiver `a = 42` (scalar) wins over fallback `a = { k = 1 }` (object); no merge. Result: a = 42."
+xref: [E12-composition]
+
+sources:
+  receiver:
+    parseString: |
+      a = 42
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb:
+    parseString: |
+      a = { k = 1 }
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb, as: r1 }
+  - { op: resolve, this: r1, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": 42
+    }
+  getter:
+    - { path: "a", expectInt: 42 }

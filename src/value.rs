@@ -1,5 +1,19 @@
 use indexmap::IndexMap;
 
+/// Payload for an unresolved substitution placeholder. Used internally by the
+/// deferred-resolution path (E12). Not part of the stable public API — marked
+/// `#[doc(hidden)]` to exclude from rustdoc and signal non-stable visibility.
+/// The type is `pub` for technical reasons (it is a field of the public `HoconValue`
+/// enum), but no semver guarantees are made for it.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaceholderValue {
+    /// The dot-separated substitution path (e.g. `"db.host"`).
+    pub(crate) path: String,
+    /// Whether this was an optional substitution (`${?x}` vs `${x}`).
+    pub(crate) optional: bool,
+}
+
 /// A resolved HOCON value.
 ///
 /// This is the tree that [`Config`](crate::Config) wraps. You normally interact
@@ -15,6 +29,13 @@ pub enum HoconValue {
     Array(Vec<HoconValue>),
     /// A leaf value (string, number, boolean, or null).
     Scalar(ScalarValue),
+    /// An unresolved substitution placeholder. Not part of the stable public API.
+    /// Marked `#[doc(hidden)]`; callers using the fused parse path will never see
+    /// this variant. May be encountered when `allow_unresolved=true` is passed to
+    /// [`Config::resolve`](crate::Config::resolve) — check `Config::is_resolved()`
+    /// instead of matching on this variant.
+    #[doc(hidden)]
+    Placeholder(PlaceholderValue),
 }
 
 /// The type tag for a scalar value.

@@ -1,0 +1,32 @@
+# dr08 — UseSystemEnvironment=false; env-only substitution → ResolveError
+#
+# Receiver references a substitution whose name is deliberately chosen to be
+# absent from any HOCON key in the test config (__HOCON_DR08_NONEXISTENT__).
+# Normally, Resolve() would fall back to the OS environment. With
+# UseSystemEnvironment=false the env lookup is suppressed, and the
+# substitution cannot be resolved → ResolveError.
+#
+# The substitution name uses a prefix that is extremely unlikely to collide
+# with a real environment variable on any CI platform.
+#
+# xref: E12-resolve-options, E12-use-system-environment
+
+description: Substitution ${__HOCON_DR08_NONEXISTENT__} with UseSystemEnvironment=false → ResolveError.
+xref: [E12-resolve-options, E12-use-system-environment]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${__HOCON_DR08_NONEXISTENT__}
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: error
+  errorAt: 1
+  errorCategory: ResolveError
+  errorContains: "__HOCON_DR08_NONEXISTENT__"

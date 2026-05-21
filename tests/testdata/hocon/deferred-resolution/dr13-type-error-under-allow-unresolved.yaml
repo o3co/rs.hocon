@@ -1,0 +1,43 @@
+# dr13 — Type error fires even under AllowUnresolved=true (s10 × AllowUnresolved)
+#
+# `a = "p" [1,2]` is a string-then-array concatenation. This is a type-
+# incompatible concatenation per S10 (concat type-check).
+#
+# Per spec § "s10 × AllowUnresolved":
+#   "AllowUnresolved defers *missing-value* errors, not *type* errors.
+#   A type error is structurally invalid regardless of resolution status."
+#
+# The error is expected at parse time (the concatenation is syntactically
+# malformed from the type system's perspective). Lightbend raises
+# ConfigException.Parse for this at parse time.
+#
+# Per-impl note: if an impl raises this error at resolve-time under
+# AllowUnresolved=true rather than at parse time, the errorAt index may be 1
+# (resolve step). The YAML marks errorAt as omitted (any step) to accommodate
+# both behaviours.
+#
+# xref: S10, E12-allow-unresolved, E12-type-error
+
+description: Type-incompatible concat `"p" [1,2]` raises TypeError even at parse time (before resolve).
+xref: [S10, E12-allow-unresolved]
+
+sources:
+  receiver:
+    parseString: |
+      a = "p" [1,2]
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: true, useSystemEnvironment: false, as: result }
+
+# Lightbend fires the type check during parseString (before any resolve()
+# call), surfacing as ConfigException.WrongType (TypeError). Impls that defer
+# the type check to resolve time may surface it at step 1 (resolve) instead;
+# both are spec-compliant per § "s10 × AllowUnresolved" ("structurally
+# invalid regardless of resolution status"). errorAt is omitted to allow
+# both placements.
+expect:
+  outcome: error
+  errorCategory: TypeError

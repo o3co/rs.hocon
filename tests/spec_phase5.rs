@@ -108,29 +108,11 @@ fn s10_17_spec_subst_array_concat() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S13.15  foo:${?bar}${?baz} skipped only when BOTH undefined (L640)
-// Status: ❌
+// Status: ✅ (fixed alongside E12 — resolve_concat returns Option<HoconValue>;
+//             None → field omitted; dr28 fixture exercises this)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pin: when both bar and baz are undefined, foo is still created (null value).
 #[test]
-fn s13_15_pin_both_optional_undefined_field_exists() {
-    let cfg = hocon::parse_with_env(r#"foo = ${?bar}${?baz}"#, &HashMap::new()).unwrap();
-    // impl creates the field with a null value instead of dropping it
-    let opt = cfg.get_string_option("foo");
-    assert!(
-        opt.is_some(),
-        "[pin] S13.15: impl currently creates 'foo' even when both substs are undefined"
-    );
-    // The value is null (returned as "null" by get_string)
-    assert_eq!(
-        cfg.get_string("foo").unwrap(),
-        "null",
-        "[pin] S13.15: foo should be the null sentinel when both optional substs are undefined"
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S13.15 (L640): foo:${?bar}${?baz} must not create field 'foo' when both bar and baz are undefined; impl creates null-valued field instead"]
 fn s13_15_spec_both_optional_undefined_field_absent() {
     let cfg = hocon::parse_with_env(r#"foo = ${?bar}${?baz}"#, &HashMap::new()).unwrap();
     assert!(

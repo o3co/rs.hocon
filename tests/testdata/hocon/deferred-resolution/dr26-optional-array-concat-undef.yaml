@@ -1,0 +1,37 @@
+# dr26 — Optional substitution in array concat (undefined) → empty array contribution
+#
+# `a = ${?x} [1,2]` where x is undefined. The undefined ${?x} materialises
+# as an empty array in array-concat context (no elements contributed).
+# Result: `a = [1, 2]`.
+#
+# Per spec § "Optional substitution materialisation in concat contexts":
+#   "Array concat: Empty array (no elements contributed).
+#   Example: `a = ${?x} [1,2]` (x undef) → a = [1,2]"
+#
+# Per HOCON.md §Concatenation L387–L441.
+#
+# xref: E12-optional-subst, HOCON.md-L387
+
+description: Optional array concat `a = ${?x} [1,2]` (x undef) → `a = [1,2]`.
+xref: [E12-optional-subst]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${?x} [1,2]
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": [1, 2]
+    }
+  getter:
+    - { path: "a", expectArray: [1, 2] }

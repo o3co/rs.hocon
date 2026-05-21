@@ -1,0 +1,44 @@
+# dr20 — Transitive substitution within a single source
+#
+# `a = ${b}; b = ${c}; c = 1` — substitution is two hops deep. Resolve MUST
+# follow transitive references: `a` → `b` → `c` → `1`, yielding `a = 1`.
+#
+# Per spec § "Transitive substitution resolution":
+#   "Resolve does not stop at one level of indirection. Resolving ${a} where
+#   a = ${b} and b = ${c} and c = 1 MUST yield 1 (not leave ${b} unresolved)."
+#
+# Per spec § "Single-pass resolution over fallback stack":
+#   "One top-level operation does NOT mean one tree walk. Substitution resolution
+#   is transitive and lazy within that one operation."
+#
+# xref: E12-transitive, E12-single-pass
+
+description: Transitive substitution `a = ${b}; b = ${c}; c = 1` in single source → `a = 1, b = 1, c = 1`.
+xref: [E12-transitive, E12-single-pass]
+
+sources:
+  receiver:
+    parseString: |
+      a = ${b}
+      b = ${c}
+      c = 1
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: resolve, this: r0, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": 1,
+      "b": 1,
+      "c": 1
+    }
+  getter:
+    - { path: "a", expectInt: 1 }
+    - { path: "b", expectInt: 1 }
+    - { path: "c", expectInt: 1 }

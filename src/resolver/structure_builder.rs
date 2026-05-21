@@ -6,16 +6,17 @@ use super::include_loader::load_include;
 #[cfg(feature = "include-package")]
 use super::include_loader::load_package_include;
 use super::types::{
-    AppendPlaceholder, ConcatPlaceholder, ResObj, ResolveOptions, ResolverValue, SubstPlaceholder,
+    AppendPlaceholder, ConcatPlaceholder, InternalResolveOptions, ResObj, ResolverValue,
+    SubstPlaceholder,
 };
 use super::utils::{deep_merge_res_obj_into, relativize_res_obj};
 
 pub(crate) struct StructureBuilder<'a> {
-    opts: &'a ResolveOptions,
+    opts: &'a InternalResolveOptions,
 }
 
 impl<'a> StructureBuilder<'a> {
-    pub fn new(opts: &'a ResolveOptions) -> Self {
+    pub fn new(opts: &'a InternalResolveOptions) -> Self {
         StructureBuilder { opts }
     }
 

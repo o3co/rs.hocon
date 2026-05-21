@@ -111,19 +111,43 @@
 
 pub mod config;
 pub mod error;
-pub(crate) mod lexer;
+/// Internal lexer module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types.
+/// All items are subject to change without notice across minor versions.
+/// Prefer the re-exported items (`tokenize`, `Token`, etc.) over direct module access.
+#[doc(hidden)]
+pub mod lexer;
 pub(crate) mod numeric_array;
-pub(crate) mod parser;
+pub mod options;
+/// Internal parser module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types.
+/// All items are subject to change without notice across minor versions.
+#[doc(hidden)]
+pub mod parser;
 pub(crate) mod properties;
-pub(crate) mod resolver;
+/// Internal resolver module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types
+/// (`build_tree`, `resolve_tree`, `merge_unresolved`, `ResObj`, etc.).
+/// All items are subject to change without notice across minor versions.
+#[doc(hidden)]
+pub mod resolver;
 pub mod value;
+mod value_factory;
 
 #[cfg(feature = "serde")]
 pub mod serde;
 
 pub use config::{Config, Period};
-pub use error::{ConfigError, HoconError, ParseError, ResolveError};
+pub use error::{ConfigError, HoconError, NotResolvedError, ParseError, ResolveError};
+pub use options::{ParseOptions, ResolveOptions};
 pub use value::{HoconValue, ScalarType, ScalarValue};
+pub use value_factory::empty;
+
+#[cfg(feature = "serde")]
+pub use value_factory::from_map;
 
 // Lexer surface intentionally narrow — only the items integration tests
 // and diagnostic tooling need. The full lexer module is not part of the
@@ -320,8 +344,8 @@ impl Parser {
         self,
         env: HashMap<String, String>,
         base_dir: Option<std::path::PathBuf>,
-    ) -> resolver::ResolveOptions {
-        let mut opts = resolver::ResolveOptions::new(env);
+    ) -> resolver::InternalResolveOptions {
+        let mut opts = resolver::InternalResolveOptions::new(env);
         if let Some(dir) = base_dir {
             opts = opts.with_base_dir(dir);
         }
@@ -333,6 +357,70 @@ impl Parser {
 /// Parse a HOCON string into a Config.
 pub fn parse(input: &str) -> Result<Config, HoconError> {
     parse_with_env(input, &std::env::vars().collect())
+}
+
+/// Parse a HOCON string with explicit [`ParseOptions`].
+///
+/// `opts.resolve_substitutions = true` (default): fused parse + resolve, same
+/// as [`parse`]. `opts.resolve_substitutions = false`: phase 1 only; returned
+/// `Config` may have `is_resolved() = false`. Use [`Config::resolve`] later.
+pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
+    let tokens = lexer::tokenize(input)?;
+    assert_non_empty_document(&tokens)?;
+    let ast = parser::parse_tokens(&tokens)?;
+
+    let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
+        if opts.resolve_substitutions {
+            std::env::vars().collect()
+        } else {
+            HashMap::new()
+        }
+    });
+
+    let mut internal_opts = resolver::InternalResolveOptions::new(env);
+    if let Some(ref bd) = opts.base_dir {
+        internal_opts = internal_opts.with_base_dir(bd.clone());
+    }
+
+    if opts.resolve_substitutions {
+        // Fused path: phase 1 + phase 2.
+        let value = resolver::resolve(ast, &internal_opts)?;
+        match value {
+            HoconValue::Object(fields) => {
+                let mut cfg = Config::new(fields);
+                cfg.parse_base_dir = opts.base_dir;
+                cfg.origin_description = opts.origin_description;
+                Ok(cfg)
+            }
+            _ => Err(HoconError::Parse(ParseError {
+                message: "root must be an object".into(),
+                line: 1,
+                col: 1,
+            })),
+        }
+    } else {
+        // Deferred path: phase 1 only.
+        let tree = resolver::build_tree(ast, &internal_opts)?;
+        Ok(Config::new_from_res_obj(
+            tree,
+            opts.base_dir,
+            opts.origin_description,
+        ))
+    }
+}
+
+/// Parse a HOCON file with explicit [`ParseOptions`].
+/// File's parent directory is used as base_dir (overrides opts.base_dir).
+pub fn parse_file_with_options<P: AsRef<Path>>(
+    path: P,
+    opts: ParseOptions,
+) -> Result<Config, HoconError> {
+    let path = path.as_ref();
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
+    let base_dir = path.parent().map(|p| p.to_path_buf());
+    let opts = ParseOptions { base_dir, ..opts };
+    parse_string_with_options(&content, opts)
 }
 
 /// Parse a HOCON file into a Config.
@@ -351,7 +439,7 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
     let tokens = lexer::tokenize(&content)?;
     assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
-    let mut opts = resolver::ResolveOptions::new(env.clone());
+    let mut opts = resolver::InternalResolveOptions::new(env.clone());
     if let Some(dir) = path.parent() {
         opts = opts.with_base_dir(dir.to_path_buf());
     }
@@ -371,7 +459,7 @@ pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Conf
     let tokens = lexer::tokenize(input)?;
     assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
-    let opts = resolver::ResolveOptions::new(env.clone());
+    let opts = resolver::InternalResolveOptions::new(env.clone());
     let value = resolver::resolve(ast, &opts)?;
     match value {
         HoconValue::Object(fields) => Ok(Config::new(fields)),
@@ -381,6 +469,78 @@ pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Conf
             col: 1,
         })),
     }
+}
+
+/// Internal JSON renderer for use by Layer-2 fixture tests.
+///
+/// Emits compact sorted-key JSON. Not semver-stable.
+/// Callers: `tests/deferred_resolution_fixtures.rs`.
+#[doc(hidden)]
+pub fn _render_json_for_test(config: &Config) -> String {
+    use crate::value::HoconValue;
+    use std::fmt::Write;
+
+    fn render_value(val: &HoconValue, out: &mut String) {
+        match val {
+            HoconValue::Scalar(sv) => {
+                use crate::value::ScalarType;
+                match sv.value_type {
+                    ScalarType::Null => out.push_str("null"),
+                    ScalarType::Boolean => out.push_str(&sv.raw),
+                    ScalarType::Number => out.push_str(&sv.raw),
+                    ScalarType::String => {
+                        let escaped = sv
+                            .raw
+                            .replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t");
+                        let _ = write!(out, "\"{}\"", escaped);
+                    }
+                }
+            }
+            HoconValue::Object(map) => {
+                out.push('{');
+                let mut keys: Vec<&str> = map.keys().map(|s| s.as_str()).collect();
+                keys.sort_unstable();
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    let _ = write!(out, "\"{}\":", k);
+                    render_value(map.get(*k).unwrap(), out);
+                }
+                out.push('}');
+            }
+            HoconValue::Array(arr) => {
+                out.push('[');
+                for (i, v) in arr.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    render_value(v, out);
+                }
+                out.push(']');
+            }
+            HoconValue::Placeholder(pv) => {
+                let _ = write!(out, "\"<unresolved:{}>\"", pv.path);
+            }
+        }
+    }
+
+    let mut out = String::from("{");
+    let mut keys: Vec<&str> = config.root.keys().map(|s| s.as_str()).collect();
+    keys.sort_unstable();
+    for (i, k) in keys.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "\"{}\":", k);
+        render_value(config.root.get(*k).unwrap(), &mut out);
+    }
+    out.push('}');
+    out
 }
 
 /// Guard: reject token streams that carry no semantic content (HOCON.md L130).

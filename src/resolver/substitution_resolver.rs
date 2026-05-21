@@ -12,6 +12,10 @@ pub(crate) struct SubstitutionResolver<'a> {
     env: &'a HashMap<String, String>,
     resolving: HashSet<String>,
     cache: HashMap<String, HoconValue>,
+    /// When false, env-var fallback in resolve_subst_inner is skipped.
+    use_system_environment: bool,
+    /// When true, missing mandatory substitutions yield Ok(None) instead of Err.
+    allow_unresolved: bool,
     /// Path stack tracking the full dotted path of the field currently being
     /// assigned in `resolve_res_obj`.  Leaf keys are pushed on entry to each
     /// `for (key, val)` iteration and popped on exit, so nested objects build
@@ -31,12 +35,19 @@ pub(crate) struct SubstitutionResolver<'a> {
 }
 
 impl<'a> SubstitutionResolver<'a> {
-    pub fn new(root: &'a ResObj, env: &'a HashMap<String, String>) -> Self {
+    pub fn new_with_opts(
+        root: &'a ResObj,
+        env: &'a HashMap<String, String>,
+        use_system_environment: bool,
+        allow_unresolved: bool,
+    ) -> Self {
         SubstitutionResolver {
             root,
             env,
             resolving: HashSet::new(),
             cache: HashMap::new(),
+            use_system_environment,
+            allow_unresolved,
             resolving_field_path: Vec::new(),
         }
     }
@@ -93,9 +104,9 @@ impl<'a> SubstitutionResolver<'a> {
     ) -> Result<Option<HoconValue>, ResolveError> {
         match v {
             ResolverValue::Subst(s) => self.resolve_subst(s, scope),
-            ResolverValue::Concat(c) => self
-                .resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
-                .map(Some),
+            ResolverValue::Concat(c) => {
+                self.resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
+            }
             ResolverValue::Append(a) => self.resolve_append(a, scope).map(Some),
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
             ResolverValue::UnresolvedArray(items) => {
@@ -307,7 +318,7 @@ impl<'a> SubstitutionResolver<'a> {
         // S13c: env-var list expansion — `${X[]}` / `${?X[]}`.
         // When list_suffix=true and config lookup missed, delegate entirely to
         // resolve_env_list. The scalar env fallback below is SUPPRESSED (S13c.5).
-        if s.list_suffix {
+        if s.list_suffix && self.use_system_environment {
             let result = self.resolve_env_list(s, key)?;
             if let Some(ref r) = result {
                 self.cache.insert(key.to_string(), r.clone());
@@ -315,33 +326,47 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
-        // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior
-        let env_key = s
-            .segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(".");
-        let env_result = self.env.get(&env_key).cloned().or_else(|| {
-            if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
-                let original_key = s.segments[s.prefix_len..]
-                    .iter()
-                    .map(|s| s.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(".");
-                self.env.get(&original_key).cloned()
-            } else {
-                None
+        // Env var fallback — use raw dot-join (no quoting) to match Lightbend behavior.
+        // Gated by use_system_environment (E12 T1).
+        if self.use_system_environment {
+            let env_key = s
+                .segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(".");
+            let env_result = self.env.get(&env_key).cloned().or_else(|| {
+                if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
+                    let original_key = s.segments[s.prefix_len..]
+                        .iter()
+                        .map(|s| s.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    self.env.get(&original_key).cloned()
+                } else {
+                    None
+                }
+            });
+            if let Some(env_val) = env_result {
+                let result = HoconValue::Scalar(ScalarValue::string(env_val));
+                self.cache.insert(key.to_string(), result.clone());
+                return Ok(Some(result));
             }
-        });
-        if let Some(env_val) = env_result {
-            let result = HoconValue::Scalar(ScalarValue::string(env_val));
-            self.cache.insert(key.to_string(), result.clone());
-            return Ok(Some(result));
         }
 
         if s.optional {
             return Ok(None);
+        }
+
+        // allow_unresolved: keep unresolved mandatory substitutions as Placeholder values
+        // (E12 T1). This preserves is_resolved()=false on the result and allows
+        // get_*() to return Err("not resolved") rather than Err("key not found").
+        if self.allow_unresolved {
+            use crate::value::PlaceholderValue;
+            return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                path: key.to_string(),
+                optional: false,
+            })));
         }
 
         Err(ResolveError {
@@ -427,7 +452,7 @@ impl<'a> SubstitutionResolver<'a> {
         line: usize,
         col: usize,
         scope: &ResObj,
-    ) -> Result<HoconValue, ResolveError> {
+    ) -> Result<Option<HoconValue>, ResolveError> {
         let mut resolved: Vec<(HoconValue, bool)> = Vec::new();
         for (i, n) in nodes.iter().enumerate() {
             let is_sep = separator_flags.get(i).copied().unwrap_or(false);
@@ -436,11 +461,16 @@ impl<'a> SubstitutionResolver<'a> {
             }
         }
 
+        // All operands collapsed (all optional substitutions undefined):
+        // Per HOCON spec § "Optional substitution materialisation in concat contexts",
+        // when every operand in a concat resolves to undefined, the entire field
+        // is omitted (same rule as a standalone undefined optional substitution).
+        // E.g. `a = ${?x}${?y}` with both undefined → `{}` (no `a` key).
         if resolved.is_empty() {
-            return Ok(HoconValue::Scalar(ScalarValue::null()));
+            return Ok(None);
         }
         if resolved.len() == 1 {
-            return Ok(resolved.into_iter().next().unwrap().0);
+            return Ok(Some(resolved.into_iter().next().unwrap().0));
         }
 
         // Pairwise left-to-right fold (NORMATIVE per spec §"Multi-piece concat is
@@ -487,23 +517,49 @@ impl<'a> SubstitutionResolver<'a> {
                 .collect();
 
             if non_sep.is_empty() {
-                return Ok(HoconValue::Scalar(ScalarValue::null()));
+                // All operands were separators (unusual): treat as omitted.
+                return Ok(None);
             }
             if non_sep.len() == 1 {
-                return Ok(non_sep.into_iter().next().unwrap());
+                return Ok(Some(non_sep.into_iter().next().unwrap()));
             }
 
             let mut iter = non_sep.into_iter();
             let first = iter.next().unwrap();
             return iter
                 .try_fold(first, |l, r| join_pair(l, r, line, col))
-                .map(Ok)?;
+                .map(|v| Ok(Some(v)))?;
         }
 
         // Scalar-only concat: include separators so whitespace contributes to the result
         // (e.g., "foo bar" where the space token is a separator).
+        //
+        // Allow-unresolved: if any operand is a Placeholder, the entire concat result
+        // is unresolved.  We cannot produce a concrete string because we don't know
+        // the actual values yet.  Return a combined Placeholder so that
+        // `is_resolved()` stays false and callers get a proper NotResolved error.
+        // (dr14: `a = ${x} ${y}` with allow_unresolved=true — both undefined.)
+        let has_placeholder = resolved
+            .iter()
+            .any(|(v, _)| matches!(v, HoconValue::Placeholder(_)));
+        if has_placeholder {
+            use crate::value::PlaceholderValue;
+            // T2 fix: use a sentinel path instead of joining operand paths with `+`.
+            // The old `join("+")` approach produced a fake substitution key (e.g.
+            // "x+y") that hocon_map_to_res_obj would later try to round-trip back
+            // to a SubstPlaceholder, silently corrupting re-resolution.
+            //
+            // The sentinel "<unresolved-concat>" is detected by hocon_value_to_resolver
+            // (in resolver/mod.rs) and passed through as-is rather than reconstructed
+            // as a Subst. Re-resolution uses the unresolved_tree preserved by T1 (which
+            // retains the real ConcatPlaceholder structure), not this HoconValue marker.
+            return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                path: "<unresolved-concat>".into(),
+                optional: false,
+            })));
+        }
         let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
-        Ok(HoconValue::Scalar(ScalarValue::string(s)))
+        Ok(Some(HoconValue::Scalar(ScalarValue::string(s))))
     }
 
     fn resolve_append(
@@ -618,6 +674,7 @@ fn type_name(v: &HoconValue) -> &'static str {
     match v {
         HoconValue::Object(_) => "object",
         HoconValue::Array(_) => "array",
+        HoconValue::Placeholder(_) => "placeholder",
         HoconValue::Scalar(sv) => match sv.value_type {
             crate::value::ScalarType::Null => "null",
             crate::value::ScalarType::Boolean => "boolean",
@@ -639,6 +696,11 @@ fn stringify_value(v: &HoconValue) -> String {
             unreachable!(
                 "stringify_value invariant: type-check rejects Object in string-concat per S10.13"
             )
+        }
+        HoconValue::Placeholder(pv) => {
+            // Should not be called on unresolved placeholders in string concat;
+            // treat as empty string to avoid panic in allow_unresolved mode.
+            format!("${{{}}}", pv.path)
         }
     }
 }

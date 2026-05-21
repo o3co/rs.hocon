@@ -180,6 +180,7 @@ let server: ServerConfig = config
 | `ParseError` | レキシング/パース時の構文エラー（行・列番号を含む） |
 | `ResolveError` | 変数参照の失敗、循環参照、必須変数の欠落 |
 | `ConfigError` | 値アクセス時のキー欠落・型不一致 |
+| `ConfigError`（未解決の置換プレースホルダーを含むパスへのゲッター呼び出し時は `.is_not_resolved()` で検出、v1.4.0） | 未解決の置換プレースホルダーを含むパスへのゲッター呼び出し |
 | `DeserializeError` | Serde デシリアライゼーション失敗（`serde` フィーチャー使用時） |
 
 ## HOCON の例

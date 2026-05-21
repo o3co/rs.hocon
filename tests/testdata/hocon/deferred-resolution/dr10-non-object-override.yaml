@@ -1,0 +1,57 @@
+# dr10 — Non-object value blocks fallback object merge (Composition barrier)
+#
+# Per spec § "Composition":
+#   "Non-object values do not merge:
+#    obj.WithFallback(nonObj).WithFallback(otherObj) ignores otherObj."
+#
+# Scenario:
+#   receiver  = { a = { x = 1 } }           (a is an object)
+#   fallback1 = { a = "scalar" }             (a is a non-object scalar — barrier)
+#   fallback2 = { a = { y = 2 } }           (a is an object — blocked by fallback1)
+#
+# Receiver's `a = { x = 1 }` wins at path `a`. Fallback1's `a = "scalar"` is
+# non-object and interposes between receiver and fallback2. Fallback2's
+# `a = { y = 2 }` MUST NOT contribute `y` because the barrier (scalar at position
+# 2) prevents the merge. Result: `{ a: { x: 1 } }`.
+#
+# xref: E12-composition, HOCON.md-L1485
+
+description: Non-object scalar in fallback1 blocks fallback2 object from merging into receiver object at same path.
+xref: [E12-composition]
+
+sources:
+  receiver:
+    parseString: |
+      a = { x = 1 }
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb1:
+    parseString: |
+      a = "scalar"
+    parseOptions:
+      resolveSubstitutions: false
+
+  fb2:
+    parseString: |
+      a = { y = 2 }
+    parseOptions:
+      resolveSubstitutions: false
+
+build:
+  - { op: take, source: receiver, as: r0 }
+  - { op: withFallback, this: r0, other: fb1, as: r1 }
+  - { op: withFallback, this: r1, other: fb2, as: r2 }
+  - { op: resolve, this: r2, allowUnresolved: false, useSystemEnvironment: false, as: result }
+
+expect:
+  outcome: success
+  isResolved: true
+  json: |-
+    {
+      "a": {
+        "x": 1
+      }
+    }
+  getter:
+    - { path: "a.x", expectInt: 1 }
