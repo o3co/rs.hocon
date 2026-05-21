@@ -7,11 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-05-21
+### Added
 
-v1.3 is a spec-compliance bugfix release. The implementation has been corrected to match the HOCON spec and Lightbend typesafe-config reference behavior across several previously-divergent areas (E8 value-position lexing + leading-zero canonicalization, single-letter byte units, `include` key reservation, concat type-checking, empty-file rejection, `.properties` object-wins, duration/bytes default unit, S13c env-var list). The spec did not change; the parser was simply wrong in places.
+- **E11 — `include package("id", "file")` qualifier** (feature-gated, default off):
+  New optional Cargo feature `include-package` (no new dependencies — uses `std` only)
+  enables the `include package(...)` syntax per xx.hocon cross-impl convention E11.
+  Spaced form `include package ("id", "file")` is also supported for consistency with
+  the existing `file(...)` qualifier.
 
-A subset of these fixes change observable runtime behavior. The most likely user-visible change is **S21.4** — single-letter byte units (`K`/`M`/`G`/`T`/`P`/`E`) now map to powers of two instead of SI decimal (`1K` was 1,000; now 1,024 — per HOCON.md L1385 java `-Xmx` convention, confirmed against Lightbend 1.4.3). If your `.conf` files use single-letter units and you rely on the numeric result, audit `get_bytes` call sites. Multi-letter forms (`KB`/`MB`/`GB`/`TB`) remain SI decimal and are unchanged. Other fixes have narrow practical impact — read `### Changed` / `### Fixed` below if your CI fails to upgrade cleanly. We elected MINOR (not MAJOR) because no API or architectural changes occurred; v2.0 is reserved for parser/lexer rewrites or similar structural shifts.
+  Public API additions (only compiled when `features = ["include-package"]`):
+  - **`hocon::Parser`** — new public struct with consuming builder API:
+    - `Parser::new() -> Self`
+    - `Parser::register_package(self, identifier, file, content) -> Self`
+    - `Parser::parse(self, input: &str) -> Result<Config, HoconError>`
+    - `Parser::parse_file(self, path: impl AsRef<Path>) -> Result<Config, HoconError>`
+  - **Cascade convention**: downstream packages expose `pub fn register(parser: Parser) -> Parser`
+    so callers can chain registrations: `pkg_b::register(pkg_a::register(Parser::new())).parse(…)`.
+  - **`AstNode::PackageInclude`** (internal `pub(crate)` variant) — not public API.
+  - **`IncludeKey::Package`** variant on the resolver's internal cycle-detection enum.
+
+  Behaviour:
+  - Registry miss is always a `HoconError` (required semantics apply unconditionally per E11 decision 7).
+  - Empty registered content returns an empty merge object (not a parse error — E11 carve-out).
+  - Circular package includes are detected and rejected (`ResolveError`).
+  - File argument is validated post-unescaping: non-empty, forward-slash separators, no absolute path.
+  - Identifier and file lookups are case-sensitive (E11 decision 5).
+  - Panic on duplicate `(identifier, file)` registration with different content; idempotent re-registration of byte-identical content is allowed.
 
 ## [1.3.0] - 2026-05-21
 

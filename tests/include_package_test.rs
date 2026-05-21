@@ -346,3 +346,39 @@ fn required_missing_closing_paren_is_parse_error() {
         "missing outer closing ')' for required(package(...)) must be a parse error"
     );
 }
+
+// ── Spaced form: `include package ("id", "file")` (Copilot review fix) ──────
+
+#[test]
+fn spaced_package_qualifier_accepted() {
+    // `include package ("id", "file")` — space between `package` and `(`.
+    // The lexer emits `package` as a separate Unquoted token; parser must handle it.
+    let input = r#"include package ("github.com/example/lib", "reference.conf")"#;
+    let result = Parser::new()
+        .register_package("github.com/example/lib", "reference.conf", PKG_LIB_REFERENCE)
+        .parse(input);
+    assert!(
+        result.is_ok(),
+        "spaced `include package (...)` must parse successfully (Copilot review fix): {:?}",
+        result.err()
+    );
+    let config = result.unwrap();
+    assert_eq!(config.get_string("host").unwrap(), "example.com");
+}
+
+#[test]
+fn spaced_package_qualifier_lookup_miss() {
+    // Spaced form with no registration — should fail with a ResolveError (lookup miss),
+    // not fall through to a confusing standard-include error.
+    let input = r#"include package ("github.com/example/lib", "reference.conf")"#;
+    let result = Parser::new().parse(input);
+    assert!(result.is_err(), "unregistered spaced package must be an error");
+    match result {
+        Err(hocon::HoconError::Resolve(_)) => { /* expected — lookup miss */ }
+        Err(hocon::HoconError::Parse(e)) => {
+            panic!("spaced package form: got ParseError instead of ResolveError: {}", e);
+        }
+        Err(e) => panic!("unexpected error type: {}", e),
+        Ok(_) => panic!("expected error for unregistered package"),
+    }
+}

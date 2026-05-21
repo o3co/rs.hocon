@@ -482,19 +482,43 @@ impl<'a> Parser<'a> {
         // ── E11: package("identifier", "file") qualifier ─────────────────────
         #[cfg(feature = "include-package")]
         {
-            // Detect "package(" in current token (without required) OR already consumed
-            let is_package = package_prefix_consumed
-                || (self.peek_kind() == TokenKind::Unquoted
-                    && (self.peek_value() == "package("
-                        || self.peek_value().starts_with("package(")));
+            // Detect "package(" in current token (without required) OR already consumed.
+            //
+            // The lexer fuses `package(` into one Unquoted token when there is no space.
+            // When the user writes `include package ("id", "file")` (space before `(`),
+            // the lexer emits `package` as a standalone Unquoted token — handle that form
+            // for consistency with how `file(...)` accepts the spaced `file (...)` form.
+            let is_package_fused = self.peek_kind() == TokenKind::Unquoted
+                && (self.peek_value() == "package("
+                    || self.peek_value().starts_with("package("));
+            let is_package_spaced = !package_prefix_consumed
+                && self.peek_kind() == TokenKind::Unquoted
+                && self.peek_value() == "package";
+            let is_package = package_prefix_consumed || is_package_fused || is_package_spaced;
 
             if is_package {
                 let err_line = self.peek_line();
                 let err_col = self.peek_col();
 
                 if !package_prefix_consumed {
-                    // Consume "package(" token
+                    // Consume "package" or "package(" token
                     self.advance();
+                    // Spaced form: "package" was consumed as a standalone token.
+                    // The next token must be "(" (possibly fused with other chars, but
+                    // for the spaced case the lexer emits a bare "(" Unquoted token).
+                    if is_package_spaced {
+                        if self.peek_kind() == TokenKind::Unquoted
+                            && self.peek_value().starts_with('(')
+                        {
+                            self.advance(); // consume the "(" token
+                        } else {
+                            return Err(ParseError {
+                                message: "include package: expected '(' after 'package'".into(),
+                                line: err_line,
+                                col: err_col,
+                            });
+                        }
+                    }
                 }
 
                 // Expect first quoted string: identifier
@@ -589,7 +613,8 @@ impl<'a> Parser<'a> {
         {
             let is_package_token = self.peek_kind() == TokenKind::Unquoted
                 && (self.peek_value() == "package("
-                    || self.peek_value().starts_with("package("));
+                    || self.peek_value().starts_with("package(")
+                    || self.peek_value() == "package"); // spaced form: `include package (...)`
             // package_prefix_consumed can be true when required(package(... was tokenized
             // as a fused token; the normalization above sets it regardless of feature flag.
             if is_package_token || package_prefix_consumed {

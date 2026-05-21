@@ -1,23 +1,28 @@
 # E11 `include package(...)` — rs.hocon Design Notes
 
-**Status**: Design / pre-implementation (★1 user review pending)
+**Status**: Implemented — `feat/include-package-design` (PR #103, pending merge)
 **Branch**: `feat/include-package-design`
 **Spec ref**: `xx.hocon/docs/extra-spec-conventions.md` §E11
 
+> **Historical note**: The table below reflects the crate state *before* this PR landed.
+> Post-implementation state: `include-package` feature added; `hocon::Parser` builder
+> (`new`, `register_package`, `parse`, `parse_file`) added behind the feature flag;
+> `IncludeKey` unified enum for cycle detection; `AstNode::PackageInclude` variant (internal).
+
 ---
 
-## 1. Crate survey summary
+## 1. Crate survey summary (pre-implementation snapshot)
 
-| Aspect | Current state |
+| Aspect | State before this PR |
 |---|---|
 | Crate name | `hocon-parser`, lib name `hocon` |
 | MSRV | 1.82 |
 | Features | `default = []`, `serde = [dep:serde, dep:serde_json]` — one optional feature today |
 | `no_std` | **No.** `std` is used throughout (`std::fs`, `std::path::PathBuf`, `std::collections::HashMap`, `std::io`). No `#![no_std]` attribute anywhere. |
 | Async | **No.** No tokio/futures dep, no async fn anywhere. |
-| Builder pattern | None currently. The public API is free functions: `parse`, `parse_file`, `parse_with_env`, `parse_file_with_env`. `ResolveOptions` uses a consuming builder (`pub fn with_base_dir(mut self, …) -> Self`). |
+| Builder pattern | None (pre-E11). This PR adds `hocon::Parser` with consuming builder behind `include-package` feature. |
 | Error types | `ParseError`, `ResolveError`, `ConfigError`, `HoconError` (enum wrapping the three). All use `#[non_exhaustive]`. |
-| Include handling | `AstNode::Include { path, required, is_file, pos }` — all include kinds fold into this one variant. Include loading is in `src/resolver/include_loader.rs`. Cycle detection uses `opts.include_stack: Vec<PathBuf>` carried through `ResolveOptions`. |
+| Include handling | `AstNode::Include { path, required, is_file, pos }` — all include kinds fold into this one variant. Include loading is in `src/resolver/include_loader.rs`. Cycle detection uses `opts.include_stack: Vec<PathBuf>` carried through `ResolveOptions`. (Post-E11: `IncludeKey` enum replaces `Vec<PathBuf>`; `PackageInclude` variant added.) |
 | Module structure | `src/lib.rs` re-exports public surface. Internal: `lexer`, `parser`, `resolver/{mod, include_loader, structure_builder, substitution_resolver, types, utils}`. `pub mod config`, `pub mod error`, `pub mod value`, optionally `pub mod serde`. |
 
 ---

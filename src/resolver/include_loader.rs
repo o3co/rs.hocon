@@ -198,8 +198,10 @@ pub(crate) fn load_package_include(
     }
 
     // Registry lookup (E11 decision 4)
-    let content = match opts.package_registry.get(&(identifier.to_string(), file.to_string())) {
-        Some(c) => c.clone(),
+    // Borrow &str from the Arc-owned map to avoid cloning the content String on every
+    // include call — tokenize/parse work on &str, so no owned copy is needed here.
+    let content: &str = match opts.package_registry.get(&(identifier.to_string(), file.to_string())) {
+        Some(c) => c.as_str(),
         None => {
             let _ = required; // required semantics: miss is always an error for package includes
             return Err(ResolveError {
@@ -216,7 +218,7 @@ pub(crate) fn load_package_include(
 
     // E11 decision 4 note: empty registered content => empty merge object, not an error.
     // Do NOT call assert_non_empty_document here.
-    let tokens = crate::lexer::tokenize(&content).map_err(|e| ResolveError {
+    let tokens = crate::lexer::tokenize(content).map_err(|e| ResolveError {
         message: e.message,
         path: format!("package({:?}, {:?})", identifier, file),
         line: e.line,
