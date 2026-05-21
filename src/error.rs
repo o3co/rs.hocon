@@ -96,6 +96,26 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+impl ConfigError {
+    /// Returns `true` if this error was produced because the value at the path
+    /// contains an unresolved substitution placeholder.
+    ///
+    /// Use this instead of message-string matching to detect the "not resolved"
+    /// condition when the caller holds a `ConfigError` (i.e., from a typed getter
+    /// such as `get_string`, `get_i64`, etc.).
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let err = config.get_string("my.key").unwrap_err();
+    /// if err.is_not_resolved() {
+    ///     // Call config.resolve(ResolveOptions::defaults()) first
+    /// }
+    /// ```
+    pub fn is_not_resolved(&self) -> bool {
+        self.message.starts_with("value is not resolved")
+    }
+}
+
 /// Error returned when a getter is called on a [`Config`](crate::Config) path
 /// whose value (or any transitive parent) contains an unresolved substitution
 /// placeholder.

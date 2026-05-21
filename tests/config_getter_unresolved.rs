@@ -17,6 +17,16 @@ fn unresolved_config() -> hocon::Config {
     .unwrap()
 }
 
+fn unresolved_typed_config() -> hocon::Config {
+    hocon::parse_string_with_options(
+        r#"dur = ${b}
+           bytes = ${b}
+           period = ${b}"#,
+        ParseOptions::defaults().with_resolve_substitutions(false),
+    )
+    .unwrap()
+}
+
 #[test]
 fn get_string_on_unresolved_path_errors() {
     let c = unresolved_config();
@@ -61,4 +71,58 @@ fn get_config_on_unresolved_path_errors() {
     )
     .unwrap();
     assert!(c.get_config("sub").is_err());
+}
+
+#[test]
+fn get_duration_on_unresolved_path_errors_as_not_resolved() {
+    let c = unresolved_typed_config();
+    let err = c.get_duration("dur").unwrap_err();
+    assert!(
+        err.is_not_resolved(),
+        "get_duration on unresolved path must return is_not_resolved(); got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn get_bytes_on_unresolved_path_errors_as_not_resolved() {
+    let c = unresolved_typed_config();
+    let err = c.get_bytes("bytes").unwrap_err();
+    assert!(
+        err.is_not_resolved(),
+        "get_bytes on unresolved path must return is_not_resolved(); got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn get_period_on_unresolved_path_errors_as_not_resolved() {
+    let c = unresolved_typed_config();
+    let err = c.get_period("period").unwrap_err();
+    assert!(
+        err.is_not_resolved(),
+        "get_period on unresolved path must return is_not_resolved(); got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn config_error_is_not_resolved_detects_unresolved_string_access() {
+    let c = unresolved_config();
+    let err = c.get_string("a").unwrap_err();
+    assert!(
+        err.is_not_resolved(),
+        "ConfigError::is_not_resolved() must return true for placeholder access; got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn config_error_is_not_resolved_false_for_missing_key() {
+    let c = unresolved_config();
+    let err = c.get_string("no_such_key").unwrap_err();
+    assert!(
+        !err.is_not_resolved(),
+        "ConfigError::is_not_resolved() must return false for missing-key error"
+    );
 }

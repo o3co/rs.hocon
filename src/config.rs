@@ -477,6 +477,7 @@ impl Config {
                     path: path.to_string(),
                 })
             }
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected duration at {}", path),
                 path: path.to_string(),
@@ -531,6 +532,7 @@ impl Config {
                 }
                 Ok(n)
             }
+            HoconValue::Placeholder(_) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected byte size at {}", path),
                 path: path.to_string(),
@@ -570,6 +572,7 @@ impl Config {
                     path: path.to_string(),
                 })
             }
+            Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
             _ => Err(ConfigError {
                 message: format!("expected period at {}", path),
                 path: path.to_string(),

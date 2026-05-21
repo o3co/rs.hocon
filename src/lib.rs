@@ -111,11 +111,28 @@
 
 pub mod config;
 pub mod error;
+/// Internal lexer module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types.
+/// All items are subject to change without notice across minor versions.
+/// Prefer the re-exported items (`tokenize`, `Token`, etc.) over direct module access.
+#[doc(hidden)]
 pub mod lexer;
 pub(crate) mod numeric_array;
 pub mod options;
+/// Internal parser module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types.
+/// All items are subject to change without notice across minor versions.
+#[doc(hidden)]
 pub mod parser;
 pub(crate) mod properties;
+/// Internal resolver module. Not part of the stable public API.
+///
+/// This module is `pub` to allow integration tests to access internal types
+/// (`build_tree`, `resolve_tree`, `merge_unresolved`, `ResObj`, etc.).
+/// All items are subject to change without notice across minor versions.
+#[doc(hidden)]
 pub mod resolver;
 pub mod value;
 mod value_factory;
