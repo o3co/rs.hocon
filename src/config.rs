@@ -316,14 +316,20 @@ impl Config {
 
     /// Return the value at `path` as a `String`.
     ///
-    /// Returns the raw string for any scalar value (string, number, boolean,
-    /// or null). Returns [`ConfigError`] if the path is missing or the value
-    /// is an Object or Array.
+    /// Returns the raw string for any non-null scalar (string, number,
+    /// boolean). Returns [`ConfigError`] if the path is missing, the value
+    /// is an Object or Array, or the value is `null` (spec L1252: null →
+    /// any non-null type is an error).
     pub fn get_string(&self, path: &str) -> Result<String, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
             Some(HoconValue::Placeholder(_)) => Err(not_resolved(path)),
-            Some(HoconValue::Scalar(sv)) => Ok(sv.raw.clone()),
+            Some(HoconValue::Scalar(sv)) => {
+                if sv.value_type == ScalarType::Null {
+                    return Err(type_mismatch(path, "String"));
+                }
+                Ok(sv.raw.clone())
+            }
             _ => Err(type_mismatch(path, "String")),
         }
     }
@@ -1089,9 +1095,10 @@ mod tests {
     }
 
     #[test]
-    fn get_string_coerces_null() {
+    fn get_string_error_on_null() {
+        // Spec L1252: null → any non-null type is an error.
         let c = make_config(vec![("v", HoconValue::Scalar(ScalarValue::null()))]);
-        assert_eq!(c.get_string("v").unwrap(), "null");
+        assert!(c.get_string("v").is_err());
     }
 
     #[test]
