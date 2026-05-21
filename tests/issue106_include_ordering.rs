@@ -47,6 +47,23 @@ fn issue106_self_ref_append_through_include() {
         "expected 2 steps (base + child), got {}",
         steps.len()
     );
+    // Pin element order + content: a reversed-order or duplicate-element bug
+    // would also produce len()==2 but break the spec semantics. Each element
+    // must be an object with the expected `name` field.
+    let name_at = |i: usize| -> String {
+        let item = &steps[i];
+        if let hocon::HoconValue::Object(fields) = item {
+            if let Some(hocon::HoconValue::Scalar(s)) = fields.get("name") {
+                return s.raw.clone();
+            }
+        }
+        panic!(
+            "steps[{}] is not an object with a 'name' field: {:?}",
+            i, item
+        );
+    };
+    assert_eq!(name_at(0), "base", "steps[0].name");
+    assert_eq!(name_at(1), "child", "steps[1].name");
 }
 
 #[test]
