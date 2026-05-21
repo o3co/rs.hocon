@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-05-21
+
+### Added — E12 deferred substitution resolution (closes [#99](https://github.com/o3co/rs.hocon/issues/99))
+
+This release adds the Lightbend-aligned `parse_string_with_options` →
+`with_fallback` → `resolve()` lifecycle. Existing `parse` / `parse_file`
+behaviour is unchanged (still parse-and-resolve in one call); the new API
+surface is purely additive. Closes [#99](https://github.com/o3co/rs.hocon/issues/99)
+(requested by [@cgordon](https://github.com/cgordon)).
+
+**New entry points:**
+- `parse_string_with_options(input, ParseOptions)` and
+  `parse_file_with_options(path, ParseOptions)` — `ParseOptions::defaults().with_resolve_substitutions(false)`
+  produces an unresolved `Config` (`is_resolved()` is `false` when `${...}` is present).
+- `from_map(serde_json::Map, origin) -> Result<Config, ConfigError>` (**serde feature**) —
+  construct a resolved `Config` from a `serde_json` map.
+  Lightbend `ConfigValueFactory.fromMap` parallel.
+- `empty(origin) -> Config` — always-resolved empty `Config`.
+  Lightbend `ConfigFactory.empty` parallel.
+
+**New methods on `Config`:**
+- `resolve(ResolveOptions) -> Result<Config, HoconError>` — phase-2 substitution
+  resolution over the whole merged fallback stack. Idempotent on already-resolved configs.
+- `resolve_with(source: &Config, ResolveOptions) -> Result<Config, HoconError>` —
+  resolves receiver using source for substitution lookup. Source keys are NOT merged
+  into the result. Precondition: source must be resolved.
+- `is_resolved() -> bool` — whole-config resolution state per E12 decision 11.
+- `with_fallback(&Config) -> Config` — now accepts unresolved operands; preserves
+  substitution placeholders into the merged tree.  Receiver-wins semantics unchanged.
+
+**New types:**
+- `ParseOptions` — builder via `ParseOptions::defaults()` and `with_resolve_substitutions(bool)`,
+  `with_origin_description(String)`. `ParseOptions` struct literal is **not** a valid
+  invocation (documented; `defaults()` enforces Lightbend default of `true`).
+- `ResolveOptions` — builder via `ResolveOptions::defaults()` and
+  `with_use_system_environment(bool)`, `with_allow_unresolved(bool)`.
+
+**New errors:**
+- `NotResolvedError` — returned (wrapped in `HoconError::NotResolved`) when a getter
+  is called on a path whose value contains an unresolved substitution placeholder.
+  Per E12 decision 12.
+
+**Cross-spec amendments** (no behavioural change for callers using the existing fused API):
+- S13a × WithFallback: self-reference lookback (`${?a}` / `${a}`) walks across fallback
+  layers.  Receiver `a = ${?a} extra` with fallback `a = base` resolves to `"base extra"`.
+- S10 × AllowUnresolved: type-incompatible concat errors surface even under
+  `allow_unresolved = true`; only missing-value errors are deferred.
+- Optional `${?x}${?y}` where all operands are undefined → field omitted from result
+  (HOCON.md §Substitutions L626–L645 concat materialisation rule).
+- Deferred concat placeholder survives under `allow_unresolved=true` when all operands
+  are unresolved mandatory substitutions; getter on that path raises `NotResolved`.
+
+**Spec source:** [xx.hocon#37](https://github.com/o3co/xx.hocon/issues/37) /
+E12 in `docs/extra-spec-conventions.md`.
+
+[1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
+
 ## [1.3.0] - 2026-05-21
 
 v1.3 is a spec-compliance bugfix release. The implementation has been corrected to match the HOCON spec and Lightbend typesafe-config reference behavior across several previously-divergent areas (E8 value-position lexing + leading-zero canonicalization, single-letter byte units, `include` key reservation, concat type-checking, empty-file rejection, `.properties` object-wins, duration/bytes default unit, S13c env-var list). The spec did not change; the parser was simply wrong in places.
