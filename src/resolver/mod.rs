@@ -1,3 +1,4 @@
+mod fold_self_ref;
 mod include_loader;
 mod structure_builder;
 mod substitution_resolver;
