@@ -33,10 +33,30 @@ pub(crate) fn deep_merge_hocon_objects(
 ) -> HoconValue {
     let mut merged = base;
     for (k, v) in overlay {
-        if let (Some(HoconValue::Object(existing)), HoconValue::Object(new_fields)) =
-            (merged.get(&k).cloned(), &v)
-        {
-            merged.insert(k, deep_merge_hocon_objects(existing, new_fields.clone()));
+        // Both sides being objects is the only case that requires deep merge;
+        // everything else is an overlay-wins insert (IndexMap preserves the
+        // existing key position).
+        //
+        // Pre-fix (issue #23) used `(merged.get(&k).cloned(), &v)` which
+        // deep-cloned the existing subtree AND `new_fields.clone()` on every
+        // recursive call — O(N²) work for an N-deep nested merge. Peek by
+        // reference, then take ownership via `mem::take` to drop both clones.
+        let both_objects = matches!(merged.get(&k), Some(HoconValue::Object(_)))
+            && matches!(&v, HoconValue::Object(_));
+        if both_objects {
+            // Take the existing inner IndexMap without cloning. The slot at
+            // `k` temporarily holds Object(empty IndexMap); the insert below
+            // overwrites it at the same position.
+            let existing_fields = match merged.get_mut(&k).expect("just checked Some via matches!")
+            {
+                HoconValue::Object(f) => std::mem::take(f),
+                _ => unreachable!("just matched HoconValue::Object via matches!"),
+            };
+            let new_fields = match v {
+                HoconValue::Object(f) => f,
+                _ => unreachable!("just matched HoconValue::Object via matches!"),
+            };
+            merged.insert(k, deep_merge_hocon_objects(existing_fields, new_fields));
         } else {
             merged.insert(k, v);
         }
@@ -211,5 +231,108 @@ mod tests {
     #[test]
     fn segments_to_key_quotes_whitespace() {
         assert_eq!(segments_to_key(&[seg(" a "), seg("b")]), r#"" a ".b"#);
+    }
+
+    // Issue #23 regression — deep_merge_hocon_objects refactored from
+    // double-clone-per-level to peek-and-take. These tests pin the
+    // observable contract: overlay wins on scalars/arrays, deep merge on
+    // nested objects, and IndexMap key position preserved when overlay
+    // updates an existing key.
+    fn scalar(s: &str) -> HoconValue {
+        HoconValue::Scalar(crate::value::ScalarValue::string(s.to_string()))
+    }
+
+    fn obj(pairs: &[(&str, HoconValue)]) -> HoconValue {
+        let mut m = IndexMap::new();
+        for (k, v) in pairs {
+            m.insert((*k).to_string(), v.clone());
+        }
+        HoconValue::Object(m)
+    }
+
+    fn as_obj(v: HoconValue) -> IndexMap<String, HoconValue> {
+        if let HoconValue::Object(m) = v {
+            m
+        } else {
+            panic!("expected Object, got {:?}", v)
+        }
+    }
+
+    #[test]
+    fn deep_merge_overlay_wins_on_scalar() {
+        let base = as_obj(obj(&[("a", scalar("base"))]));
+        let overlay = as_obj(obj(&[("a", scalar("overlay"))]));
+        let merged = as_obj(deep_merge_hocon_objects(base, overlay));
+        assert_eq!(merged.get("a"), Some(&scalar("overlay")));
+    }
+
+    #[test]
+    fn deep_merge_recurses_when_both_sides_are_objects() {
+        let base = as_obj(obj(&[(
+            "a",
+            obj(&[("x", scalar("from-base")), ("y", scalar("base-only"))]),
+        )]));
+        let overlay = as_obj(obj(&[(
+            "a",
+            obj(&[("x", scalar("from-overlay")), ("z", scalar("overlay-only"))]),
+        )]));
+        let merged = as_obj(deep_merge_hocon_objects(base, overlay));
+        let a = as_obj(merged.get("a").unwrap().clone());
+        // Overlay wins on overlapping leaf, both-side-only leaves preserved.
+        assert_eq!(a.get("x"), Some(&scalar("from-overlay")));
+        assert_eq!(a.get("y"), Some(&scalar("base-only")));
+        assert_eq!(a.get("z"), Some(&scalar("overlay-only")));
+    }
+
+    #[test]
+    fn deep_merge_preserves_key_position_for_existing_keys() {
+        // After overlay update of "a", "a" stays at position 0 — IndexMap
+        // insert on existing key preserves its position. The refactor uses
+        // mem::take + re-insert, which must keep the same position.
+        let base = as_obj(obj(&[
+            ("a", obj(&[("x", scalar("1"))])),
+            ("b", scalar("2")),
+        ]));
+        let overlay = as_obj(obj(&[("a", obj(&[("y", scalar("3"))]))]));
+        let merged = as_obj(deep_merge_hocon_objects(base, overlay));
+        let keys: Vec<&String> = merged.keys().collect();
+        assert_eq!(keys, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn deep_merge_nonobject_then_object_overlays() {
+        // base "a" is a scalar; overlay "a" is an object → overlay wins
+        // (no deep merge, since base is not an object).
+        let base = as_obj(obj(&[("a", scalar("scalar-base"))]));
+        let overlay = as_obj(obj(&[("a", obj(&[("nested", scalar("v"))]))]));
+        let merged = as_obj(deep_merge_hocon_objects(base, overlay));
+        let a = as_obj(merged.get("a").unwrap().clone());
+        assert_eq!(a.get("nested"), Some(&scalar("v")));
+    }
+
+    #[test]
+    fn deep_merge_handles_deeply_nested_without_quadratic_clones() {
+        // Smoke test for the refactor's primary motivation. Builds a
+        // 10-level-deep nested base and overlay, then merges. Before the
+        // fix this would re-clone every subtree per level (O(N²) work);
+        // after the fix it's O(N) total. We don't assert timing here —
+        // the value is that this exercises the deep recursion path.
+        fn build(depth: usize, leaf_label: &str) -> HoconValue {
+            if depth == 0 {
+                return scalar(leaf_label);
+            }
+            obj(&[("nested", build(depth - 1, leaf_label))])
+        }
+        let base = as_obj(build(10, "base-leaf"));
+        let overlay = as_obj(build(10, "overlay-leaf"));
+        let merged = deep_merge_hocon_objects(base, overlay);
+
+        // Walk down to the leaf, assert overlay won.
+        let mut cur = merged;
+        for _ in 0..10 {
+            let m = as_obj(cur);
+            cur = m.get("nested").cloned().unwrap();
+        }
+        assert_eq!(cur, scalar("overlay-leaf"));
     }
 }
