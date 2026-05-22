@@ -503,8 +503,8 @@ same item descriptions verbatim.
   tests: tests/include_test.rs:74 (include_relativize_quoted_key_with_dots); tests/integration_test.rs:510 (nested_include_resolves_substitutions_in_scope); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
   status: ✅
 - **S14c.2** Original (non-relativized) path also tried as fallback — §Include semantics: substitution (L1048)
-  tests: tests/lightbend_test.rs:221 (lightbend_test03_includes_with_substitution_fallback)
-  status: ❌ ([#44](https://github.com/o3co/rs.hocon/issues/44)) — non-relativized fallback is not implemented; the cited test is written to accept either success or a substitution error, so passing the test does not prove correctness
+  tests: tests/lightbend_test.rs:221 (lightbend_test03_includes_with_substitution_fallback); tests/include_test.rs (s14c_2_ancestor_scope_var_fallback_after_relativization, s14c_2_relativized_path_still_wins_when_both_exist, s14c_2_optional_substitution_falls_back_to_original, s14c_2_neither_path_resolves_still_errors)
+  status: ✅ — fixed in [#44](https://github.com/o3co/rs.hocon/issues/44); `resolve_subst_inner` falls back to `lookup_path(self.root, &s.segments[s.prefix_len..])` after the relativized lookup misses and before env-var fallback.
 
 ### S14d. Include semantics: missing / required
 

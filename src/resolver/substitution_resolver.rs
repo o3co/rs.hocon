@@ -319,6 +319,58 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
+        // S14c.2 (rs.hocon#44): config-path fallback for relativized substitutions.
+        //
+        // When a substitution inside an included file references an ancestor-scope
+        // variable that doesn't exist at the relativized path, try the ORIGINAL
+        // (non-relativized) path against the merged root. This matches Lightbend's
+        // "resolve against the fully merged tree" behaviour — included files see
+        // ancestor variables that don't exist at the include's prefix scope.
+        //
+        // Tried only after the relativized lookup misses, so the relativized path
+        // still wins when both exist. Tried BEFORE env-var fallback so config
+        // values take precedence over env vars (matching the primary-lookup
+        // ordering).
+        //
+        // Delayed-merge mirror: when the fallback resolves to an `Object` AND the
+        // original path is single-segment AND the root has a prior value for that
+        // segment, deep-merge prior + current — same rule the primary lookup
+        // applies (see lines 295-313 above). Without this, a config like
+        // `y = { a = 1 }; y = ${z}; z = { b = 2 }; bar { include "..." }` where
+        // the included file does `ref = ${y}` would yield `bar.ref = { b = 2 }`
+        // via the fallback while `y` at root would yield `{ a = 1, b = 2 }` —
+        // a silent divergence. See Codex review on PR #117 for the reproducer.
+        if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
+            let original_segments = &s.segments[s.prefix_len..];
+            if let Some(fallback_found) = lookup_path(self.root, original_segments).cloned() {
+                let mut result = self.resolve_val(&fallback_found, scope)?;
+
+                if original_segments.len() == 1 {
+                    if let Some(HoconValue::Object(ref current_fields)) = result {
+                        let root_seg = original_segments
+                            .first()
+                            .map(|s| s.text.as_str())
+                            .unwrap_or("");
+                        let prior = self.root.prior_values.get(root_seg).cloned();
+                        if let Some(prior) = prior {
+                            if let Some(HoconValue::Object(prior_fields)) =
+                                self.resolve_val(&prior, scope)?
+                            {
+                                let merged =
+                                    deep_merge_hocon_objects(prior_fields, current_fields.clone());
+                                result = Some(merged);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(ref r) = result {
+                    self.cache.insert(key.to_string(), r.clone());
+                }
+                return Ok(result);
+            }
+        }
+
         // S13c: env-var list expansion — `${X[]}` / `${?X[]}`.
         // When list_suffix=true and config lookup missed, delegate entirely to
         // resolve_env_list. The scalar env fallback below is SUPPRESSED (S13c.5).

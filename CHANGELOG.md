@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — S14c.2 config path fallback for relativized substitutions
+
+- **Substitutions inside included files now fall back to the original (non-relativized) config path when the relativized path misses** ([#44](https://github.com/o3co/rs.hocon/issues/44)). Per the Lightbend reference implementation's "resolve against the fully merged tree" behaviour, an included file's `${y}` reference must see `y` defined at an ancestor scope even after relativization rewrites the substitution to `${prefix.y}`. Previously only env-var fallback honoured the original path; config-path lookup tried only the relativized form, so `${y}` inside an included file mounted at `bar { include "..." }` errored as "could not resolve substitution: ${bar.y}" when `y` only existed at root. The fix in `resolve_subst_inner` adds a `lookup_path(self.root, &s.segments[s.prefix_len..])` fallback after the relativized lookup misses and before env-var fallback — so the relativized path still wins when both exist, and env-vars still take precedence over a non-existent original path. Pinned by 4 new tests in `tests/include_test.rs` (`s14c_2_*`).
+
 ### Performance — resolver clone reduction
 
 - **`deep_merge_hocon_objects` no longer clones the existing subtree or the overlay's `new_fields` on each recursive call** ([#23](https://github.com/o3co/rs.hocon/issues/23)). The pre-fix `(merged.get(&k).cloned(), &v)` shape produced O(N²) work for an N-deep nested object merge because every level deep-cloned the subtree below it. The refactor peeks at types by reference (`matches!`), then takes ownership of the existing inner `IndexMap` via `mem::take` and consumes `v` directly — both clones eliminated. Observable behaviour (overlay-wins on scalars/arrays, deep-merge on object/object, IndexMap position preserved on existing-key updates) is unchanged and pinned by 6 new unit tests in `src/resolver/utils.rs`.
