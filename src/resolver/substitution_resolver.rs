@@ -570,6 +570,21 @@ impl<'a> SubstitutionResolver<'a> {
         let existing = self
             .resolve_val(&a.existing, scope)?
             .unwrap_or_else(|| HoconValue::Array(vec![]));
+
+        // E12: under allow_unresolved, if the prior value is itself an unresolved
+        // placeholder (e.g. `x = ${missing}\nx += 1`), defer the append by
+        // returning a sentinel Placeholder. Mirrors the resolve_concat short-
+        // circuit at the top of this file. Without this guard, the S13b.2
+        // non-array check below would classify the placeholder as a concrete
+        // non-array and throw, violating the E12 deferral contract.
+        if self.allow_unresolved && matches!(existing, HoconValue::Placeholder(_)) {
+            use crate::value::PlaceholderValue;
+            return Ok(HoconValue::Placeholder(PlaceholderValue {
+                path: "<unresolved-append>".into(),
+                optional: false,
+            }));
+        }
+
         let elem = self.resolve_val(&a.elem, scope)?;
 
         // S13b.2 (HOCON.md L732): `a += b` is sugar for `a = ${?a} [b]`. The
