@@ -26,7 +26,7 @@ Cross-impl bugfix release: addresses [go.hocon#105](https://github.com/o3co/go.h
 This release adds the Lightbend-aligned `parse_string_with_options` →
 `with_fallback` → `resolve()` lifecycle. Existing `parse` / `parse_file`
 behaviour is unchanged (still parse-and-resolve in one call); the new API
-surface is purely additive. Requested by [@cgordon](https://github.com/cgordon) (see [go.hocon#99](https://github.com/o3co/go.hocon/issues/99) — the cross-impl ask landed in the go.hocon issue tracker; ts.hocon/rs.hocon issues numbered 99 are unrelated CI PRs).
+surface is purely additive. Requested by [@cgordon](https://github.com/cgordon) (see [go.hocon#99](https://github.com/o3co/go.hocon/issues/99) — the cross-impl ask landed in the go.hocon issue tracker; ts.hocon/rs.hocon PRs numbered 99 are unrelated CI PRs).
 
 **New entry points:**
 - `parse_string_with_options(input, ParseOptions)` and
