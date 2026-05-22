@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — S10.8 spec compliance
+
+- **Unquoted space-concat in field keys now accepted as a single key** ([#66](https://github.com/o3co/rs.hocon/issues/66)). Per HOCON spec L317 ("string value concatenation is allowed in field keys") and L553-560 (`a b c : 42` is equivalent to `"a b c" : 42`), space-separated unquoted tokens before the `:`/`=`/`{`/`+=` separator must merge into a single key. Previously `foo bar = 1` errored with `unexpected token after key: Unquoted`; now it parses as key `"foo bar"`. The fix extends `parse_key` in `src/parser.rs` with a space-concat continuation branch: when the next key token has `preceding_space`, the first dot-split piece merges into the LAST existing segment with a literal space; any remaining dot-split pieces become new path segments. Quoted+unquoted mixed concat (`"foo bar" baz = 1`) and inline-object shorthand (`a b { x = 1 }`) work transitively. A leading `.` in the spaced-in token still acts as a path separator per S11.1, not a literal: `a .b = 1` → `["a", "b"]` and `a.b .c = 1` → `["a", "b", "c"]` (the leading dot is NOT folded into the previous segment). Cross-impl with [ts.hocon PR #128](https://github.com/o3co/ts.hocon/pull/128).
+
 ### Fixed — S17.6 spec compliance
 
 - **`get_string()` on a null-typed scalar now errors instead of returning `Ok("null")`** ([#80](https://github.com/o3co/rs.hocon/issues/80)). Per HOCON spec L1252, "if the application asks for a specific type and finds null instead, that should usually result in an error" — including `String`. Previously `get_i64` and `get_bool` on null correctly errored but `get_string` returned the raw `"null"` literal. The fix adds a `ScalarType::Null` guard at the top of `get_string`, matching the existing behaviour of the other typed getters.

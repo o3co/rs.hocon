@@ -305,13 +305,32 @@ impl<'a> Parser<'a> {
     fn parse_key(&mut self) -> Result<Vec<String>, ParseError> {
         let mut segments: Vec<String> = Vec::new();
         let mut trailing_dot;
+        // S10.8 (HOCON.md L317 + L553-560): "path expressions work like value
+        // concatenations" — when the next key token has whitespace before it
+        // (and is not a dot-continuation), it is a space-concat continuation
+        // that merges into the LAST existing segment with a literal space:
+        //   `a b = 1`     → key ['a b']
+        //   `a b c : 42`  → key ['a b c']        (spec L556 example)
+        //   `a.b c = 1`   → key ['a', 'b c']     (concat into last segment)
+        //   `"a" b = 1`   → key ['a b']          (quoted + unquoted)
+        //   `a .b = 1`    → key ['a', 'b']       (leading '.' stays a separator
+        //                                         per S11.1, not folded)
+        // Newlines break the chain (S10.7): the lexer emits a Newline token
+        // which falls through to the loop's else branch and exits.
+        let mut space_concat = false;
 
         loop {
             let kind = self.peek_kind();
             if kind == TokenKind::QuotedString {
                 let val = self.peek_value().to_string();
                 self.advance();
-                segments.push(val); // quoted: no dot split
+                if space_concat && !segments.is_empty() {
+                    let last_idx = segments.len() - 1;
+                    segments[last_idx].push(' ');
+                    segments[last_idx].push_str(&val);
+                } else {
+                    segments.push(val); // quoted: no dot split
+                }
                 trailing_dot = false;
             } else if kind == TokenKind::Unquoted {
                 let val = self.peek_value().to_string();
@@ -321,6 +340,7 @@ impl<'a> Parser<'a> {
                 // Split unquoted key at dots, tracking the char offset of each
                 // segment within the original raw token so S8.6 errors below
                 // can point at the offending segment, not the token start.
+                let mut new_segments: Vec<String> = Vec::new();
                 let mut seg_char_offset: usize = 0;
                 for part in val.split('.') {
                     if !part.is_empty() {
@@ -356,12 +376,36 @@ impl<'a> Parser<'a> {
                                 });
                             }
                         }
-                        segments.push(part.to_string());
+                        new_segments.push(part.to_string());
                     }
                     // Advance offset past this segment + its trailing '.' separator
                     // (the '.' is consumed by split; account for it by adding 1
                     // unless this is the last segment).
                     seg_char_offset += part.chars().count() + 1;
+                }
+                if space_concat && !new_segments.is_empty() && !segments.is_empty() {
+                    // S10.8 + S11.1 interaction: if the spaced-in token starts
+                    // with '.', the leading '.' is a path separator that
+                    // survives the space — not a literal char to fold into
+                    // the previous segment.
+                    //   `a .b = 1`     → ['a', 'b']
+                    //   `a .b.c = 1`   → ['a', 'b', 'c']
+                    //   `"a" .b = 1`   → ['a', 'b']
+                    // Otherwise the first piece merges into the last existing
+                    // segment; any remaining dot-split pieces become new
+                    // path segments.
+                    if val.starts_with('.') {
+                        segments.extend(new_segments);
+                    } else {
+                        let mut iter = new_segments.into_iter();
+                        let head = iter.next().expect("checked !is_empty above");
+                        let last_idx = segments.len() - 1;
+                        segments[last_idx].push(' ');
+                        segments[last_idx].push_str(&head);
+                        segments.extend(iter);
+                    }
+                } else {
+                    segments.extend(new_segments);
                 }
                 trailing_dot = val.ends_with('.');
             } else {
@@ -376,6 +420,8 @@ impl<'a> Parser<'a> {
                 }
                 break;
             }
+            // The continuation we just took has been consumed.
+            space_concat = false;
 
             if trailing_dot {
                 continue;
@@ -394,6 +440,17 @@ impl<'a> Parser<'a> {
                 }
                 // For ".d"-style tokens, fall through to the next loop iteration
                 // which will split ".d" on '.' → ["", "d"] and push "d".
+                continue;
+            }
+
+            // S10.8 space-concat continuation: an unquoted-or-quoted token
+            // separated from the previous key token by whitespace is part of
+            // the same key.
+            let next_kind = self.peek_kind();
+            if (next_kind == TokenKind::Unquoted || next_kind == TokenKind::QuotedString)
+                && self.peek_preceding_space()
+            {
+                space_concat = true;
                 continue;
             }
 

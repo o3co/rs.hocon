@@ -743,8 +743,8 @@ fn s10_7_concat_does_not_span_newline() {
 
 // --- S10.8: string concat allowed in field keys (HOCON L317) -----------------
 // Spec L553-560: path expressions work like value concatenations, so
-// `a b c : 42` is a single-element path with key "a b c". ✅ for quoted keys;
-// unquoted space-separated keys are ❌.
+// `a b c : 42` is a single-element path with key "a b c". Both quoted and
+// unquoted space-separated forms must be accepted (#66 fixed in v1.5.0).
 #[test]
 fn s10_8_quoted_key_with_space_allowed() {
     // A quoted string with spaces as a key is unambiguous and must be accepted.
@@ -757,26 +757,100 @@ fn s10_8_quoted_key_with_space_allowed() {
 }
 
 #[test]
-fn s10_8_unquoted_space_key_pin() {
-    // BUG: `a b c : 42` (spec example L556) should set key "a b c".
-    // Currently rs.hocon rejects this as a parse error.
-    assert!(
-        parse("foo bar = 42").is_err(),
-        "[pin] unquoted space-concat key currently rejected — update when fixed"
+fn s10_8_unquoted_space_key_basic() {
+    // Basic 2-token unquoted space-concat key.
+    let cfg = parse("foo bar = 1").expect("parse must succeed per HOCON L317/L556");
+    assert_eq!(
+        cfg.get_i64("foo bar")
+            .expect("key 'foo bar' must exist per HOCON L317/L556"),
+        1,
+        "unquoted space-concat key must produce key 'foo bar' per HOCON L556"
     );
 }
 
 #[test]
-#[ignore = "spec violation: unquoted space-concat key `a b c` must be accepted per HOCON L317/L556, see #66"]
-fn s10_8_unquoted_space_key_spec() {
-    // Spec example (L556): `a b c : 42` is equivalent to `"a b c" : 42`
-    let cfg = parse("foo bar = 42").expect("parse must succeed per HOCON L317/L556");
+fn s10_8_unquoted_space_key_spec_three_token() {
+    // Spec example (L556): `a b c : 42` is equivalent to `"a b c" : 42`.
+    let cfg = parse("a b c : 42").expect("parse must succeed per HOCON L317/L556");
     assert_eq!(
-        cfg.get_i64("foo bar")
-            .expect("key 'foo bar' must exist per HOCON L556"),
+        cfg.get_i64("a b c")
+            .expect("key 'a b c' must exist per HOCON L556"),
         42,
-        "unquoted space-concat key must produce key 'foo bar' per HOCON L556"
+        "three-token space-concat key must produce key 'a b c' per HOCON L556"
     );
+}
+
+#[test]
+fn s10_8_space_concat_after_dotted_path() {
+    // `a.b c = 1` → ['a', 'b c']: concat merges into the LAST path segment.
+    let cfg = parse("a.b c = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.\"b c\"").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_space_concat_dotted_tail() {
+    // `a b.c = 1` → ['a b', 'c']: head merges, tail pushes as new segment.
+    let cfg = parse("a b.c = 1").unwrap();
+    assert_eq!(cfg.get_i64("\"a b\".c").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_quoted_then_unquoted_space_concat() {
+    // `"foo bar" baz = 1` → ['foo bar baz'].
+    let cfg = parse("\"foo bar\" baz = 1").unwrap();
+    assert_eq!(cfg.get_i64("foo bar baz").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_inline_object_shorthand() {
+    // `a b { x = 1 }` → key ['a b'], value the inline object.
+    let cfg = parse("a b { x = 1 }").unwrap();
+    assert_eq!(cfg.get_i64("\"a b\".x").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_leading_dot_after_whitespace_stays_separator() {
+    // `a .b = 1` → ['a', 'b'] (NOT ['a b']). The leading '.' survives the space
+    // as a path separator per S11.1, not folded into the previous segment.
+    let cfg = parse("a .b = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.b").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_leading_dot_after_whitespace_multi_segment_tail() {
+    // `a .b.c = 1` → ['a', 'b', 'c'].
+    let cfg = parse("a .b.c = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.b.c").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_leading_dot_after_quoted_then_whitespace() {
+    // `"a" .b = 1` → ['a', 'b'].
+    let cfg = parse("\"a\" .b = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.b").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_dotted_path_then_whitespace_then_dot() {
+    // `a.b .c = 1` → ['a', 'b', 'c'] (Copilot-flagged convergence case on ts).
+    let cfg = parse("a.b .c = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.b.c").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_quoted_dotted_path_then_whitespace_then_dot() {
+    // `"a.b" .c = 1` → ['a.b', 'c']: the literal 'a.b' segment is preserved
+    // (quoted keys do NOT path-split), and `.c` becomes a sibling segment.
+    let cfg = parse("\"a.b\" .c = 1").unwrap();
+    assert_eq!(cfg.get_i64("\"a.b\".c").unwrap(), 1);
+}
+
+#[test]
+fn s10_8_tab_between_key_tokens_is_space_concat() {
+    // `precedingSpace` covers any HOCON whitespace; the merge joiner is
+    // canonical U+0020 (per S10.6 whitespace normalisation).
+    let cfg = parse("a\tb = 1").unwrap();
+    assert_eq!(cfg.get_i64("\"a b\"").unwrap(), 1);
 }
 
 // --- S10.13: array/object in string concat → error (HOCON L373) --------------
