@@ -744,7 +744,7 @@ fn s10_7_concat_does_not_span_newline() {
 // --- S10.8: string concat allowed in field keys (HOCON L317) -----------------
 // Spec L553-560: path expressions work like value concatenations, so
 // `a b c : 42` is a single-element path with key "a b c". Both quoted and
-// unquoted space-separated forms must be accepted (#66 fixed in v1.5.0).
+// unquoted space-separated forms must be accepted (#66).
 #[test]
 fn s10_8_quoted_key_with_space_allowed() {
     // A quoted string with spaces as a key is unambiguous and must be accepted.
