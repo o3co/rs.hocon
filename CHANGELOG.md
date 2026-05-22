@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-23
+
+Cross-impl spec-compliance + performance release with [go.hocon v1.5.0](https://github.com/o3co/go.hocon/releases/tag/v1.5.0) and [ts.hocon v1.5.0](https://github.com/o3co/ts.hocon/releases/tag/v1.5.0). One new feature ([#44](https://github.com/o3co/rs.hocon/issues/44), S14c.2 include-relativization fallback), two resolver perf wins ([#23](https://github.com/o3co/rs.hocon/issues/23), [#47](https://github.com/o3co/rs.hocon/issues/47)), three spec-compliance bugfixes ([#66](https://github.com/o3co/rs.hocon/issues/66), [#80](https://github.com/o3co/rs.hocon/issues/80), [#72](https://github.com/o3co/rs.hocon/issues/72)). No public API changes; safe drop-in upgrade from v1.4.1.
+
 ### Added — S14c.2 config path fallback for relativized substitutions
 
 - **Substitutions inside included files now fall back to the original (non-relativized) config path when the relativized path misses** ([#44](https://github.com/o3co/rs.hocon/issues/44)). Per the Lightbend reference implementation's "resolve against the fully merged tree" behaviour, an included file's `${y}` reference must see `y` defined at an ancestor scope even after relativization rewrites the substitution to `${prefix.y}`. Previously only env-var fallback honoured the original path; config-path lookup tried only the relativized form, so `${y}` inside an included file mounted at `bar { include "..." }` errored as "could not resolve substitution: ${bar.y}" when `y` only existed at root. The fix in `resolve_subst_inner` adds a `lookup_path(self.root, &s.segments[s.prefix_len..])` fallback after the relativized lookup misses and before env-var fallback — so the relativized path still wins when both exist, and env-vars still take precedence over a non-existent original path. Pinned by 4 new tests in `tests/include_test.rs` (`s14c_2_*`).
