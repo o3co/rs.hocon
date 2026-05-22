@@ -1030,6 +1030,36 @@ fn s13b_2_plus_eq_on_object_errors() {
     );
 }
 
+#[test]
+fn s13b_2_plus_eq_under_allow_unresolved_defers_on_unresolved_prior() {
+    // Codex P2 cross-impl finding: when allow_unresolved=true and the prior
+    // value of an appended key is itself an unresolved Placeholder (e.g.
+    // `x = ${missing}\nx += 1`), the S13b.2 non-array check must NOT fire —
+    // the append should defer for later resolution. Pre-fix this raised
+    // "'+=' on non-array value: prior value is placeholder (spec L732)".
+    use hocon::{parse_string_with_options, ParseOptions, ResolveOptions};
+    let cfg = parse_string_with_options(
+        "x = ${missing}\nx += 1",
+        ParseOptions::defaults().with_resolve_substitutions(false),
+    )
+    .expect("parse should succeed without resolution");
+    let resolved = cfg
+        .resolve(
+            ResolveOptions::defaults()
+                .with_allow_unresolved(true)
+                .with_use_system_environment(false),
+        )
+        .expect("allow_unresolved must defer, not error");
+    assert!(
+        !resolved.is_resolved(),
+        "result must remain unresolved (x's prior was unresolved)"
+    );
+    assert!(
+        resolved.get_string("x").is_err(),
+        "getter on unresolved path must error (NotResolved)"
+    );
+}
+
 // =============================================================================
 // Spec compliance Phase 3 (issue #73): substitution & include coverage (12 items)
 // S13.3, S13.5, S13.9, S13.13, S13.14, S13.16, S13a.10, S13a.13,
