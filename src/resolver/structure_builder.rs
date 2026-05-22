@@ -66,7 +66,7 @@ impl<'a> StructureBuilder<'a> {
                 if !path_prefix.is_empty() {
                     relativize_res_obj(&mut included, path_prefix);
                 }
-                deep_merge_res_obj_into(obj, included);
+                deep_merge_res_obj_into(obj, included, path_prefix);
                 return Ok(());
             }
 
@@ -86,7 +86,7 @@ impl<'a> StructureBuilder<'a> {
                 if !path_prefix.is_empty() {
                     relativize_res_obj(&mut included, path_prefix);
                 }
-                deep_merge_res_obj_into(obj, included);
+                deep_merge_res_obj_into(obj, included, path_prefix);
                 return Ok(());
             }
 
@@ -184,7 +184,7 @@ impl<'a> StructureBuilder<'a> {
         // Deep merge if both are ResObj
         if let (Some(ResolverValue::Obj(_)), ResolverValue::Obj(new_obj)) = (&existing, &new_val) {
             if let Some(ResolverValue::Obj(existing_obj)) = obj.fields.get_mut(&head) {
-                deep_merge_res_obj_into(existing_obj, new_obj.clone());
+                deep_merge_res_obj_into(existing_obj, new_obj.clone(), &child_prefix);
                 return Ok(());
             }
         }

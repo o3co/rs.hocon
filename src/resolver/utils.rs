@@ -86,10 +86,22 @@ fn as_res_obj(val: &ResolverValue) -> Option<ResObj> {
     }
 }
 
-pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
+pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix: &[String]) {
     for (k, src_val) in src.fields {
         let dst_is_obj = dst.fields.get(&k).and_then(as_res_obj);
         let src_obj = as_res_obj(&src_val);
+
+        // Full dotted path of this field (`path_prefix + k`). The fold uses
+        // this so a self-reference `${full_key}` (e.g. `${r.x}` while merging
+        // inside an `r` object) is correctly detected — the pre-fix code used
+        // bare leaf `k` and missed full-key self-refs, causing chain-length-4
+        // multi-segment patterns (`r.x = ${r.x} [...]` × 4) to overflow the
+        // stack at resolve time. Cross-impl follow-up after rs.hocon#119
+        // post-Codex review (go.hocon was unaffected because its setPath
+        // writes priorValues keyed by full dotted path directly).
+        let mut child_prefix = path_prefix.to_vec();
+        child_prefix.push(k.clone());
+        let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
 
         if let (Some(mut dst_obj), Some(src_obj)) = (dst_is_obj, src_obj) {
             // #120 cross-impl: save dst's pre-merge value as the prior at the
@@ -97,23 +109,17 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
             // Otherwise a `${k}` in the merged result (e.g. `o = { history =
             // ${o}, v = 2 }` included into a parent `o = { v = 1 }`) has no
             // lookback target — resolve_subst hits the "no prior" error.
-            //
-            // Key is bare-leaf: deep_merge operates per nesting level; for
-            // top-level include-merge it matches the substitution path
-            // directly (e.g. ${o} → key "o"). For nested include-merge the
-            // included substitutions have already been relativized by
-            // structure_builder, so they target the absolute outer path —
-            // never the bare-leaf inner key. The bare-leaf save is correct
-            // for the surface that needs it.
             if let Some(old) = dst.fields.get(&k) {
                 let prior_existing = dst.prior_values.get(&k).cloned();
-                if let Some(prior) =
-                    super::fold_self_ref::fold_or_skip_prior(old, &k, prior_existing.as_ref())
-                {
+                if let Some(prior) = super::fold_self_ref::fold_or_skip_prior(
+                    old,
+                    &full_key,
+                    prior_existing.as_ref(),
+                ) {
                     dst.prior_values.insert(k.clone(), prior);
                 }
             }
-            deep_merge_res_obj_into(&mut dst_obj, src_obj);
+            deep_merge_res_obj_into(&mut dst_obj, src_obj, &child_prefix);
             dst.fields.insert(k, ResolverValue::Obj(dst_obj));
             continue;
         }
@@ -126,7 +132,7 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj) {
             // is itself a self-referential concat from a sibling include).
             let prior_existing = dst.prior_values.get(&k).cloned();
             if let Some(prior) =
-                super::fold_self_ref::fold_or_skip_prior(old, &k, prior_existing.as_ref())
+                super::fold_self_ref::fold_or_skip_prior(old, &full_key, prior_existing.as_ref())
             {
                 dst.prior_values.insert(k.clone(), prior);
             }

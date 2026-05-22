@@ -59,7 +59,11 @@ pub(crate) fn load_include(
         match load_single_include(&candidate, opts) {
             Ok(obj) => {
                 found_any = true;
-                deep_merge_res_obj_into(&mut merged, obj);
+                // Extension-probe merge: substitutions inside an included file
+                // are still file-local at this stage (relativization happens at
+                // the caller side after the file group merges complete). Pass
+                // empty prefix so fold uses bare-leaf keys.
+                deep_merge_res_obj_into(&mut merged, obj, &[]);
             }
             Err(e) => {
                 if candidate.exists() {

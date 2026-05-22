@@ -125,6 +125,36 @@ r {
     assert_eq!(get_string_array(&cfg, "r.x"), vec!["a", "b", "c"]);
 }
 
+#[test]
+fn issue119_multi_segment_chain_4() {
+    // Codex review on rs.hocon#119: induction must hold beyond length 3.
+    // Chain-4 over a dotted path stresses fold_nested_self_refs's leaf-prior
+    // lookup at each step — if any intermediate save misses the full-key fold,
+    // step 4 re-introduces ${r.x} into the saved root prior and loops.
+    let src = r#"
+r.x = ["a"]
+r.x = ${r.x} ["b"]
+r.x = ${r.x} ["c"]
+r.x = ${r.x} ["d"]
+"#;
+    let cfg = hocon::parse(src).expect("parse/resolve");
+    assert_eq!(get_string_array(&cfg, "r.x"), vec!["a", "b", "c", "d"]);
+}
+
+#[test]
+fn issue119_nested_object_scoped_chain_4() {
+    let src = r#"
+r {
+  x = ["a"]
+  x = ${r.x} ["b"]
+  x = ${r.x} ["c"]
+  x = ${r.x} ["d"]
+}
+"#;
+    let cfg = hocon::parse(src).expect("parse/resolve");
+    assert_eq!(get_string_array(&cfg, "r.x"), vec!["a", "b", "c", "d"]);
+}
+
 // ---- #120 equivalent — value-interior self-reference ----
 
 #[test]
@@ -229,6 +259,32 @@ include "{}/inc.conf""#,
     let cfg = hocon::parse(&input).expect("parse/resolve");
     assert_eq!(cfg.get_i64("o.v").unwrap(), 2);
     assert_eq!(cfg.get_i64("o.history.v").unwrap(), 1);
+}
+
+#[test]
+fn issue120_nested_include_merge_under_object() {
+    // Codex review on rs.hocon#119: nested-include-merge under an object —
+    // parent has `r { s = { v = 1 } }`, then a second `r { include "inc.conf" }`
+    // where inc.conf has `s = { history = ${s}, v = 2 }`. After include
+    // relativization the substitution becomes ${r.s}, but the inner deep_merge
+    // happens at the `r` scope and saves the prior under bare key "s". The
+    // resolver navigates root.prior_values["r"], misses the saved prior at the
+    // inner `s` scope, and either errors or returns wrong values.
+    let dir = tempdir().unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    fs::write(
+        dir.path().join("inc.conf"),
+        r#"s = { history = ${s}, v = 2 }"#,
+    )
+    .unwrap();
+    let input = format!(
+        r#"r {{ s = {{ v = 1 }} }}
+r {{ include "{}/inc.conf" }}"#,
+        dir_str
+    );
+    let cfg = hocon::parse(&input).expect("parse/resolve");
+    assert_eq!(cfg.get_i64("r.s.v").unwrap(), 2);
+    assert_eq!(cfg.get_i64("r.s.history.v").unwrap(), 1);
 }
 
 #[test]
