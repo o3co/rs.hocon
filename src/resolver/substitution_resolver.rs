@@ -53,8 +53,12 @@ impl<'a> SubstitutionResolver<'a> {
     }
 
     pub fn resolve(&mut self) -> Result<HoconValue, ResolveError> {
-        let root = self.root.clone();
-        self.resolve_res_obj(&root)
+        // `self.root: &'a ResObj` is already a shared reference with lifetime
+        // 'a; copying the reference value (not cloning the underlying ResObj)
+        // is enough to decouple the read of self.root from the &mut self
+        // borrow that resolve_res_obj acquires. See issue #47.
+        let root: &ResObj = self.root;
+        self.resolve_res_obj(root)
     }
 
     fn resolve_res_obj(&mut self, obj: &ResObj) -> Result<HoconValue, ResolveError> {
