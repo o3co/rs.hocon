@@ -218,8 +218,8 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:689 (s10_7_concat_does_not_span_newline)
   status: ✅
 - **S10.8** String concat allowed in field keys — §Value concatenation (L317)
-  tests: tests/integration_test.rs:711 (s10_8_quoted_key_with_space_allowed); tests/integration_test.rs:722 (s10_8_unquoted_space_key_pin); tests/integration_test.rs:733 (s10_8_unquoted_space_key_spec)
-  status: ⚠️ quoted form ✅; unquoted space-concat key ❌ (see #66)
+  tests: tests/integration_test.rs (s10_8_* it blocks: quoted, basic, three-token, dotted-prefix concat, dotted-tail concat, quoted+unquoted, inline-object shorthand, leading-dot + S11.1 interaction, tab whitespace)
+  status: ✅ — fixed in #66; `parse_key` accepts space-concat continuations and merges into the LAST segment with literal space. Leading '.' after whitespace stays a path separator per S11.1.
 - **S10.9** `true`/`false` stringify to `"true"`/`"false"` in concat — §String value concatenation (L363)
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
