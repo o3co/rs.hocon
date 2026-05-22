@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -67,6 +67,45 @@ jobs:
 
       - run: cargo test
       - run: cargo test --features serde
+
+      - name: Extract CHANGELOG section for this tag
+        # Pulls the section between `## [VERSION]` and the next `## [`
+        # from CHANGELOG.md so the GitHub Release body matches what's
+        # already committed and reviewed.
+        #
+        # Uses `index($0, str) == 1` (prefix match) rather than awk regex
+        # so SemVer build metadata (`+...`) and other regex metacharacters
+        # in version strings can't break or overmatch the section header.
+        #
+        # Runs BEFORE `cargo publish` (and the GitHub Release step below)
+        # so that a missing/incorrect CHANGELOG heading fails the run
+        # without first publishing to crates.io — crates.io doesn't allow
+        # republishing the same version, so an irreversible publish
+        # followed by a failed release step would leave a half-shipped tag.
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { flag=1; next }
+            flag && index($0, "## [") == 1 { flag=0 }
+            flag
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::error::No CHANGELOG section found for v${VERSION}; aborting release so an empty body doesn't ship"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        # Runs before `cargo publish` so a Release-creation failure doesn't
+        # leave us with a crate published but no GitHub Release entry
+        # (crates.io forbids republishing the same version, so a retry
+        # would fail at `cargo publish` and never reach this step again).
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: /tmp/release-notes.md
+          fail_on_unmatched_files: false
+          make_latest: true
 
       - name: Authenticate with crates.io
         id: auth
