@@ -311,6 +311,24 @@ mod tests {
     }
 
     #[test]
+    fn deep_merge_empty_overlay_is_noop() {
+        // Pinning the obvious-by-inspection edge case: empty overlay
+        // leaves base untouched, empty base accepts overlay as-is. Cheap
+        // contract guard for the refactored loop.
+        let base = as_obj(obj(&[("a", scalar("x"))]));
+        let overlay: IndexMap<String, HoconValue> = IndexMap::new();
+        let merged = as_obj(deep_merge_hocon_objects(base, overlay));
+        assert_eq!(merged.get("a"), Some(&scalar("x")));
+        assert_eq!(merged.len(), 1);
+
+        let empty_base: IndexMap<String, HoconValue> = IndexMap::new();
+        let overlay = as_obj(obj(&[("a", scalar("y"))]));
+        let merged = as_obj(deep_merge_hocon_objects(empty_base, overlay));
+        assert_eq!(merged.get("a"), Some(&scalar("y")));
+        assert_eq!(merged.len(), 1);
+    }
+
+    #[test]
     fn deep_merge_handles_deeply_nested_without_quadratic_clones() {
         // Smoke test for the refactor's primary motivation. Builds a
         // 10-level-deep nested base and overlay, then merges. Before the
