@@ -160,3 +160,86 @@ fn file_include_resolves_from_cwd_not_including_dir() {
     assert!(config.get_bool("bare_ok").unwrap());
     // file() with absolute path also found the child (child_key still 1)
 }
+
+// S14c.2 (rs.hocon#44): config-path fallback for relativized substitutions.
+//
+// When a substitution inside an included file references an ancestor-scope
+// variable that doesn't exist at the relativized path, resolution must fall
+// back to the original (non-relativized) path against the merged root —
+// matching Lightbend's "resolve against the fully merged tree" behaviour.
+//
+// Pre-fix: only env var fallback honoured the original path; config-path
+// fallback was missing, so `${y}` inside an included file relativized to
+// `${bar.y}` would fail when `y` only existed at root.
+
+#[test]
+fn s14c_2_ancestor_scope_var_fallback_after_relativization() {
+    let dir = tempdir().unwrap();
+    // child.conf references `y` which lives at the ROOT scope, not under the
+    // include's `bar` prefix. After relativization, `${y}` becomes `${bar.y}`,
+    // which doesn't exist — the fallback must try the original `${y}` path.
+    std::fs::write(dir.path().join("ref.conf"), "ref = ${y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(
+        r#"y = "root-y"
+bar {{ include "{}/ref.conf" }}
+"#,
+        dir_str
+    );
+    let config = hocon::parse(&input).unwrap();
+    // bar.ref should resolve to "root-y" via the original-path fallback.
+    assert_eq!(config.get_string("bar.ref").unwrap(), "root-y");
+}
+
+#[test]
+fn s14c_2_relativized_path_still_wins_when_both_exist() {
+    let dir = tempdir().unwrap();
+    // Both `y` (root) and `bar.y` (relativized) exist. The relativized path
+    // takes precedence — this pins that the fallback does NOT shadow the
+    // primary lookup.
+    std::fs::write(dir.path().join("ref.conf"), "y = \"local-y\"\nref = ${y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(
+        r#"y = "root-y"
+bar {{ include "{}/ref.conf" }}
+"#,
+        dir_str
+    );
+    let config = hocon::parse(&input).unwrap();
+    // bar.ref should see the relativized bar.y ("local-y"), not the root y.
+    assert_eq!(config.get_string("bar.ref").unwrap(), "local-y");
+    assert_eq!(config.get_string("y").unwrap(), "root-y");
+}
+
+#[test]
+fn s14c_2_optional_substitution_falls_back_to_original() {
+    let dir = tempdir().unwrap();
+    // Optional substitution form: `${?y}` — same fallback rule applies.
+    std::fs::write(dir.path().join("ref.conf"), "ref = ${?y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(
+        r#"y = "from-root"
+bar {{ include "{}/ref.conf" }}
+"#,
+        dir_str
+    );
+    let config = hocon::parse(&input).unwrap();
+    assert_eq!(config.get_string("bar.ref").unwrap(), "from-root");
+}
+
+#[test]
+fn s14c_2_neither_path_resolves_still_errors() {
+    let dir = tempdir().unwrap();
+    // Neither relativized (bar.y) nor original (y) exists — must still error
+    // (mandatory substitution). This pins that the fallback doesn't mask
+    // legitimate "key not found" errors.
+    std::fs::write(dir.path().join("ref.conf"), "ref = ${y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(r#"bar {{ include "{}/ref.conf" }}"#, dir_str);
+    let err = hocon::parse(&input).expect_err("expected resolve error");
+    assert!(
+        err.to_string().contains("y") || err.to_string().contains("resolve"),
+        "error should mention the missing key 'y' or resolution failure, got: {}",
+        err
+    );
+}

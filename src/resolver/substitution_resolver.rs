@@ -319,6 +319,29 @@ impl<'a> SubstitutionResolver<'a> {
             return Ok(result);
         }
 
+        // S14c.2 (rs.hocon#44): config-path fallback for relativized substitutions.
+        //
+        // When a substitution inside an included file references an ancestor-scope
+        // variable that doesn't exist at the relativized path, try the ORIGINAL
+        // (non-relativized) path against the merged root. This matches Lightbend's
+        // "resolve against the fully merged tree" behaviour — included files see
+        // ancestor variables that don't exist at the include's prefix scope.
+        //
+        // Tried only after the relativized lookup misses, so the relativized path
+        // still wins when both exist. Tried BEFORE env-var fallback so config
+        // values take precedence over env vars (matching the primary-lookup
+        // ordering).
+        if s.prefix_len > 0 && s.segments.len() > s.prefix_len {
+            let original_segments = &s.segments[s.prefix_len..];
+            if let Some(fallback_found) = lookup_path(self.root, original_segments).cloned() {
+                let result = self.resolve_val(&fallback_found, scope)?;
+                if let Some(ref r) = result {
+                    self.cache.insert(key.to_string(), r.clone());
+                }
+                return Ok(result);
+            }
+        }
+
         // S13c: env-var list expansion — `${X[]}` / `${?X[]}`.
         // When list_suffix=true and config lookup missed, delegate entirely to
         // resolve_env_list. The scalar env fallback below is SUPPRESSED (S13c.5).
