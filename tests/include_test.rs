@@ -228,6 +228,64 @@ bar {{ include "{}/ref.conf" }}
 }
 
 #[test]
+fn s14c_2_delayed_merge_preserved_via_fallback() {
+    // Regression for the Codex-flagged correctness bug on the original PR:
+    // when the fallback resolves to a single-segment root value that has a
+    // prior value (via reassignment-with-substitution), the delayed merge
+    // must still apply — otherwise included `${y}` would yield only the
+    // last reassignment and silently differ from a normal root `${y}` lookup.
+    //
+    // Setup:
+    //   y = { a = 1 }
+    //   y = ${z}          ← reassigns; primary lookup uses delayed merge
+    //   z = { b = 2 }
+    //   bar { include ref.conf }   # ref.conf: ref = ${y}
+    //
+    // Expected: bar.ref = { a = 1, b = 2 } (same as normal `y` would yield).
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("ref.conf"), "ref = ${y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    let input = format!(
+        r#"y = {{ a = 1 }}
+y = ${{z}}
+z = {{ b = 2 }}
+bar {{ include "{}/ref.conf" }}
+"#,
+        dir_str
+    );
+    let config = hocon::parse(&input).unwrap();
+    // Baseline: normal y lookup carries the delayed merge.
+    assert_eq!(config.get_i64("y.a").unwrap(), 1);
+    assert_eq!(config.get_i64("y.b").unwrap(), 2);
+    // Fallback must yield the same merged shape.
+    assert_eq!(config.get_i64("bar.ref.a").unwrap(), 1);
+    assert_eq!(config.get_i64("bar.ref.b").unwrap(), 2);
+}
+
+#[test]
+fn s14c_2_multi_level_include_relativization_chain() {
+    // Pin the prefix_len accumulation in `relativize_subst_paths`:
+    // an include inside an include should still find an ancestor-scope
+    // variable via the fallback (the inner include's prefix is `outer.inner`).
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("inner.conf"), "ref = ${y}\n").unwrap();
+    let dir_str = dir.path().display().to_string().replace('\\', "/");
+    std::fs::write(
+        dir.path().join("outer.conf"),
+        format!("inner {{ include \"{}/inner.conf\" }}\n", dir_str),
+    )
+    .unwrap();
+    let input = format!(
+        r#"y = "from-root"
+outer {{ include "{}/outer.conf" }}
+"#,
+        dir_str
+    );
+    let config = hocon::parse(&input).unwrap();
+    assert_eq!(config.get_string("outer.inner.ref").unwrap(), "from-root");
+}
+
+#[test]
 fn s14c_2_neither_path_resolves_still_errors() {
     let dir = tempdir().unwrap();
     // Neither relativized (bar.y) nor original (y) exists — must still error

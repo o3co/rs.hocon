@@ -220,30 +220,26 @@ fn lightbend_test02_empty_keys_and_quoted_paths() {
 
 #[test]
 fn lightbend_test03_includes_with_substitution_fallback() {
-    // test03.conf includes test01.conf inside a nested key, plus test03-included.conf.
-    // test01.conf contains ${ints.fortyTwo} which requires resolving within the
-    // include scope — this is a known limitation when included into a nested key.
+    // test03.conf includes test03-included.conf at root AND at `subtree`.
+    // The included file has `b = ${bar}` where `bar` is defined in the
+    // PARENT (test03.conf) at root level. Both inclusion points must
+    // resolve `b` to the same string via the S14c.2 original-path fallback
+    // (rs.hocon#44): at root no relativization is needed; at `subtree`
+    // the substitution gets rewritten to `${subtree.bar}` and the fallback
+    // strips the prefix to resolve against root `${bar}`.
     let path = testdata_dir().join("test03.conf");
-    let result = hocon::parse_file(&path);
-
-    match result {
-        Ok(config) => {
-            assert_eq!(config.get_i64("test01.booleans").unwrap(), 42);
-            assert_eq!(
-                config.get_string("b").unwrap(),
-                "This is in the including file"
-            );
-        }
-        Err(e) => {
-            let msg = e.to_string().to_lowercase();
-            assert!(
-                msg.contains("substitution"),
-                "unexpected parse error for {}: {}",
-                path.display(),
-                e
-            );
-        }
-    }
+    let config = hocon::parse_file(&path).unwrap();
+    assert_eq!(config.get_i64("test01.booleans").unwrap(), 42);
+    assert_eq!(
+        config.get_string("b").unwrap(),
+        "This is in the including file",
+        "root b = ${{bar}} uses parent's bar (root-level include — no relativization)"
+    );
+    assert_eq!(
+        config.get_string("subtree.b").unwrap(),
+        "This is in the including file",
+        "subtree.b = ${{bar}} relativized to ${{subtree.bar}} then fallback strips prefix to root ${{bar}} (S14c.2 / rs.hocon#44)"
+    );
 }
 
 #[test]
