@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-23
+
+Cross-impl chained-self-referential-substitution fix coordinated with [go.hocon v1.5.2](https://github.com/o3co/go.hocon/releases/tag/v1.5.2). No public API changes; safe drop-in upgrade from v1.5.0.
+
 ### Fixed — chained / value-interior self-referential substitution
 
 - **Chained self-referential append and value-interior self-references no longer crash or produce wrong values** ([#119](https://github.com/o3co/rs.hocon/issues/119); cross-impl with [go.hocon#118](https://github.com/o3co/go.hocon/issues/118) and [go.hocon#120](https://github.com/o3co/go.hocon/issues/120) fixed in go.hocon v1.5.1 / v1.5.2). Patterns: chained `${a}` substitution append (`a = ${a} [...]` × N, direct or via includes); array element / object field-value self-references (`a = [${a}, "x"]` × N, `o = { history = ${o}, v = 2 }`, even at chain length 2); multi-segment chain (`r.x = ${r.x} [...]` × N, including length ≥ 4); nested-object scoped self-references (`r { x = ${r.x} [...] }`); include-merge object form (parent `o = { v = 1 }`, included `o = { history = ${o}, v = 2 }`); nested include-merge under an object (parent `r { s = { v = 1 } }`, included `s = { history = ${s}, v = 2 }`). The fix introduces a new `fold_self_ref` module (`fold_self_ref` / `fold_or_skip_prior` / `fold_nested_self_refs` / `contains_subst_by_path`) covering all five wrapping shapes (`Subst` / `Concat` / `UnresolvedArray` / `Obj`); widens `resolve_subst`'s `is_self_ref` detection from the strict `(Subst|Concat)` outer guard to any value whose interior contains the target substitution; widens the `is_owner` path-equality guard to a prefix-match so a substitution to an ancestor of the current field is also detected as a self-reference; and applies a `fold_nested_self_refs` pre-pass + `fold_or_skip_prior` at `structure_builder::apply_field` and `deep_merge_res_obj_into`'s both-objects branch so the recorded `prior_values` is always self-ref-free across all save sites. `deep_merge_res_obj_into` takes a path-prefix argument so the fold checks the full dotted key — without this, the synthetic-object path used for dotted-form chain (`r.x = ${r.x} [...]`) saved an inner prior with bare key `x` that did not match the full-key `${r.x}` self-ref, breaking induction at chain length 4 (caught by Codex during multi-agent review on this fix; go.hocon's resolver is structurally immune because its setPath writes priorValues keyed by full dotted path directly). Reported by post-release audit of go.hocon v1.5.0 (cgordon-driven cross-impl check).
@@ -134,7 +138,9 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
 
