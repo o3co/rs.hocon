@@ -157,11 +157,33 @@ impl<'a> SubstitutionResolver<'a> {
                 .or_else(|| self.root.prior_values.get(root_seg));
             if let Some(prior) = prior {
                 let prior = prior.clone();
-                let mut fresh_resolving = self.resolving.clone();
-                std::mem::swap(&mut self.resolving, &mut fresh_resolving);
-                let result = self.resolve_val(&prior, scope);
-                std::mem::swap(&mut self.resolving, &mut fresh_resolving);
-                return result;
+                // xx.hocon#27 cluster 3h sr12: if the prior itself contains a
+                // self-ref to the same key (e.g. `foo.a = ${?foo.a}bar; foo.b
+                // = ${foo.a}` saves Obj({a:Concat[${?foo.a},bar]}) as foo's
+                // prior), resolving it would re-discover the same self-ref
+                // and recurse infinitely. Treat as no-prior — fall through
+                // to the optional/required short-circuit below.
+                let prior_for_check = match s.segments.len() {
+                    1 => Some(prior.clone()),
+                    _ => match prior {
+                        ResolverValue::Obj(ref po) => lookup_path(po, &s.segments[1..]).cloned(),
+                        _ => None,
+                    },
+                };
+                let skip_due_to_self_ref = prior_for_check.as_ref().is_some_and(|p| {
+                    super::fold_self_ref::contains_subst_by_path(p, &s.segments)
+                });
+                if !skip_due_to_self_ref {
+                    // Surgical: only remove the current cycling key from the
+                    // swapped-in set; other in-flight resolutions stay guarded.
+                    let mut fresh_resolving = self.resolving.clone();
+                    fresh_resolving.remove(&key);
+                    std::mem::swap(&mut self.resolving, &mut fresh_resolving);
+                    let result = self.resolve_val(&prior, scope);
+                    std::mem::swap(&mut self.resolving, &mut fresh_resolving);
+                    return result;
+                }
+                // Fall through to optional/required short-circuit below.
             }
             if s.optional {
                 return Ok(None);
@@ -254,14 +276,25 @@ impl<'a> SubstitutionResolver<'a> {
                             Some(prior_root)
                         };
                         if let Some(prior) = prior {
-                            let result = self.resolve_val(&prior, scope)?;
-                            if let Some(ref r) = result {
-                                self.cache.insert(key.to_string(), r.clone());
+                            // xx.hocon#27 cluster 3h sr12: when the saved prior
+                            // itself contains a self-ref to the same key (e.g.
+                            // `foo.a = ${?foo.a}bar; foo.b = ${foo.a}` saves the
+                            // unfolded Concat[${?foo.a},bar] as foo's prior),
+                            // resolving the prior would re-discover the same
+                            // self-ref and recurse infinitely. Treat as no-prior
+                            // and fall through to the optional/required
+                            // short-circuit below — semantically there is no
+                            // "previous resolved value" to look back to.
+                            if !super::fold_self_ref::contains_subst_by_path(&prior, &s.segments) {
+                                let result = self.resolve_val(&prior, scope)?;
+                                if let Some(ref r) = result {
+                                    self.cache.insert(key.to_string(), r.clone());
+                                }
+                                return Ok(result);
                             }
-                            return Ok(result);
                         }
-                        // Prior root exists but nested path not found — fall through to
-                        // no-prior short-circuit below.
+                        // Prior root exists but nested path not found OR prior
+                        // contains the same self-ref — fall through.
                     }
                     // Object-literal form fallback: when `foo { a = "x"; a = ${?foo.a}bar }`
                     // is used, the prior for the leaf key `a` is stored directly in the

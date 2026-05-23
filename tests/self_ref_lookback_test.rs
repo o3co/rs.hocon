@@ -244,12 +244,12 @@ fn sr11_mutual_ref_forward() {
     run_fixture("sr11-mutual-ref-forward");
 }
 
-/// sr12: object-literal form `foo { a = "x"\n a = ${?foo.a}bar }` → `foo.a = "xbar"`
-/// Regression guard: AST normalization must unify object-literal and dotted-path forms
-/// for self-ref look-back (Copilot rs-T1 verification).
-/// Note: HOCON field separator is LF (0x0A); semicolons are not newline equivalents
-/// in this parser, so the multi-field form requires a literal newline inside the
-/// object-literal block.
+/// (cluster 3f, NOT the cluster 3h sr12): object-literal form
+/// `foo { a = "x"\n a = ${?foo.a}bar }` → `foo.a = "xbar"`. Regression guard
+/// for AST normalization unifying object-literal and dotted-path forms.
+/// Note: HOCON field separator is LF (0x0A); semicolons are not newline
+/// equivalents in this parser, so the multi-field form requires a literal
+/// newline inside the object-literal block.
 #[test]
 fn s13a_13_nested_self_ref_object_literal_form() {
     let cfg = hocon::parse_with_env(
@@ -258,4 +258,55 @@ fn s13a_13_nested_self_ref_object_literal_form() {
     )
     .expect("parse failed");
     assert_eq!(cfg.get_string("foo.a").unwrap(), "xbar");
+}
+
+// ── sr12–sr16 (xx.hocon#27 cluster 3h follow-ups) ────────────────────────────
+//
+// 4 cross-impl resolver bugs surfaced by Round-2 multi-agent-review of the
+// S13a.13 cluster 3f PRs. See xx.hocon E14 for the convention. Pre-fix rs.hocon
+// status:
+//   sr12 FAIL-CRASH (stack overflow) — cycle handler clones the resolving set
+//   sr13 FAIL-WRONG (foo.a="xbarbar"; expected "xbar") — fold_nested_self_refs
+//        overwrites prior with already-folded form on the 3rd field write
+//   sr14 FAIL-WRONG (b="x" vs "xfoo") — cache pollution: is_self_ref branch
+//        writes prior to cache, external lookup reads stale entry
+//   sr15 FAIL-WRONG (a="2" vs "12") — fold_or_skip_prior skips when prior
+//        contains self-ref AND no old prior (universal failure cross-impl)
+//   sr16 FAIL-WRONG (a="foofoo" vs "foo") — cache pollution: external caller
+//        traverses self-ref field's concat, caches preview value, then
+//        self-ref field reads stale cache
+
+/// sr12: `foo.a = ${?foo.a}bar; foo.b = ${foo.a}` → `{foo:{a:"bar",b:"bar"}}`
+/// Pre-fix: stack overflow (cycle handler bug in resolve_subst_inner).
+#[test]
+fn sr12_nested_external_ref_no_prior() {
+    run_fixture("sr12-nested-external-ref-no-prior");
+}
+
+/// sr13: `foo.a = "x"; foo.a = ${?foo.a}bar; foo.b = ${foo.a}` → both `"xbar"`.
+/// Pre-fix: `foo.a="xbarbar", foo.b="xbar"` — prior-overwrite-with-folded.
+#[test]
+fn sr13_nested_external_ref_with_prior() {
+    run_fixture("sr13-nested-external-ref-with-prior");
+}
+
+/// sr14: `a = "x"; a = ${?a}foo; b = ${a}` → both `"xfoo"`.
+/// Pre-fix: `a="xfoo", b="x"` — cache pollution from is_self_ref branch.
+#[test]
+fn sr14_cache_prior_external() {
+    run_fixture("sr14-cache-prior-external");
+}
+
+/// sr15: `a = ${?a}1; a = ${?a}2` → `"12"`.
+/// Pre-fix: `"2"` — fold_or_skip_prior drops first concat (universal cross-impl bug).
+#[test]
+fn sr15_double_self_ref() {
+    run_fixture("sr15-double-self-ref");
+}
+
+/// sr16: `b = ${a}; a = ${?a}foo` → `a="foo", b="foo"` (order-independent).
+/// Pre-fix: `a="foofoo", b="foo"` — cache pollution from external preview.
+#[test]
+fn sr16_external_before_self_ref() {
+    run_fixture("sr16-external-before-self-ref");
 }
