@@ -170,10 +170,10 @@ pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -
     }
 }
 
-/// Pointer-identity walk: returns true if `v` contains a `Subst` that points
-/// at the same `target` segments via path equality. Used by
-/// `resolve_subst`'s self-ref detection where a lookup returns a value
-/// containing the same placeholder being currently resolved.
+/// Path-equality walk: returns true if `v` contains a `Subst` whose segments
+/// text-equal `target`. Used by `resolve_subst`'s self-ref detection where a
+/// lookup returns a value containing the same placeholder being currently
+/// resolved.
 ///
 /// rs.hocon's pre-#120 check used path equality already (in contrast to
 /// go.hocon's pointer identity); this helper preserves that criterion and
