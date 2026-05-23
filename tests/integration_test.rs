@@ -884,6 +884,46 @@ fn e13_trailing_dot_after_quoted_segment_rejects() {
     );
 }
 
+#[test]
+fn e13_trailing_dot_error_position_points_at_dot() {
+    // Copilot review on PR #123: the BadPath error previously reported the
+    // position of the NEXT token (`=` / `{` / EOF), not the offending `.`.
+    // Pin the corrected behavior — line and col must point at the trailing
+    // dot itself for both the unquoted-ends-with-'.' branch and the
+    // standalone-dot branch.
+    use hocon::HoconError;
+    let unquoted_err = match parse("foo. = 1") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(unquoted_err.line, 1, "unquoted trailing-dot: line");
+    assert_eq!(
+        unquoted_err.col, 4,
+        "unquoted trailing-dot: col (dot at col 4 of `foo.`)"
+    );
+
+    let standalone_err = match parse("\"a\". = 1") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(standalone_err.line, 1, "standalone-dot: line");
+    assert_eq!(
+        standalone_err.col, 4,
+        "standalone-dot: col (dot at col 4 after `\"a\"`)"
+    );
+
+    // Multi-line: the dot is on line 2, not the unrelated `=` on the same line.
+    let multiline_err = match parse("a = 1\nbar. = 2") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(multiline_err.line, 2, "multi-line trailing-dot: line");
+    assert_eq!(
+        multiline_err.col, 4,
+        "multi-line trailing-dot: col (dot at col 4 of `bar.`)"
+    );
+}
+
 // --- S10.13: array/object in string concat → error (HOCON L373) --------------
 // Closes #67. Formerly pinned as silent-accept; fixed in Phase 6 #3b.
 #[test]

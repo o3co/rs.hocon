@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Lexer**: `Token.preceding_whitespace: String` field added (the literal whitespace chars consumed since the previous token). `Token.preceding_space: bool` retained for clarity at call sites.
 - **Parser `parse_key`**: S8.6-in-key check removed; literal `' '` joiner in space-concat replaced with the token's `preceding_whitespace`; post-trailing-dot iteration captures next token's `preceding_whitespace` as `post_dot_prefix` and prepends to next segment; dot-WS-dot branch promotes the WS to its own segment; post-loop guard rejects trailing-dot-before-separator.
+- **`Token` marked `#[non_exhaustive]`** (Copilot review on PR #123) — `Token` is publicly re-exported as `hocon::Token` for the narrow inspection surface that integration tests and diagnostic tooling need. Adding the `preceding_whitespace` field broke struct-literal construction regardless of field visibility (`pub(crate)` already prevented external construction), so the field is now `pub` and the struct is `#[non_exhaustive]`. This is the only one-time source break in this release: any downstream code that constructed `Token` via struct-literal syntax (rather than calling `tokenize()` and pattern-matching) needs to switch to inspect-only usage. The narrow-surface advisory in `lib.rs` already signalled this expectation.
+
+#### Fixed (Copilot review on PR #123)
+
+- **Trailing-dot BadPath error now points at the offending `.`** rather than the unrelated next token (`=` / `{` / EOF). Both the unquoted-ends-with-`.` branch and the standalone-dot branch now capture the dot's own `line` / `col` for use in the post-loop error. Pinned by `tests/integration_test.rs::e13_trailing_dot_error_position_points_at_dot`.
+- **`post_dot_prefix.clear()` in the standalone-dot branch's else** — defensive symmetry with the trailing-dot continuation branch above. Not observably exploitable in current grammar but the paired branch already clears, so the asymmetry could leak stale state through a future grammar change.
 
 ## [1.5.2] - 2026-05-23
 

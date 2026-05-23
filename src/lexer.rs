@@ -40,7 +40,16 @@ pub struct SubstPayload {
     pub list_suffix: bool,
 }
 
+/// A single token produced by the lexer.
+///
+/// `Token` is publicly re-exported as `hocon::Token` for the narrow surface
+/// that integration tests and diagnostic tooling need (per the advisory in
+/// `lib.rs`). It is marked `#[non_exhaustive]`: downstream code MUST NOT
+/// construct `Token` via struct-literal syntax and should treat it as
+/// inspect-only. This frees the lexer to add new metadata fields (e.g.
+/// `preceding_whitespace` in v1.5.3) without further source breaks.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Token {
     pub kind: TokenKind,
     pub value: String,
@@ -58,17 +67,11 @@ pub struct Token {
     /// Note: `preceding_space` may be true while `preceding_whitespace` is empty
     /// when the token is preceded only by a comment (no literal WS chars). The
     /// boolean is the right signal for concat detection; the string is the right
-    /// signal for path-WS preservation. The comment-only case cannot fire in
-    /// practice in current grammar (comments run to `\n` which emits a newline
-    /// token), but the distinction is preserved structurally.
-    ///
-    /// Visibility is `pub(crate)` — `Token` is publicly re-exported as
-    /// `hocon::Token` and downstream crates may construct it via struct
-    /// literals; adding a required `pub` field would be source-breaking for a
-    /// patch release. Internal callers (`parser.rs::parse_key`) consume the
-    /// field directly; external callers continue to use `preceding_space` for
-    /// their concat-detection needs. Promotion to `pub` is deferred to v2.0.
-    pub(crate) preceding_whitespace: String,
+    /// signal for path-WS preservation. The comment-only shape fires for the
+    /// `newline` token emitted after `// foo\n` / `# foo\n`; non-newline tokens
+    /// participating in concat / path-WS contexts are always either preceded by
+    /// literal WS chars OR follow a newline that resets the buffer.
+    pub preceding_whitespace: String,
     pub subst: Option<SubstPayload>,
 }
 

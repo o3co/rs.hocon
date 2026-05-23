@@ -314,6 +314,13 @@ impl<'a> Parser<'a> {
     fn parse_key(&mut self) -> Result<Vec<String>, ParseError> {
         let mut segments: Vec<String> = Vec::new();
         let mut trailing_dot = false;
+        // Position of the '.' that set trailing_dot. Used by the post-loop
+        // BadPath error so the diagnostic points at the offending dot itself,
+        // not the unrelated next token (`=` / `{` / EOF) that exposed the
+        // empty-trailing-segment. Set in both the unquoted ends-with-'.' branch
+        // and the standalone-dot branch.
+        let mut trailing_dot_line: usize = 0;
+        let mut trailing_dot_col: usize = 0;
         // S10.8 (HOCON.md L317 + L553-560): "path expressions work like value
         // concatenations" — when the next key token has whitespace before it
         // (and is not a dot-continuation), it is a space-concat continuation
@@ -365,6 +372,11 @@ impl<'a> Parser<'a> {
             } else if kind == TokenKind::Unquoted {
                 let val = self.peek_value().to_string();
                 let ws = self.peek_preceding_whitespace().to_string();
+                // Capture position BEFORE advance so we can point at the
+                // trailing dot (if any) inside this token in the post-loop
+                // BadPath error.
+                let val_line = self.peek_line();
+                let val_col = self.peek_col();
                 self.advance();
                 // Split unquoted key at dots.
                 let new_segments: Vec<String> = val
@@ -411,6 +423,14 @@ impl<'a> Parser<'a> {
                     segments.extend(new_segments);
                 }
                 trailing_dot = val.ends_with('.');
+                if trailing_dot {
+                    // Char-count offset (unquoted keys are single-line, so col
+                    // arithmetic is safe; chars().count() is used instead of
+                    // len() to keep non-ASCII keys correct).
+                    let dot_offset = val.chars().count().saturating_sub(1);
+                    trailing_dot_line = val_line;
+                    trailing_dot_col = val_col + dot_offset;
+                }
             } else {
                 if segments.is_empty() {
                     let line = self.peek_line();
@@ -449,6 +469,11 @@ impl<'a> Parser<'a> {
                 && !self.peek_preceding_space()
             {
                 if self.peek_value() == "." {
+                    // Capture the dot's own position BEFORE advance so the
+                    // post-loop BadPath error reports the offending dot, not
+                    // the unrelated next token.
+                    trailing_dot_line = self.peek_line();
+                    trailing_dot_col = self.peek_col();
                     self.advance(); // consume the standalone dot separator
                                     // Mark trailing_dot=true so the post-loop guard fires if
                                     // the next token is not a continuation (e.g. `"a". = 1`).
@@ -463,6 +488,11 @@ impl<'a> Parser<'a> {
                         && !self.peek_preceding_whitespace().is_empty()
                     {
                         post_dot_prefix = self.peek_preceding_whitespace().to_string();
+                    } else {
+                        // Symmetric with the paired branch at the trailing-dot
+                        // continuation above — clear any stale prefix so it
+                        // cannot leak into a later iteration's segment.
+                        post_dot_prefix.clear();
                     }
                 }
                 // For ".d"-style tokens, fall through to the next loop iteration
@@ -491,8 +521,8 @@ impl<'a> Parser<'a> {
         if trailing_dot {
             return Err(ParseError {
                 message: "path has a trailing period '.' — empty key segment not allowed (HOCON.md path rules)".into(),
-                line: self.peek_line(),
-                col: self.peek_col(),
+                line: trailing_dot_line,
+                col: trailing_dot_col,
             });
         }
 
