@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.5.1] - 2026-05-23
+## [1.5.2] - 2026-05-23
 
-Cross-impl chained-self-referential-substitution fix coordinated with [go.hocon v1.5.2](https://github.com/o3co/go.hocon/releases/tag/v1.5.2). No public API changes; safe drop-in upgrade from v1.5.0.
+Cross-impl chained / value-interior self-referential substitution fix — version aligned with [go.hocon v1.5.2](https://github.com/o3co/go.hocon/releases/tag/v1.5.2) (which covers the same two bug classes: #118 + #120). No public API changes; safe drop-in upgrade from v1.5.0. (v1.5.1 was skipped to match the go.hocon version where the same fix scope landed.)
 
 ### Fixed — chained / value-interior self-referential substitution
 
@@ -138,8 +138,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.5.1...HEAD
-[1.5.1]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.1
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
 [1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
