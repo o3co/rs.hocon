@@ -138,7 +138,9 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
 
