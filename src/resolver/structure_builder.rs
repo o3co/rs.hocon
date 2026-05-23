@@ -2,6 +2,7 @@ use crate::error::ResolveError;
 use crate::parser::{AstField, AstNode};
 use crate::value::{HoconValue, ScalarValue};
 
+use super::fold_self_ref::{fold_nested_self_refs, fold_or_skip_prior};
 use super::include_loader::load_include;
 #[cfg(feature = "include-package")]
 use super::include_loader::load_package_include;
@@ -9,7 +10,7 @@ use super::types::{
     AppendPlaceholder, ConcatPlaceholder, InternalResolveOptions, ResObj, ResolverValue,
     SubstPlaceholder,
 };
-use super::utils::{deep_merge_res_obj_into, relativize_res_obj};
+use super::utils::{deep_merge_res_obj_into, relativize_res_obj, string_segments_to_key};
 
 pub(crate) struct StructureBuilder<'a> {
     opts: &'a InternalResolveOptions,
@@ -65,7 +66,7 @@ impl<'a> StructureBuilder<'a> {
                 if !path_prefix.is_empty() {
                     relativize_res_obj(&mut included, path_prefix);
                 }
-                deep_merge_res_obj_into(obj, included);
+                deep_merge_res_obj_into(obj, included, path_prefix);
                 return Ok(());
             }
 
@@ -85,7 +86,7 @@ impl<'a> StructureBuilder<'a> {
                 if !path_prefix.is_empty() {
                     relativize_res_obj(&mut included, path_prefix);
                 }
-                deep_merge_res_obj_into(obj, included);
+                deep_merge_res_obj_into(obj, included, path_prefix);
                 return Ok(());
             }
 
@@ -124,9 +125,17 @@ impl<'a> StructureBuilder<'a> {
                 .get(&head)
                 .cloned()
                 .unwrap_or_else(|| ResolverValue::Resolved(HoconValue::Array(vec![])));
-            obj.prior_values.insert(head.clone(), existing.clone());
             let mut child_prefix = path_prefix.to_vec();
             child_prefix.push(head.clone());
+            // #118 + #120 cross-impl with go.hocon: fold self-references in
+            // `existing` against the OLD prior so the recorded prior is
+            // self-ref-free. Chain invariant: by induction every saved prior
+            // contains no `${full_key}` reference.
+            let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
+            let old_prior = obj.prior_values.get(&head).cloned();
+            if let Some(prior) = fold_or_skip_prior(&existing, &full_key, old_prior.as_ref()) {
+                obj.prior_values.insert(head.clone(), prior);
+            }
             let elem = self.ast_to_resolver_value(field.value, &child_prefix)?;
             let field_line = field.pos.line;
             let field_col = field.pos.col;
@@ -148,14 +157,34 @@ impl<'a> StructureBuilder<'a> {
         child_prefix.push(head.clone());
         let new_val = self.ast_to_resolver_value(field.value, &child_prefix)?;
 
+        // #118 + #120: save existing with fold-or-skip (chain-class fix).
+        // Cross-impl with go.hocon PR #121 / #123. Applies regardless of
+        // whether new_val will deep-merge with existing — the previous
+        // unconditional save still worked for #118-chain crashes because
+        // ResolverValue::Obj couldn't contain a self-ref placeholder visible
+        // to the prior-save layer (only the merged sub-object's interior
+        // could, see #120). With fold + walker extension covering Obj /
+        // UnresolvedArray interiors, the saved prior is self-ref-free.
+        //
+        // fold_nested_self_refs pre-pass handles the multi-segment chain
+        // (`r.x = ${r.x} [...]` × N): rs.hocon's resolve_subst navigates
+        // prior_root.fields per segment, so a leaf-level concat containing
+        // ${r.x} retained in the nested ResObj would loop during prior
+        // resolution. The pre-pass folds those nested ${X.Y} refs against
+        // each enclosing ResObj's prior_values before the outer save.
         if let Some(ref ex) = existing {
-            obj.prior_values.insert(head.clone(), ex.clone());
+            let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
+            let ex_folded = fold_nested_self_refs(ex, &child_prefix);
+            let old_prior = obj.prior_values.get(&head).cloned();
+            if let Some(prior) = fold_or_skip_prior(&ex_folded, &full_key, old_prior.as_ref()) {
+                obj.prior_values.insert(head.clone(), prior);
+            }
         }
 
         // Deep merge if both are ResObj
         if let (Some(ResolverValue::Obj(_)), ResolverValue::Obj(new_obj)) = (&existing, &new_val) {
             if let Some(ResolverValue::Obj(existing_obj)) = obj.fields.get_mut(&head) {
-                deep_merge_res_obj_into(existing_obj, new_obj.clone());
+                deep_merge_res_obj_into(existing_obj, new_obj.clone(), &child_prefix);
                 return Ok(());
             }
         }

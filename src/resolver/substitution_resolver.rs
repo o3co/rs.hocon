@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
-use super::utils::{deep_merge_hocon_objects, lookup_path, segments_text_equal, segments_to_key};
+use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key};
 
 pub(crate) struct SubstitutionResolver<'a> {
     root: &'a ResObj,
@@ -193,7 +193,16 @@ impl<'a> SubstitutionResolver<'a> {
         if let Some(found) = found {
             // Self-referential substitution: only use prior value when the substitution
             // path matches the key we found (e.g., b=${b} where fields[b]=Subst(b)).
-            if matches!(found, ResolverValue::Subst(_) | ResolverValue::Concat(_)) {
+            //
+            // #120 cross-impl with go.hocon's containsSubstByIdentity (PR #123):
+            // the outer wrapping type guard widens from Subst/Concat-only to all
+            // ResolverValue variants so substitutions embedded as array elements
+            // (`a = [${a}, "x"]`) or object field values
+            // (`o = { history = ${o}, ... }`) are also detected as self-references.
+            // Pre-#120 these patterns silently produced wrong values (object) or
+            // crashed (array element) because the outer `matches!` excluded them
+            // from the self-ref short-circuit.
+            {
                 // Guard: the self-ref short-circuit only fires when the field currently
                 // being assigned IS the field that the substitution points at.
                 // Without this guard, resolving `b = ${a}` would see that `a`'s value
@@ -204,22 +213,27 @@ impl<'a> SubstitutionResolver<'a> {
                 // as it recurses into nested objects, giving the full path of the field
                 // being assigned (e.g. `["foo", "a"]` while resolving `foo.a = …`).
                 // We compare by text so quoting differences don't cause false negatives.
-                let is_owner = self.resolving_field_path.len() == s.segments.len()
+                // is_owner: the substitution path is an ANCESTOR of (or equal to)
+                // the field currently being assigned. Pre-#120 this was a strict
+                // length-equality check, which excluded the case where
+                // resolving_field_path is deeper than s.segments — e.g. inside
+                // `o = { history = ${o} }`, resolving "o.history" with rfp=["o","history"]
+                // but s.segments=["o"]. The strict check returned false, so the
+                // outer resolve_subst fell through to resolve_val on the looked-up
+                // value (which then re-resolved the inner ${o} via the cycle path,
+                // producing a wrong outer wrapping). Prefix-match widens this to:
+                // s.segments matches rfp[0..s.segments.len()], i.e. s points at
+                // an ancestor of the current field. Preserves the original
+                // false-positive guard from Phase 6 #3f because path-equality on
+                // the prefix is still required.
+                let is_owner = self.resolving_field_path.len() >= s.segments.len()
                     && self
                         .resolving_field_path
                         .iter()
                         .zip(s.segments.iter())
                         .all(|(p, seg)| p == &seg.text);
-                let is_self_ref = is_owner
-                    && match &found {
-                        ResolverValue::Subst(sub) => {
-                            segments_text_equal(&sub.segments, &s.segments)
-                        }
-                        ResolverValue::Concat(c) => c.nodes.iter().any(|n| {
-                            matches!(n, ResolverValue::Subst(sub) if segments_text_equal(&sub.segments, &s.segments))
-                        }),
-                        _ => false,
-                    };
+                let is_self_ref =
+                    is_owner && super::fold_self_ref::contains_subst_by_path(&found, &s.segments);
                 if is_self_ref {
                     let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior_root = scope
