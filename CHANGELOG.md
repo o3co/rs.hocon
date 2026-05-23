@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.5.2] - 2026-05-23
 
-Cross-impl chained / value-interior self-referential substitution fix — version aligned with [go.hocon v1.5.2](https://github.com/o3co/go.hocon/releases/tag/v1.5.2) (which covers the same two bug classes: #118 + #120). No public API changes; safe drop-in upgrade from v1.5.0. (v1.5.1 was skipped to match the go.hocon version where the same fix scope landed.)
+Cross-impl chained / value-interior self-referential substitution fix — version aligned with [go.hocon v1.5.2](https://github.com/o3co/go.hocon/releases/tag/v1.5.2) (which covers the same two bug classes: [go.hocon#118](https://github.com/o3co/go.hocon/issues/118) + [go.hocon#120](https://github.com/o3co/go.hocon/issues/120)). No public API changes; safe drop-in upgrade from v1.5.0. (v1.5.1 was skipped to match the go.hocon version where the same fix scope landed.)
 
 ### Fixed — chained / value-interior self-referential substitution
 
