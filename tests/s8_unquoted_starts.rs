@@ -428,33 +428,20 @@ x = ${"a"-foo}
     );
 }
 
-// Error position precision: for `a.-foo = 1` the error column should point at
-// the '-' that opens the offending segment (col 3), NOT at the start of the
-// full unquoted token `a.-foo` (col 1). Convergent Copilot/Claude finding on
-// PR #86 round 2.
+// E13 (xx.hocon#42): S8.6 is NOT enforced on key path segments. The rule is
+// value-position lexer-disambiguation; key paths are governed by path-element
+// parsing rules. Lightbend accepts `a.-foo = 1` verbatim — pinned by the
+// xx.hocon kh07 fixture. The prior strict-reject tests (which asserted the
+// removed key-segment-S8.6 check) are inverted to assert success.
 #[test]
-fn s8_6_key_path_hyphen_segment_error_col_at_segment_start() {
-    let result = hocon::parse_with_env("a.-foo = 1", &HashMap::new());
-    match result {
-        Err(hocon::HoconError::Parse(e)) => {
-            assert_eq!(e.col, 3, "expected col 3 (start of '-foo'), got {}", e.col);
-        }
-        Err(other) => panic!("expected ParseError, got: {:?}", other),
-        Ok(_) => panic!("expected error, parse succeeded"),
-    }
-}
-
-#[test]
-fn s8_6_key_path_hyphen_segment_rejected() {
+fn e13_key_path_hyphen_segment_accepted_was_rejected_pre_e13() {
     // `a.-foo = 1` — the lexer sees `a.-foo` as one unquoted token; parse_key
-    // splits on `.` and must validate the `-foo` segment against the S8.6 rule.
-    let result = hocon::parse_with_env("a.-foo = 1", &HashMap::new());
-    match result {
-        Err(hocon::HoconError::Parse(_)) => {} // ok — parse-time rejection
-        Err(other) => panic!(
-            "S8.6: a.-foo = 1 must throw ParseError, got non-Parse variant: {:?}",
-            other
-        ),
-        Ok(_) => panic!("S8.6: a.-foo = 1 key path must throw ParseError, parsed OK"),
-    }
+    // splits on `.` and now treats `-foo` as a verbatim segment (Lightbend-aligned).
+    let cfg = hocon::parse_with_env("a.-foo = 1", &HashMap::new())
+        .expect("E13: a.-foo = 1 must parse (S8.6 not enforced on key paths)");
+    assert_eq!(
+        cfg.get_i64("a.\"-foo\"").unwrap(),
+        1,
+        "expected value at path a.-foo"
+    );
 }

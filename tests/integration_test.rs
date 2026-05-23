@@ -810,47 +810,118 @@ fn s10_8_inline_object_shorthand() {
 
 #[test]
 fn s10_8_leading_dot_after_whitespace_stays_separator() {
-    // `a .b = 1` → ['a', 'b'] (NOT ['a b']). The leading '.' survives the space
-    // as a path separator per S11.1, not folded into the previous segment.
+    // `a .b = 1` → ['a ', 'b'] per E13 (xx.hocon#42). The leading '.' still
+    // acts as a path separator (S11.1), but the WS before it is now preserved
+    // as trailing on the prev segment (was ['a', 'b'] pre-E13).
     let cfg = parse("a .b = 1").unwrap();
-    assert_eq!(cfg.get_i64("a.b").unwrap(), 1);
+    assert_eq!(cfg.get_i64("\"a \".b").unwrap(), 1);
 }
 
 #[test]
 fn s10_8_leading_dot_after_whitespace_multi_segment_tail() {
-    // `a .b.c = 1` → ['a', 'b', 'c'].
+    // `a .b.c = 1` → ['a ', 'b', 'c'] per E13 (trailing ' ' on 'a' preserved).
     let cfg = parse("a .b.c = 1").unwrap();
-    assert_eq!(cfg.get_i64("a.b.c").unwrap(), 1);
+    assert_eq!(cfg.get_i64("\"a \".b.c").unwrap(), 1);
 }
 
 #[test]
 fn s10_8_leading_dot_after_quoted_then_whitespace() {
-    // `"a" .b = 1` → ['a', 'b'].
+    // `"a" .b = 1` → ['a ', 'b'] per E13 (trailing ' ' on 'a' preserved).
     let cfg = parse("\"a\" .b = 1").unwrap();
-    assert_eq!(cfg.get_i64("a.b").unwrap(), 1);
+    assert_eq!(cfg.get_i64("\"a \".b").unwrap(), 1);
 }
 
 #[test]
 fn s10_8_dotted_path_then_whitespace_then_dot() {
-    // `a.b .c = 1` → ['a', 'b', 'c'] (Copilot-flagged convergence case on ts).
+    // `a.b .c = 1` → ['a', 'b ', 'c'] per E13: trailing WS on 'b' preserved
+    // (was ['a', 'b', 'c'] pre-E13).
     let cfg = parse("a.b .c = 1").unwrap();
-    assert_eq!(cfg.get_i64("a.b.c").unwrap(), 1);
+    assert_eq!(cfg.get_i64("a.\"b \".c").unwrap(), 1);
 }
 
 #[test]
 fn s10_8_quoted_dotted_path_then_whitespace_then_dot() {
-    // `"a.b" .c = 1` → ['a.b', 'c']: the literal 'a.b' segment is preserved
-    // (quoted keys do NOT path-split), and `.c` becomes a sibling segment.
+    // `"a.b" .c = 1` → ['a.b ', 'c'] per E13 (trailing ' ' on 'a.b' preserved).
     let cfg = parse("\"a.b\" .c = 1").unwrap();
-    assert_eq!(cfg.get_i64("\"a.b\".c").unwrap(), 1);
+    assert_eq!(cfg.get_i64("\"a.b \".c").unwrap(), 1);
 }
 
 #[test]
-fn s10_8_tab_between_key_tokens_is_space_concat() {
-    // `precedingSpace` covers any HOCON whitespace; the merge joiner is
-    // canonical U+0020 (per S10.6 whitespace normalisation).
+fn s10_8_tab_between_key_tokens_preserved_verbatim() {
+    // E13 (xx.hocon#42): preserve literal whitespace in key concat. `a\tb = 1`
+    // now yields ['a\tb']; was ['a b'] pre-E13 (was normalised to single space).
+    // Cross-impl ground truth fixture: xx.hocon path-expr-whitespace/pw07.
     let cfg = parse("a\tb = 1").unwrap();
-    assert_eq!(cfg.get_i64("\"a b\"").unwrap(), 1);
+    assert_eq!(cfg.get_i64("\"a\tb\"").unwrap(), 1);
+}
+
+#[test]
+fn e13_dot_ws_dot_makes_ws_its_own_segment() {
+    // `a. .b = 1` → ['a', ' ', 'b'] per E13: trailing dot from `a.` AND leading
+    // dot from `.b` are both separators; WS between them becomes a segment.
+    // Lightbend probe: `{"a":{" ":{"b":1}}}`. Codex multi-agent-review finding,
+    // applied cross-impl with ts.hocon#135.
+    let cfg = parse("a. .b = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.\" \".b").unwrap(), 1);
+}
+
+#[test]
+fn e13_trailing_dot_after_quoted_segment_rejects() {
+    // `"a". = 1` previously slipped through the trailing-dot guard (standalone-dot
+    // branch did not set trailing_dot=true). Convergent Claude + Codex finding
+    // on this PR's first patch. Lightbend: BadPath.
+    assert!(
+        matches!(parse("\"a\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#""a". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+    assert!(
+        matches!(parse("\"a\".\"b\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#""a"."b". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+    assert!(
+        matches!(parse("a.\"b\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#"a."b". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+}
+
+#[test]
+fn e13_trailing_dot_error_position_points_at_dot() {
+    // Copilot review on PR #123: the BadPath error previously reported the
+    // position of the NEXT token (`=` / `{` / EOF), not the offending `.`.
+    // Pin the corrected behavior — line and col must point at the trailing
+    // dot itself for both the unquoted-ends-with-'.' branch and the
+    // standalone-dot branch.
+    use hocon::HoconError;
+    let unquoted_err = match parse("foo. = 1") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(unquoted_err.line, 1, "unquoted trailing-dot: line");
+    assert_eq!(
+        unquoted_err.col, 4,
+        "unquoted trailing-dot: col (dot at col 4 of `foo.`)"
+    );
+
+    let standalone_err = match parse("\"a\". = 1") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(standalone_err.line, 1, "standalone-dot: line");
+    assert_eq!(
+        standalone_err.col, 4,
+        "standalone-dot: col (dot at col 4 after `\"a\"`)"
+    );
+
+    // Multi-line: the dot is on line 2, not the unrelated `=` on the same line.
+    let multiline_err = match parse("a = 1\nbar. = 2") {
+        Err(HoconError::Parse(e)) => e,
+        other => panic!("expected ParseError, got {:?}", other),
+    };
+    assert_eq!(multiline_err.line, 2, "multi-line trailing-dot: line");
+    assert_eq!(
+        multiline_err.col, 4,
+        "multi-line trailing-dot: col (dot at col 4 of `bar.`)"
+    );
 }
 
 // --- S10.13: array/object in string concat → error (HOCON L373) --------------
