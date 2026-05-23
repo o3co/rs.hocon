@@ -163,13 +163,32 @@ fn run_pw_error(stem: &str) {
     );
 }
 
-#[test] fn pw01_space_after_dot()             { run_pw_success("pw01-space-after-dot") }
-#[test] fn pw02_space_both_sides_of_dot()     { run_pw_success("pw02-space-both-sides-of-dot") }
-#[test] fn pw03_space_before_dot()            { run_pw_success("pw03-space-before-dot") }
-#[test] fn pw04_space_concat_both_segments()  { run_pw_success("pw04-space-concat-both-segments") }
-#[test] fn pw05_multi_whitespace_both_sides() { run_pw_success("pw05-multi-whitespace-both-sides") }
-#[test] fn pw07_tab_after_dot()               { run_pw_success("pw07-tab-after-dot") }
+#[test]
+fn pw01_space_after_dot() {
+    run_pw_success("pw01-space-after-dot")
+}
+#[test]
+fn pw02_space_both_sides_of_dot() {
+    run_pw_success("pw02-space-both-sides-of-dot")
+}
+#[test]
+fn pw03_space_before_dot() {
+    run_pw_success("pw03-space-before-dot")
+}
+#[test]
+fn pw04_space_concat_both_segments() {
+    run_pw_success("pw04-space-concat-both-segments")
+}
+#[test]
+fn pw05_multi_whitespace_both_sides() {
+    run_pw_success("pw05-multi-whitespace-both-sides")
+}
+#[test]
+fn pw07_tab_after_dot() {
+    run_pw_success("pw07-tab-after-dot")
+}
 
-#[test] fn pw06_trailing_dot_before_separator_errors() {
+#[test]
+fn pw06_trailing_dot_before_separator_errors() {
     run_pw_error("pw06-trailing-dot-before-separator")
 }

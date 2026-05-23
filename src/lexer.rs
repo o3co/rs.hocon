@@ -61,7 +61,14 @@ pub struct Token {
     /// signal for path-WS preservation. The comment-only case cannot fire in
     /// practice in current grammar (comments run to `\n` which emits a newline
     /// token), but the distinction is preserved structurally.
-    pub preceding_whitespace: String,
+    ///
+    /// Visibility is `pub(crate)` — `Token` is publicly re-exported as
+    /// `hocon::Token` and downstream crates may construct it via struct
+    /// literals; adding a required `pub` field would be source-breaking for a
+    /// patch release. Internal callers (`parser.rs::parse_key`) consume the
+    /// field directly; external callers continue to use `preceding_space` for
+    /// their concat-detection needs. Promotion to `pub` is deferred to v2.0.
+    pub(crate) preceding_whitespace: String,
     pub subst: Option<SubstPayload>,
 }
 
@@ -201,7 +208,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;
@@ -219,7 +226,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;
@@ -235,7 +242,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;
@@ -277,7 +284,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: Some(payload),
             });
             had_space = false;
@@ -339,7 +346,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: true,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;
@@ -358,7 +365,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: true,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;
@@ -394,7 +401,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 col: sc,
                 is_quoted: false,
                 preceding_space: had_space,
-                    preceding_whitespace: std::mem::take(&mut whitespace_buffer),
+                preceding_whitespace: std::mem::take(&mut whitespace_buffer),
                 subst: None,
             });
             had_space = false;

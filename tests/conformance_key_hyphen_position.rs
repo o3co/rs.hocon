@@ -145,11 +145,35 @@ fn run_kh_fixture(stem: &str) {
     );
 }
 
-#[test] fn kh01_space_concat_hyphen_tail()       { run_kh_fixture("kh01-space-concat-hyphen-tail") }
-#[test] fn kh02_dotted_then_space_hyphen_tail()  { run_kh_fixture("kh02-dotted-then-space-hyphen-tail") }
-#[test] fn kh03_quoted_then_space_hyphen_tail()  { run_kh_fixture("kh03-quoted-then-space-hyphen-tail") }
-#[test] fn kh04_space_concat_dot_hyphen_start()  { run_kh_fixture("kh04-space-concat-dot-hyphen-start") }
-#[test] fn kh05_first_token_hyphen_start()       { run_kh_fixture("kh05-first-token-hyphen-start") }
-#[test] fn kh06_trailing_hyphen_only()           { run_kh_fixture("kh06-trailing-hyphen-only") }
-#[test] fn kh07_dot_hyphen_start_segment()       { run_kh_fixture("kh07-dot-hyphen-start-segment") }
-#[test] fn kh08_space_concat_hyphen_digit_tail() { run_kh_fixture("kh08-space-concat-hyphen-digit-tail") }
+#[test]
+fn kh01_space_concat_hyphen_tail() {
+    run_kh_fixture("kh01-space-concat-hyphen-tail")
+}
+#[test]
+fn kh02_dotted_then_space_hyphen_tail() {
+    run_kh_fixture("kh02-dotted-then-space-hyphen-tail")
+}
+#[test]
+fn kh03_quoted_then_space_hyphen_tail() {
+    run_kh_fixture("kh03-quoted-then-space-hyphen-tail")
+}
+#[test]
+fn kh04_space_concat_dot_hyphen_start() {
+    run_kh_fixture("kh04-space-concat-dot-hyphen-start")
+}
+#[test]
+fn kh05_first_token_hyphen_start() {
+    run_kh_fixture("kh05-first-token-hyphen-start")
+}
+#[test]
+fn kh06_trailing_hyphen_only() {
+    run_kh_fixture("kh06-trailing-hyphen-only")
+}
+#[test]
+fn kh07_dot_hyphen_start_segment() {
+    run_kh_fixture("kh07-dot-hyphen-start-segment")
+}
+#[test]
+fn kh08_space_concat_hyphen_digit_tail() {
+    run_kh_fixture("kh08-space-concat-hyphen-digit-tail")
+}

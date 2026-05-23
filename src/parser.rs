@@ -450,6 +450,12 @@ impl<'a> Parser<'a> {
             {
                 if self.peek_value() == "." {
                     self.advance(); // consume the standalone dot separator
+                                    // Mark trailing_dot=true so the post-loop guard fires if
+                                    // the next token is not a continuation (e.g. `"a". = 1`).
+                                    // Caught by Codex + Claude multi-agent-review convergence
+                                    // on the initial PR: pre-fix, `"a". = 1` silently parsed
+                                    // as `{"a":1}` while Lightbend rejects with BadPath.
+                    trailing_dot = true;
                     // After consuming the separator, check WS on the token AFTER
                     // it for post-dot prefix preservation (E13).
                     let after_kind = self.peek_kind();

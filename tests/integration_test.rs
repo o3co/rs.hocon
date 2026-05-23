@@ -855,6 +855,35 @@ fn s10_8_tab_between_key_tokens_preserved_verbatim() {
     assert_eq!(cfg.get_i64("\"a\tb\"").unwrap(), 1);
 }
 
+#[test]
+fn e13_dot_ws_dot_makes_ws_its_own_segment() {
+    // `a. .b = 1` → ['a', ' ', 'b'] per E13: trailing dot from `a.` AND leading
+    // dot from `.b` are both separators; WS between them becomes a segment.
+    // Lightbend probe: `{"a":{" ":{"b":1}}}`. Codex multi-agent-review finding,
+    // applied cross-impl with ts.hocon#135.
+    let cfg = parse("a. .b = 1").unwrap();
+    assert_eq!(cfg.get_i64("a.\" \".b").unwrap(), 1);
+}
+
+#[test]
+fn e13_trailing_dot_after_quoted_segment_rejects() {
+    // `"a". = 1` previously slipped through the trailing-dot guard (standalone-dot
+    // branch did not set trailing_dot=true). Convergent Claude + Codex finding
+    // on this PR's first patch. Lightbend: BadPath.
+    assert!(
+        matches!(parse("\"a\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#""a". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+    assert!(
+        matches!(parse("\"a\".\"b\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#""a"."b". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+    assert!(
+        matches!(parse("a.\"b\". = 1"), Err(hocon::HoconError::Parse(_))),
+        r#"a."b". = 1 must reject with ParseError per E13 trailing-dot guard"#
+    );
+}
+
 // --- S10.13: array/object in string concat → error (HOCON L373) --------------
 // Closes #67. Formerly pinned as silent-accept; fixed in Phase 6 #3b.
 #[test]
