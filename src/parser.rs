@@ -160,6 +160,15 @@ impl<'a> Parser<'a> {
         self.tokens.get(self.pos).is_some_and(|t| t.preceding_space)
     }
 
+    /// Returns the literal preceding-whitespace string of the current peek token,
+    /// or `""` if no token / no whitespace. Used by `parse_key` for E13 path-WS
+    /// preservation (xx.hocon#42).
+    fn peek_preceding_whitespace(&self) -> &str {
+        self.tokens
+            .get(self.pos)
+            .map_or("", |t| t.preceding_whitespace.as_str())
+    }
+
     fn current_pos(&self) -> Pos {
         Pos {
             line: self.peek_line(),
@@ -304,106 +313,100 @@ impl<'a> Parser<'a> {
 
     fn parse_key(&mut self) -> Result<Vec<String>, ParseError> {
         let mut segments: Vec<String> = Vec::new();
-        let mut trailing_dot;
+        let mut trailing_dot = false;
         // S10.8 (HOCON.md L317 + L553-560): "path expressions work like value
         // concatenations" — when the next key token has whitespace before it
         // (and is not a dot-continuation), it is a space-concat continuation
-        // that merges into the LAST existing segment with a literal space:
-        //   `a b = 1`     → key ['a b']
-        //   `a b c : 42`  → key ['a b c']        (spec L556 example)
-        //   `a.b c = 1`   → key ['a', 'b c']     (concat into last segment)
-        //   `"a" b = 1`   → key ['a b']          (quoted + unquoted)
-        //   `a .b = 1`    → key ['a', 'b']       (leading '.' stays a separator
-        //                                         per S11.1, not folded)
+        // that merges into the LAST existing segment, using the LITERAL
+        // whitespace from the source (preceding_whitespace, not a hardcoded ' '):
+        //   `a b = 1`         → ['a b']
+        //   `a b c : 42`      → ['a b c']        (spec L556 example)
+        //   `a.b c = 1`       → ['a', 'b c']     (concat into last segment)
+        //   `"a" b = 1`       → ['a b']          (quoted + unquoted)
+        // E13 (xx.hocon#42) — path-expression whitespace is preserved verbatim
+        // around dots, including the tab variant pw07:
+        //   `a b. c = 1`      → ['a b', ' c']    (leading ' ' on " c" preserved)
+        //   `a b.\tc = 1`     → ['a b', '\tc']   (HOCON_WS tab uniformly preserved)
+        //   `a .b = 1`        → ['a ', 'b']      (trailing ' ' on 'a', leading
+        //                                          dot still separator)
+        //   `a . b = 1`       → ['a ', ' b']     (both sides preserved)
+        //   `a. .b = 1`       → ['a', ' ', 'b']  (dot-WS-dot: WS becomes its
+        //                                          own segment between two dots)
         // Newlines break the chain (S10.7): the lexer emits a Newline token
         // which falls through to the loop's else branch and exits.
+        //
+        // S8.6 (HOCON.md L270-276) is NOT enforced on key path segments per E13
+        // (xx.hocon#42): the rule is value-position lexer-disambiguation, not a
+        // key-parser rule. Lightbend accepts `foo -bar = 1`, `foo.-bar = 1`, etc.
         let mut space_concat = false;
+        // Captured WS from a trailing-dot continuation: the next post-dot
+        // segment's first piece gets this WS prepended (E13 path-WS rule).
+        let mut post_dot_prefix = String::new();
 
         loop {
             let kind = self.peek_kind();
             if kind == TokenKind::QuotedString {
                 let val = self.peek_value().to_string();
+                let ws = self.peek_preceding_whitespace().to_string();
                 self.advance();
                 if space_concat && !segments.is_empty() {
+                    // E13: preceding WS verbatim, then quoted content merged into last segment.
                     let last_idx = segments.len() - 1;
-                    segments[last_idx].push(' ');
+                    segments[last_idx].push_str(&ws);
                     segments[last_idx].push_str(&val);
+                } else if !post_dot_prefix.is_empty() {
+                    // post-dot WS becomes leading prefix on the new quoted segment
+                    let prefix = std::mem::take(&mut post_dot_prefix);
+                    segments.push(format!("{}{}", prefix, val));
                 } else {
                     segments.push(val); // quoted: no dot split
                 }
                 trailing_dot = false;
             } else if kind == TokenKind::Unquoted {
                 let val = self.peek_value().to_string();
-                let key_line = self.peek_line();
-                let key_col = self.peek_col();
+                let ws = self.peek_preceding_whitespace().to_string();
                 self.advance();
-                // Split unquoted key at dots, tracking the char offset of each
-                // segment within the original raw token so S8.6 errors below
-                // can point at the offending segment, not the token start.
-                let mut new_segments: Vec<String> = Vec::new();
-                let mut seg_char_offset: usize = 0;
-                for part in val.split('.') {
-                    if !part.is_empty() {
-                        // S8.6 (HOCON.md L270–276) path-element rule: each
-                        // unquoted key segment that begins with '-' must be
-                        // followed by a digit. The lexer sees `a.-foo` as a
-                        // single unquoted token, so we validate per-segment
-                        // here after splitting. Symmetric with the
-                        // parse_subst_body segment-start check in
-                        // src/lexer.rs (the value-position strict reject
-                        // that lived in src/lexer.rs's tokenize loop was
-                        // removed by the E8 amendment — see
-                        // tests/s8_unquoted_starts.rs for the post-E8 reading).
-                        let mut seg_chars = part.chars();
-                        if seg_chars.next() == Some('-') {
-                            let after = seg_chars.next();
-                            if !after.is_some_and(|c| c.is_ascii_digit()) {
-                                let after_str = match after {
-                                    Some(c) => format!("{:?}", c),
-                                    None => String::from("EOF"),
-                                };
-                                return Err(ParseError {
-                                    message: format!(
-                                        "unquoted key segment cannot begin with '-' unless followed by a digit (got '-' then {} in {:?}, HOCON.md L270-276)",
-                                        after_str, part
-                                    ),
-                                    line: key_line,
-                                    // Point at the segment start, not the token start.
-                                    // Lexer columns are 1-based char positions on the same
-                                    // line; substitutions/keys cannot span newlines, so
-                                    // adding the char offset is safe.
-                                    col: key_col + seg_char_offset,
-                                });
-                            }
-                        }
-                        new_segments.push(part.to_string());
-                    }
-                    // Advance offset past this segment + its trailing '.' separator
-                    // (the '.' is consumed by split; account for it by adding 1
-                    // unless this is the last segment).
-                    seg_char_offset += part.chars().count() + 1;
-                }
-                if space_concat && !new_segments.is_empty() && !segments.is_empty() {
-                    // S10.8 + S11.1 interaction: if the spaced-in token starts
-                    // with '.', the leading '.' is a path separator that
-                    // survives the space — not a literal char to fold into
-                    // the previous segment.
-                    //   `a .b = 1`     → ['a', 'b']
-                    //   `a .b.c = 1`   → ['a', 'b', 'c']
-                    //   `"a" .b = 1`   → ['a', 'b']
-                    // Otherwise the first piece merges into the last existing
-                    // segment; any remaining dot-split pieces become new
-                    // path segments.
+                // Split unquoted key at dots.
+                let new_segments: Vec<String> = val
+                    .split('.')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
+                if space_concat && !segments.is_empty() {
+                    // E13 path-WS preservation: the literal preceding WS becomes
+                    // trailing on the PREVIOUS segment, uniformly. Then:
+                    //  - if raw starts with '.', the dot is a separator (S11.1)
+                    //    and filtered pieces (if any) become new segments;
+                    //  - otherwise the first piece merges into the just-extended
+                    //    segment, with remaining pieces as new segments.
+                    let last_idx = segments.len() - 1;
+                    segments[last_idx].push_str(&ws);
                     if val.starts_with('.') {
                         segments.extend(new_segments);
-                    } else {
+                    } else if !new_segments.is_empty() {
                         let mut iter = new_segments.into_iter();
                         let head = iter.next().expect("checked !is_empty above");
-                        let last_idx = segments.len() - 1;
-                        segments[last_idx].push(' ');
                         segments[last_idx].push_str(&head);
                         segments.extend(iter);
                     }
+                } else if !post_dot_prefix.is_empty() && val.starts_with('.') {
+                    // E13 dot-WS-dot case (e.g. `a. .b = 1`): after a trailing
+                    // dot from the previous token, the WS-then-dot sequence
+                    // means the WS becomes its OWN path segment (between the
+                    // two dot separators), and the leading dot starts a new
+                    // segment chain. Lightbend: `a. .b = 1` →
+                    // {"a":{" ":{"b":1}}} = ['a', ' ', 'b']. Empirically
+                    // verified via typesafe-config 1.4.3 probe.
+                    let prefix = std::mem::take(&mut post_dot_prefix);
+                    segments.push(prefix);
+                    segments.extend(new_segments);
+                } else if !post_dot_prefix.is_empty() && !new_segments.is_empty() {
+                    // post-dot WS becomes leading prefix on the new segment (E13)
+                    let prefix = std::mem::take(&mut post_dot_prefix);
+                    let mut iter = new_segments.into_iter();
+                    let head = iter.next().expect("checked !is_empty above");
+                    segments.push(format!("{}{}", prefix, head));
+                    segments.extend(iter);
                 } else {
                     segments.extend(new_segments);
                 }
@@ -424,6 +427,16 @@ impl<'a> Parser<'a> {
             space_concat = false;
 
             if trailing_dot {
+                // E13: if the next token has preceding whitespace, capture it
+                // as the post-dot prefix to be applied in the next iteration.
+                let next_kind = self.peek_kind();
+                if (next_kind == TokenKind::Unquoted || next_kind == TokenKind::QuotedString)
+                    && !self.peek_preceding_whitespace().is_empty()
+                {
+                    post_dot_prefix = self.peek_preceding_whitespace().to_string();
+                } else {
+                    post_dot_prefix.clear();
+                }
                 continue;
             }
 
@@ -437,6 +450,14 @@ impl<'a> Parser<'a> {
             {
                 if self.peek_value() == "." {
                     self.advance(); // consume the standalone dot separator
+                    // After consuming the separator, check WS on the token AFTER
+                    // it for post-dot prefix preservation (E13).
+                    let after_kind = self.peek_kind();
+                    if (after_kind == TokenKind::Unquoted || after_kind == TokenKind::QuotedString)
+                        && !self.peek_preceding_whitespace().is_empty()
+                    {
+                        post_dot_prefix = self.peek_preceding_whitespace().to_string();
+                    }
                 }
                 // For ".d"-style tokens, fall through to the next loop iteration
                 // which will split ".d" on '.' → ["", "d"] and push "d".
@@ -455,6 +476,18 @@ impl<'a> Parser<'a> {
             }
 
             break;
+        }
+
+        // E13 pw06: a key path ending with `.` (e.g. `a b. = 1`) creates an
+        // empty trailing segment. Lightbend throws BadPath; we match —
+        // loosening S8.6-in-key and preserving path-WS does NOT cascade into
+        // accepting empty path segments.
+        if trailing_dot {
+            return Err(ParseError {
+                message: "path has a trailing period '.' — empty key segment not allowed (HOCON.md path rules)".into(),
+                line: self.peek_line(),
+                col: self.peek_col(),
+            });
         }
 
         Ok(segments)
