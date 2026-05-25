@@ -65,25 +65,54 @@ impl<'a> SubstitutionResolver<'a> {
         let mut result = IndexMap::new();
         for (key, val) in &obj.fields {
             self.resolving_field_path.push(key.clone());
+            let full_cache_key = self.resolving_field_path.join(".");
+            // xx.hocon#27 cluster 3h sr16: invalidate any cached entry for
+            // this field's key BEFORE resolving it. The cache may hold a
+            // stale "preview" value written when an earlier field (e.g.
+            // `b = ${a}` declared before `a = ${?a}foo`) resolved a's concat
+            // and cached the cycle-short-circuited result `"foo"`. Without
+            // the invalidation, `a`'s own concat reads back `"foo"` from
+            // cache and produces `"foofoo"`.
+            self.cache.remove(&full_cache_key);
             let resolved_result = self.resolve_val(val, obj);
             self.resolving_field_path.pop();
             match resolved_result? {
                 Some(resolved) => {
                     // Delayed merge: if both current and prior resolve to objects, deep merge
-                    if let HoconValue::Object(ref current_fields) = resolved {
-                        if let Some(prior) = obj.prior_values.get(key) {
-                            self.resolving_field_path.push(key.clone());
-                            let prior_result = self.resolve_val(prior, obj);
-                            self.resolving_field_path.pop();
-                            if let Some(HoconValue::Object(prior_fields)) = prior_result? {
-                                let merged =
-                                    deep_merge_hocon_objects(prior_fields, current_fields.clone());
-                                result.insert(key.clone(), merged);
-                                continue;
+                    let final_value =
+                        if let HoconValue::Object(ref current_fields) = resolved {
+                            if let Some(prior) = obj.prior_values.get(key) {
+                                self.resolving_field_path.push(key.clone());
+                                let prior_result = self.resolve_val(prior, obj);
+                                self.resolving_field_path.pop();
+                                if let Some(HoconValue::Object(prior_fields)) = prior_result? {
+                                    deep_merge_hocon_objects(
+                                        prior_fields,
+                                        current_fields.clone(),
+                                    )
+                                } else {
+                                    resolved
+                                }
+                            } else {
+                                resolved
                             }
-                        }
-                    }
-                    result.insert(key.clone(), resolved);
+                        } else {
+                            resolved
+                        };
+                    // xx.hocon#27 cluster 3h sr14+sr16: write the field's final
+                    // resolved value to the substitution cache under its full
+                    // dotted path. Without this, the self-ref code path's
+                    // intermediate cache writes (prior values from is_self_ref
+                    // branch at L290; cycle-handler results; external-caller
+                    // preview values) survive as stale entries — external
+                    // lookups like `b = ${a}` then read the prior instead of
+                    // the post-concat final value (sr14: `b="x"` instead of
+                    // `"xfoo"`; sr16: `a="foofoo"` because `a`'s own concat
+                    // reads back `b`'s preview of `a`). The post-loop write
+                    // here is always authoritative for fields the resolver
+                    // commits into `result`.
+                    self.cache.insert(full_cache_key, final_value.clone());
+                    result.insert(key.clone(), final_value);
                 }
                 None => {
                     // Unresolved optional: fall back to prior value
@@ -92,6 +121,7 @@ impl<'a> SubstitutionResolver<'a> {
                         let prior_result = self.resolve_val(prior, obj);
                         self.resolving_field_path.pop();
                         if let Some(prior_resolved) = prior_result? {
+                            self.cache.insert(full_cache_key, prior_resolved.clone());
                             result.insert(key.clone(), prior_resolved);
                         }
                     }
