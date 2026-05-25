@@ -79,26 +79,22 @@ impl<'a> SubstitutionResolver<'a> {
             match resolved_result? {
                 Some(resolved) => {
                     // Delayed merge: if both current and prior resolve to objects, deep merge
-                    let final_value =
-                        if let HoconValue::Object(ref current_fields) = resolved {
-                            if let Some(prior) = obj.prior_values.get(key) {
-                                self.resolving_field_path.push(key.clone());
-                                let prior_result = self.resolve_val(prior, obj);
-                                self.resolving_field_path.pop();
-                                if let Some(HoconValue::Object(prior_fields)) = prior_result? {
-                                    deep_merge_hocon_objects(
-                                        prior_fields,
-                                        current_fields.clone(),
-                                    )
-                                } else {
-                                    resolved
-                                }
+                    let final_value = if let HoconValue::Object(ref current_fields) = resolved {
+                        if let Some(prior) = obj.prior_values.get(key) {
+                            self.resolving_field_path.push(key.clone());
+                            let prior_result = self.resolve_val(prior, obj);
+                            self.resolving_field_path.pop();
+                            if let Some(HoconValue::Object(prior_fields)) = prior_result? {
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone())
                             } else {
                                 resolved
                             }
                         } else {
                             resolved
-                        };
+                        }
+                    } else {
+                        resolved
+                    };
                     // xx.hocon#27 cluster 3h sr14+sr16: write the field's final
                     // resolved value to the substitution cache under its full
                     // dotted path. Without this, the self-ref code path's
@@ -111,7 +107,9 @@ impl<'a> SubstitutionResolver<'a> {
                     // reads back `b`'s preview of `a`). The post-loop write
                     // here is always authoritative for fields the resolver
                     // commits into `result`.
-                    self.cache.insert(full_cache_key, final_value.clone());
+                    self.cache
+                        .insert(full_cache_key.clone(), final_value.clone());
+                    self.cache_descendants(&full_cache_key, &final_value);
                     result.insert(key.clone(), final_value);
                 }
                 None => {
@@ -121,7 +119,9 @@ impl<'a> SubstitutionResolver<'a> {
                         let prior_result = self.resolve_val(prior, obj);
                         self.resolving_field_path.pop();
                         if let Some(prior_resolved) = prior_result? {
-                            self.cache.insert(full_cache_key, prior_resolved.clone());
+                            self.cache
+                                .insert(full_cache_key.clone(), prior_resolved.clone());
+                            self.cache_descendants(&full_cache_key, &prior_resolved);
                             result.insert(key.clone(), prior_resolved);
                         }
                     }
@@ -129,6 +129,16 @@ impl<'a> SubstitutionResolver<'a> {
             }
         }
         Ok(HoconValue::Object(result))
+    }
+
+    fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) {
+        if let HoconValue::Object(fields) = value {
+            for (key, child) in fields {
+                let child_key = format!("{prefix}.{key}");
+                self.cache.insert(child_key.clone(), child.clone());
+                self.cache_descendants(&child_key, child);
+            }
+        }
     }
 
     fn resolve_val(
@@ -162,6 +172,10 @@ impl<'a> SubstitutionResolver<'a> {
         s: &SubstPlaceholder,
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
+        if s.known_absent {
+            return Ok(None);
+        }
+
         // Cache key includes list_suffix to prevent `${X}` and `${X[]}` collisions:
         // both resolve via different code paths (scalar fallback vs resolve_env_list)
         // and can produce different values, so they must occupy distinct cache slots.
@@ -200,9 +214,9 @@ impl<'a> SubstitutionResolver<'a> {
                         _ => None,
                     },
                 };
-                let skip_due_to_self_ref = prior_for_check.as_ref().is_some_and(|p| {
-                    super::fold_self_ref::contains_subst_by_path(p, &s.segments)
-                });
+                let skip_due_to_self_ref = prior_for_check
+                    .as_ref()
+                    .is_some_and(|p| super::fold_self_ref::contains_subst_by_path(p, &s.segments));
                 if !skip_due_to_self_ref {
                     // Surgical: only remove the current cycling key from the
                     // swapped-in set; other in-flight resolutions stay guarded.

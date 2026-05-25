@@ -35,7 +35,7 @@ use crate::lexer::Segment;
 /// wrapping shapes covered by the #118/#120 union).
 pub(crate) fn contains_self_ref(v: &ResolverValue, full_key: &str) -> bool {
     match v {
-        ResolverValue::Subst(sp) => subst_full_key(sp) == full_key,
+        ResolverValue::Subst(sp) => !sp.known_absent && subst_full_key(sp) == full_key,
         ResolverValue::Concat(c) => c.nodes.iter().any(|n| contains_self_ref(n, full_key)),
         ResolverValue::UnresolvedArray(elems) => {
             elems.iter().any(|e| contains_self_ref(e, full_key))
@@ -93,12 +93,12 @@ pub(crate) fn fold_self_ref(
 ///
 ///   * `prior` has no self-ref to `full_key`         → save as-is        → `Some(prior.clone())`
 ///   * `prior` has self-ref AND `old` is `Some(_)`   → fold against old  → `Some(folded)`
-///   * `prior` has self-ref AND `old` is `None`      → skip save         → `None`
+///   * optional self-ref AND `old` is `None`         → fold to absent    → `Some(folded)`
+///   * required self-ref AND `old` is `None`         → skip save         → `None`
 ///
-/// The skip case (no old prior to fold against) preserves the existing
-/// "self-referential substitution with no prior value" error path in
-/// `resolve_subst`. Callers must not write to `prior_values` when this
-/// returns `None`.
+/// The no-prior optional case preserves S13a.13's "optional self-ref with no
+/// prior resolves to undefined" rule while still saving the literal parts of
+/// a concat for the next overwrite (sr15: `${?a}1; ${?a}2` → `12`).
 pub(crate) fn fold_or_skip_prior(
     prior: &ResolverValue,
     full_key: &str,
@@ -107,7 +107,53 @@ pub(crate) fn fold_or_skip_prior(
     if !contains_self_ref(prior, full_key) {
         return Some(prior.clone());
     }
-    old.map(|o| fold_self_ref(prior, full_key, o))
+    if let Some(o) = old {
+        return Some(fold_self_ref(prior, full_key, o));
+    }
+    fold_optional_self_ref_absent(prior, full_key)
+}
+
+fn fold_optional_self_ref_absent(v: &ResolverValue, full_key: &str) -> Option<ResolverValue> {
+    match v {
+        ResolverValue::Subst(sp) if subst_full_key(sp) == full_key => {
+            if !sp.optional {
+                return None;
+            }
+            let mut absent = sp.clone();
+            absent.known_absent = true;
+            Some(ResolverValue::Subst(absent))
+        }
+        ResolverValue::Concat(c) => {
+            let mut nodes = Vec::with_capacity(c.nodes.len());
+            for n in &c.nodes {
+                nodes.push(fold_optional_self_ref_absent(n, full_key)?);
+            }
+            Some(ResolverValue::Concat(ConcatPlaceholder {
+                nodes,
+                separator_flags: c.separator_flags.clone(),
+                line: c.line,
+                col: c.col,
+            }))
+        }
+        ResolverValue::UnresolvedArray(elems) => {
+            let mut folded = Vec::with_capacity(elems.len());
+            for e in elems {
+                folded.push(fold_optional_self_ref_absent(e, full_key)?);
+            }
+            Some(ResolverValue::UnresolvedArray(folded))
+        }
+        ResolverValue::Obj(o) => {
+            let mut new_fields = indexmap::IndexMap::new();
+            for (k, val) in &o.fields {
+                new_fields.insert(k.clone(), fold_optional_self_ref_absent(val, full_key)?);
+            }
+            Some(ResolverValue::Obj(ResObj {
+                fields: new_fields,
+                prior_values: o.prior_values.clone(),
+            }))
+        }
+        _ => Some(v.clone()),
+    }
 }
 
 /// Dotted-path key of a substitution placeholder's segments. Segments are
@@ -118,26 +164,10 @@ pub(crate) fn subst_full_key(sp: &SubstPlaceholder) -> String {
 }
 
 /// Recursively folds nested self-references inside a value tree using each
-/// enclosing `ResObj`'s `prior_values` as the substitution target. For
-/// every `Obj` encountered, each field `k` is examined: if the field's
-/// value contains a `Subst` pointing at `path_prefix + k` (the field's
-/// own full dotted path) AND the `Obj` has a `prior_values[k]` entry,
-/// the substitution is folded against the prior.
-///
-/// Why this exists in rs.hocon but not go.hocon: go.hocon's setPath fix
-/// writes `r.priorValues[fullKey]` keyed by the full dotted path, so
-/// `resolveSubst`'s lookup finds the saved prior directly without
-/// navigating into an intermediate `ResObj`. rs.hocon's
-/// `resolve_subst` navigates `prior_root.fields` per segment, so a
-/// chain-3 multi-segment pattern (`r.x = ${r.x} [...]` × N) saves a
-/// `${r.x}`-containing concat at the leaf which then loops when
-/// re-encountered during prior-resolution. Pre-folding the nested
-/// self-references at save time breaks the loop.
-///
-/// Cross-impl note: covers the multi-segment chain (#118-class) and
-/// multi-segment object-merge (#120-class) on rs.hocon. Called from
-/// `structure_builder::apply_field` before saving an `Obj`-typed
-/// existing as the parent's prior.
+/// enclosing `ResObj`'s `prior_values` as the substitution target. This remains
+/// necessary when an object assignment overwrites existing child keys, but sr13
+/// avoids using it for pure additions so an already-folded prior is not saved
+/// and folded again on a later field.
 pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -> ResolverValue {
     if let ResolverValue::Obj(o) = v {
         let mut new_fields = indexmap::IndexMap::new();
@@ -146,8 +176,6 @@ pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -
             child_path.push(k.clone());
             let full_key =
                 super::utils::string_segments_to_key(child_path.iter().map(String::as_str));
-            // Recurse first (depth-first) so deeper folds happen before
-            // we examine the current level.
             let folded_field = fold_nested_self_refs(field_val, &child_path);
             let final_val = if contains_self_ref(&folded_field, &full_key) {
                 if let Some(leaf_prior) = o.prior_values.get(k) {
@@ -181,7 +209,9 @@ pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -
 /// `Obj`.
 pub(crate) fn contains_subst_by_path(v: &ResolverValue, target: &[Segment]) -> bool {
     match v {
-        ResolverValue::Subst(sp) => super::utils::segments_text_equal(&sp.segments, target),
+        ResolverValue::Subst(sp) => {
+            !sp.known_absent && super::utils::segments_text_equal(&sp.segments, target)
+        }
         ResolverValue::Concat(c) => c.nodes.iter().any(|n| contains_subst_by_path(n, target)),
         ResolverValue::UnresolvedArray(elems) => {
             elems.iter().any(|e| contains_subst_by_path(e, target))
