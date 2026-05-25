@@ -1665,3 +1665,68 @@ fn s13a_13_external_reference_to_self_ref_field() {
     assert_eq!(cfg.get_string("a").unwrap(), "foo");
     assert_eq!(cfg.get_string("b").unwrap(), "foo");
 }
+
+// --- Review #124 Issue 1: dotted-key cache collision fix ----------------------
+/// Regression: a quoted key containing a dot (`"a.b" = "literal"`) and a
+/// nested path with the same segments (`a { b = "nested" }`) must NOT
+/// collide in the substitution cache.  Before the fix, both were stored
+/// under the raw key `a.b`; the literal field's write then overwrote the
+/// nested field's entry, so `${a.b}` returned `"literal"` instead of
+/// `"nested"`.  The resolver now uses `string_segments_to_key` (which
+/// quotes keys containing dots) for the `full_cache_key` in `resolve_res_obj`
+/// and in `cache_descendants`.
+#[test]
+fn dotted_quoted_key_no_cache_collision_with_nested_path() {
+    // `a { b = "nested" }` stores `a.b = "nested"` (two-segment path).
+    // `"a.b" = "literal"` is a top-level key whose *text* contains a literal
+    // dot — it is a single segment `a.b`, stored as `"a.b"` (quoted) in the cache.
+    // `c = ${a.b}` resolves via segments [a, b] → cache key `a.b` (unquoted)
+    // → must find "nested", not "literal".
+    let input = r#"a { b = "nested" }
+"a.b" = "literal"
+c = ${a.b}
+"#;
+    let cfg =
+        hocon::parse_with_env(input, &std::collections::HashMap::new()).expect("parse failed");
+    // The two-segment path resolves correctly.
+    assert_eq!(
+        cfg.get_string("a.b").unwrap(),
+        "nested",
+        "two-segment path a.b must resolve to \"nested\""
+    );
+    // The substitution ${a.b} must NOT be poisoned by the quoted-key entry.
+    assert_eq!(
+        cfg.get_string("c").unwrap(),
+        "nested",
+        "c = ${{a.b}} must return \"nested\" (no cache collision with \"a.b\" quoted key)"
+    );
+}
+
+// --- Review #124 Issue 3: should_fold_nested gate for non-Obj overwrite --------
+/// Regression: when an object field that contains nested self-refs is then
+/// overwritten by a non-object value (e.g. `o = ${?o}`), the prior saved for
+/// `o` must capture the sub-field state with self-refs folded.
+///
+/// Pre-fix: `should_fold_nested` required `new_val` to be an `Obj` with
+/// overlapping keys, so for `new_val = Subst(${?o})` the gate was false.
+/// The existing value `{a:Concat[${?o.a},bar]}` was saved as-is. At resolve
+/// time the prior's `${?o.a}` looked up `o.a` in root where `o = ${?o}` (a
+/// Subst, not an Obj), returning None → `o.a = "bar"` instead of `"xbar"`.
+///
+/// Fix: fold when `existing` is an Obj AND `new_val` is NOT an Obj (review
+/// #124 Issue 3, cross-impl with ts.hocon Codex P1 + Claude #1).
+#[test]
+fn should_fold_nested_gate_non_obj_overwrite() {
+    // o.a = "x"         → prior for "o" = Obj({a:Resolved("x")}) after step 2
+    // o.a = ${?o.a}bar  → o.a becomes "xbar"; prior should reflect that
+    // o = ${?o}         → new_val is Subst; existing prior must be folded so
+    //                     resolve(${?o}) returns {a:"xbar"} not {a:"bar"}
+    let input = "o.a = \"x\"\no.a = ${?o.a}bar\no = ${?o}";
+    let cfg =
+        hocon::parse_with_env(input, &std::collections::HashMap::new()).expect("parse failed");
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "xbar",
+        "o.a must be \"xbar\" (non-Obj overwrite must fold nested self-refs in prior)"
+    );
+}

@@ -5,7 +5,9 @@ use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
-use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key};
+use super::utils::{
+    deep_merge_hocon_objects, lookup_path, segments_to_key, string_segments_to_key,
+};
 
 pub(crate) struct SubstitutionResolver<'a> {
     root: &'a ResObj,
@@ -65,25 +67,59 @@ impl<'a> SubstitutionResolver<'a> {
         let mut result = IndexMap::new();
         for (key, val) in &obj.fields {
             self.resolving_field_path.push(key.clone());
+            // Use the same escaping as segments_to_key / string_segments_to_key so
+            // that a quoted key like `"a.b"` produces cache key `"a.b"` (quoted),
+            // not `a.b` (unescaped). Without this, a top-level `"a.b" = "literal"`
+            // field and a nested `a { b = "nested" }` path produce the same raw
+            // dot-join `a.b`, causing a cache collision that makes `${a.b}` return
+            // "literal" instead of "nested". (Review #124 Issue 1.)
+            let full_cache_key =
+                string_segments_to_key(self.resolving_field_path.iter().map(String::as_str));
+            // xx.hocon#27 cluster 3h sr16: invalidate any cached entry for
+            // this field's key BEFORE resolving it. The cache may hold a
+            // stale "preview" value written when an earlier field (e.g.
+            // `b = ${a}` declared before `a = ${?a}foo`) resolved a's concat
+            // and cached the cycle-short-circuited result `"foo"`. Without
+            // the invalidation, `a`'s own concat reads back `"foo"` from
+            // cache and produces `"foofoo"`.
+            self.cache.remove(&full_cache_key);
             let resolved_result = self.resolve_val(val, obj);
             self.resolving_field_path.pop();
             match resolved_result? {
                 Some(resolved) => {
                     // Delayed merge: if both current and prior resolve to objects, deep merge
-                    if let HoconValue::Object(ref current_fields) = resolved {
+                    let final_value = if let HoconValue::Object(ref current_fields) = resolved {
                         if let Some(prior) = obj.prior_values.get(key) {
                             self.resolving_field_path.push(key.clone());
                             let prior_result = self.resolve_val(prior, obj);
                             self.resolving_field_path.pop();
                             if let Some(HoconValue::Object(prior_fields)) = prior_result? {
-                                let merged =
-                                    deep_merge_hocon_objects(prior_fields, current_fields.clone());
-                                result.insert(key.clone(), merged);
-                                continue;
+                                deep_merge_hocon_objects(prior_fields, current_fields.clone())
+                            } else {
+                                resolved
                             }
+                        } else {
+                            resolved
                         }
-                    }
-                    result.insert(key.clone(), resolved);
+                    } else {
+                        resolved
+                    };
+                    // xx.hocon#27 cluster 3h sr14+sr16: write the field's final
+                    // resolved value to the substitution cache under its full
+                    // dotted path. Without this, the self-ref code path's
+                    // intermediate cache writes (prior values from is_self_ref
+                    // branch at L290; cycle-handler results; external-caller
+                    // preview values) survive as stale entries — external
+                    // lookups like `b = ${a}` then read the prior instead of
+                    // the post-concat final value (sr14: `b="x"` instead of
+                    // `"xfoo"`; sr16: `a="foofoo"` because `a`'s own concat
+                    // reads back `b`'s preview of `a`). The post-loop write
+                    // here is always authoritative for fields the resolver
+                    // commits into `result`.
+                    self.cache
+                        .insert(full_cache_key.clone(), final_value.clone());
+                    self.cache_descendants(&full_cache_key, &final_value);
+                    result.insert(key.clone(), final_value);
                 }
                 None => {
                     // Unresolved optional: fall back to prior value
@@ -92,6 +128,9 @@ impl<'a> SubstitutionResolver<'a> {
                         let prior_result = self.resolve_val(prior, obj);
                         self.resolving_field_path.pop();
                         if let Some(prior_resolved) = prior_result? {
+                            self.cache
+                                .insert(full_cache_key.clone(), prior_resolved.clone());
+                            self.cache_descendants(&full_cache_key, &prior_resolved);
                             result.insert(key.clone(), prior_resolved);
                         }
                     }
@@ -99,6 +138,20 @@ impl<'a> SubstitutionResolver<'a> {
             }
         }
         Ok(HoconValue::Object(result))
+    }
+
+    fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) {
+        if let HoconValue::Object(fields) = value {
+            for (key, child) in fields {
+                // Use the same quoting rule as string_segments_to_key so that
+                // a field key containing a dot (e.g. `"a.b"`) is stored as
+                // `prefix."a.b"` (quoted), not `prefix.a.b` (ambiguous).
+                let escaped_key = string_segments_to_key(std::iter::once(key.as_str()));
+                let child_key = format!("{prefix}.{escaped_key}");
+                self.cache.insert(child_key.clone(), child.clone());
+                self.cache_descendants(&child_key, child);
+            }
+        }
     }
 
     fn resolve_val(
@@ -132,6 +185,10 @@ impl<'a> SubstitutionResolver<'a> {
         s: &SubstPlaceholder,
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
+        if s.known_absent {
+            return Ok(None);
+        }
+
         // Cache key includes list_suffix to prevent `${X}` and `${X[]}` collisions:
         // both resolve via different code paths (scalar fallback vs resolve_env_list)
         // and can produce different values, so they must occupy distinct cache slots.
@@ -157,11 +214,33 @@ impl<'a> SubstitutionResolver<'a> {
                 .or_else(|| self.root.prior_values.get(root_seg));
             if let Some(prior) = prior {
                 let prior = prior.clone();
-                let mut fresh_resolving = self.resolving.clone();
-                std::mem::swap(&mut self.resolving, &mut fresh_resolving);
-                let result = self.resolve_val(&prior, scope);
-                std::mem::swap(&mut self.resolving, &mut fresh_resolving);
-                return result;
+                // xx.hocon#27 cluster 3h sr12: if the prior itself contains a
+                // self-ref to the same key (e.g. `foo.a = ${?foo.a}bar; foo.b
+                // = ${foo.a}` saves Obj({a:Concat[${?foo.a},bar]}) as foo's
+                // prior), resolving it would re-discover the same self-ref
+                // and recurse infinitely. Treat as no-prior — fall through
+                // to the optional/required short-circuit below.
+                let prior_for_check = match s.segments.len() {
+                    1 => Some(prior.clone()),
+                    _ => match prior {
+                        ResolverValue::Obj(ref po) => lookup_path(po, &s.segments[1..]).cloned(),
+                        _ => None,
+                    },
+                };
+                let skip_due_to_self_ref = prior_for_check
+                    .as_ref()
+                    .is_some_and(|p| super::fold_self_ref::contains_subst_by_path(p, &s.segments));
+                if !skip_due_to_self_ref {
+                    // Surgical: only remove the current cycling key from the
+                    // swapped-in set; other in-flight resolutions stay guarded.
+                    let mut fresh_resolving = self.resolving.clone();
+                    fresh_resolving.remove(&key);
+                    std::mem::swap(&mut self.resolving, &mut fresh_resolving);
+                    let result = self.resolve_val(&prior, scope);
+                    std::mem::swap(&mut self.resolving, &mut fresh_resolving);
+                    return result;
+                }
+                // Fall through to optional/required short-circuit below.
             }
             if s.optional {
                 return Ok(None);
@@ -235,6 +314,43 @@ impl<'a> SubstitutionResolver<'a> {
                 let is_self_ref =
                     is_owner && super::fold_self_ref::contains_subst_by_path(&found, &s.segments);
                 if is_self_ref {
+                    // xx.hocon#27 round-3 review #124 (Codex P2): for multi-segment
+                    // self-refs (`${?o.a}` while resolving `o.a`), prefer the LEAF
+                    // prior in the current scope (`scope.prior_values[a] = "x"`)
+                    // over navigating into the outer prior root (`root.prior[o].a`
+                    // which may be the post-fold form `"xbar"` when a partial
+                    // overwrite saved a folded snapshot at the parent level).
+                    //
+                    // The leaf prior is the spec-correct "previous value of this
+                    // specific field" — the outer-prior navigation can yield a
+                    // post-fold value when an Obj-Obj overwrite folded existing
+                    // nested self-refs to seed `${?o}` (whole-object) references
+                    // in the new value. For `${?o.a}` self-ref, the unfolded leaf
+                    // prior is what spec says to consult.
+                    //
+                    // sr21 repro: `o.a="x"; o.b=0; o.a=${?o.a}bar; o={b=1}` — the
+                    // strict-subset overwrite folds outer prior to `{a:"xbar",b:0}`,
+                    // but the live `${?o.a}` Concat must read inner leaf prior
+                    // `a="x"` to produce `"xbar"`, not the folded `"xbar"` which
+                    // double-folds to `"xbarbar"`.
+                    if s.segments.len() > 1 {
+                        let leaf_seg = s.segments.last().map(|seg| seg.text.as_str()).unwrap_or("");
+                        if let Some(leaf_prior) = scope.prior_values.get(leaf_seg).cloned() {
+                            // sr12 guard: if the leaf prior itself contains a
+                            // self-ref to the same key, treat as no-prior to
+                            // avoid infinite recursion.
+                            if !super::fold_self_ref::contains_subst_by_path(
+                                &leaf_prior,
+                                &s.segments,
+                            ) {
+                                let result = self.resolve_val(&leaf_prior, scope)?;
+                                if let Some(ref r) = result {
+                                    self.cache.insert(key.to_string(), r.clone());
+                                }
+                                return Ok(result);
+                            }
+                        }
+                    }
                     let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior_root = scope
                         .prior_values
@@ -254,34 +370,25 @@ impl<'a> SubstitutionResolver<'a> {
                             Some(prior_root)
                         };
                         if let Some(prior) = prior {
-                            let result = self.resolve_val(&prior, scope)?;
-                            if let Some(ref r) = result {
-                                self.cache.insert(key.to_string(), r.clone());
+                            // xx.hocon#27 cluster 3h sr12: when the saved prior
+                            // itself contains a self-ref to the same key (e.g.
+                            // `foo.a = ${?foo.a}bar; foo.b = ${foo.a}` saves the
+                            // unfolded Concat[${?foo.a},bar] as foo's prior),
+                            // resolving the prior would re-discover the same
+                            // self-ref and recurse infinitely. Treat as no-prior
+                            // and fall through to the optional/required
+                            // short-circuit below — semantically there is no
+                            // "previous resolved value" to look back to.
+                            if !super::fold_self_ref::contains_subst_by_path(&prior, &s.segments) {
+                                let result = self.resolve_val(&prior, scope)?;
+                                if let Some(ref r) = result {
+                                    self.cache.insert(key.to_string(), r.clone());
+                                }
+                                return Ok(result);
                             }
-                            return Ok(result);
                         }
-                        // Prior root exists but nested path not found — fall through to
-                        // no-prior short-circuit below.
-                    }
-                    // Object-literal form fallback: when `foo { a = "x"; a = ${?foo.a}bar }`
-                    // is used, the prior for the leaf key `a` is stored directly in the
-                    // current scope (inner_obj.prior_values["a"]), not in the root scope
-                    // under the parent key "foo".  The root-segment lookup above only
-                    // finds the parent object's prior (used for dotted-path reassignments
-                    // at root level), so it finds nothing here.
-                    //
-                    // Guard: only fire this fallback when the substitution is multi-segment
-                    // (len > 1) — single-segment priors are already handled above — and the
-                    // leaf segment's prior lives directly in `scope`.
-                    if s.segments.len() > 1 {
-                        let leaf_seg = s.segments.last().map(|seg| seg.text.as_str()).unwrap_or("");
-                        if let Some(leaf_prior) = scope.prior_values.get(leaf_seg).cloned() {
-                            let result = self.resolve_val(&leaf_prior, scope)?;
-                            if let Some(ref r) = result {
-                                self.cache.insert(key.to_string(), r.clone());
-                            }
-                            return Ok(result);
-                        }
+                        // Prior root exists but nested path not found OR prior
+                        // contains the same self-ref — fall through.
                     }
                     // Spec L841: no prior + self-ref → optional yields undefined; required errors.
                     if s.optional {

@@ -242,6 +242,7 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
             ResolverValue::Subst(SubstPlaceholder {
                 segments,
                 optional: pv.optional,
+                known_absent: false,
                 list_suffix: false,
                 line: 0,
                 col: 0,

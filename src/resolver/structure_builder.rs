@@ -158,25 +158,50 @@ impl<'a> StructureBuilder<'a> {
         let new_val = self.ast_to_resolver_value(field.value, &child_prefix)?;
 
         // #118 + #120: save existing with fold-or-skip (chain-class fix).
-        // Cross-impl with go.hocon PR #121 / #123. Applies regardless of
-        // whether new_val will deep-merge with existing — the previous
-        // unconditional save still worked for #118-chain crashes because
-        // ResolverValue::Obj couldn't contain a self-ref placeholder visible
-        // to the prior-save layer (only the merged sub-object's interior
-        // could, see #120). With fold + walker extension covering Obj /
-        // UnresolvedArray interiors, the saved prior is self-ref-free.
         //
-        // fold_nested_self_refs pre-pass handles the multi-segment chain
-        // (`r.x = ${r.x} [...]` × N): rs.hocon's resolve_subst navigates
-        // prior_root.fields per segment, so a leaf-level concat containing
-        // ${r.x} retained in the nested ResObj would loop during prior
-        // resolution. The pre-pass folds those nested ${X.Y} refs against
-        // each enclosing ResObj's prior_values before the outer save.
+        // xx.hocon#27 cluster 3h sr13: save the previous value before any
+        // nested fold. If this stores a post-fold object, the next overwrite
+        // can fold that already-expanded value again (`xbarbar`).
         if let Some(ref ex) = existing {
             let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
-            let ex_folded = fold_nested_self_refs(ex, &child_prefix);
             let old_prior = obj.prior_values.get(&head).cloned();
-            if let Some(prior) = fold_or_skip_prior(&ex_folded, &full_key, old_prior.as_ref()) {
+            let prior_source;
+            // xx.hocon#27 review #124 Issue 3 (cross-impl with ts.hocon Codex P1 + Claude #1):
+            // fold nested self-refs in `existing` when `existing` is an Obj and either:
+            //   (a) `new_val` is NOT an Obj (e.g. `o = ${?o}` overwriting `{a:Concat[...]}`)
+            //       — prior must capture pre-overwrite state with sub-fields resolved so
+            //       `${?o}` at resolve time returns `{a:"xbar"}` not `{a:"bar"}`; or
+            //   (b) `new_val` IS an Obj whose keys are a subset of `existing`'s keys
+            //       (same-key Obj-Obj overwrite, e.g. `o = {a=1, prev=${?o}}` after
+            //       `o.a = "xbar"`) — same sub-field resolution requirement applies.
+            //
+            // Do NOT fold for the sr13 case: Obj-Obj adding new keys.  When `new_val`
+            // has keys not in `existing`, the leaf-prior fallback in resolve_subst_inner
+            // handles sub-field resolution; folding here would double-fold on the 3rd
+            // write producing the "xbarbar" regression.
+            let should_fold_nested = match (ex, &new_val) {
+                (ResolverValue::Obj(_), ResolverValue::Obj(new_obj)) => {
+                    if let ResolverValue::Obj(existing_obj) = ex {
+                        // Fold only when new keys are a subset of existing keys (same-key
+                        // or strict-subset Obj-Obj).  Adding new keys → skip (sr13 guard).
+                        new_obj
+                            .fields
+                            .keys()
+                            .all(|k| existing_obj.fields.contains_key(k))
+                    } else {
+                        false
+                    }
+                }
+                (ResolverValue::Obj(_), _) => true, // Obj overwritten by non-Obj
+                _ => false,
+            };
+            let prior_input = if should_fold_nested {
+                prior_source = fold_nested_self_refs(ex, &child_prefix);
+                &prior_source
+            } else {
+                ex
+            };
+            if let Some(prior) = fold_or_skip_prior(prior_input, &full_key, old_prior.as_ref()) {
                 obj.prior_values.insert(head.clone(), prior);
             }
         }
@@ -234,6 +259,7 @@ impl<'a> StructureBuilder<'a> {
             } => Ok(ResolverValue::Subst(SubstPlaceholder {
                 segments,
                 optional,
+                known_absent: false,
                 list_suffix,
                 line: pos.line,
                 col: pos.col,

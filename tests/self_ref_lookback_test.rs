@@ -244,12 +244,12 @@ fn sr11_mutual_ref_forward() {
     run_fixture("sr11-mutual-ref-forward");
 }
 
-/// sr12: object-literal form `foo { a = "x"\n a = ${?foo.a}bar }` → `foo.a = "xbar"`
-/// Regression guard: AST normalization must unify object-literal and dotted-path forms
-/// for self-ref look-back (Copilot rs-T1 verification).
-/// Note: HOCON field separator is LF (0x0A); semicolons are not newline equivalents
-/// in this parser, so the multi-field form requires a literal newline inside the
-/// object-literal block.
+/// (cluster 3f, NOT the cluster 3h sr12): object-literal form
+/// `foo { a = "x"\n a = ${?foo.a}bar }` → `foo.a = "xbar"`. Regression guard
+/// for AST normalization unifying object-literal and dotted-path forms.
+/// Note: HOCON field separator is LF (0x0A); semicolons are not newline
+/// equivalents in this parser, so the multi-field form requires a literal
+/// newline inside the object-literal block.
 #[test]
 fn s13a_13_nested_self_ref_object_literal_form() {
     let cfg = hocon::parse_with_env(
@@ -258,4 +258,248 @@ fn s13a_13_nested_self_ref_object_literal_form() {
     )
     .expect("parse failed");
     assert_eq!(cfg.get_string("foo.a").unwrap(), "xbar");
+}
+
+// ── sr12–sr16 (xx.hocon#27 cluster 3h follow-ups) ────────────────────────────
+//
+// 4 cross-impl resolver bugs surfaced by Round-2 multi-agent-review of the
+// S13a.13 cluster 3f PRs. See xx.hocon E14 for the convention. Pre-fix rs.hocon
+// status:
+//   sr12 FAIL-CRASH (stack overflow) — cycle handler clones the resolving set
+//   sr13 FAIL-WRONG (foo.a="xbarbar"; expected "xbar") — fold_nested_self_refs
+//        overwrites prior with already-folded form on the 3rd field write
+//   sr14 FAIL-WRONG (b="x" vs "xfoo") — cache pollution: is_self_ref branch
+//        writes prior to cache, external lookup reads stale entry
+//   sr15 FAIL-WRONG (a="2" vs "12") — fold_or_skip_prior skips when prior
+//        contains self-ref AND no old prior (universal failure cross-impl)
+//   sr16 FAIL-WRONG (a="foofoo" vs "foo") — cache pollution: external caller
+//        traverses self-ref field's concat, caches preview value, then
+//        self-ref field reads stale cache
+
+/// sr12: `foo.a = ${?foo.a}bar; foo.b = ${foo.a}` → `{foo:{a:"bar",b:"bar"}}`
+/// Pre-fix: stack overflow (cycle handler bug in resolve_subst_inner).
+#[test]
+fn sr12_nested_external_ref_no_prior() {
+    run_fixture("sr12-nested-external-ref-no-prior");
+}
+
+/// sr13: `foo.a = "x"; foo.a = ${?foo.a}bar; foo.b = ${foo.a}` → both `"xbar"`.
+/// Pre-fix: `foo.a="xbarbar", foo.b="xbar"` — prior-overwrite-with-folded.
+#[test]
+fn sr13_nested_external_ref_with_prior() {
+    run_fixture("sr13-nested-external-ref-with-prior");
+}
+
+/// sr14: `a = "x"; a = ${?a}foo; b = ${a}` → both `"xfoo"`.
+/// Pre-fix: `a="xfoo", b="x"` — cache pollution from is_self_ref branch.
+#[test]
+fn sr14_cache_prior_external() {
+    run_fixture("sr14-cache-prior-external");
+}
+
+/// sr15: `a = ${?a}1; a = ${?a}2` → `"12"`.
+/// Pre-fix: `"2"` — fold_or_skip_prior drops first concat (universal cross-impl bug).
+#[test]
+fn sr15_double_self_ref() {
+    run_fixture("sr15-double-self-ref");
+}
+
+/// sr16: `b = ${a}; a = ${?a}foo` → `a="foo", b="foo"` (order-independent).
+/// Pre-fix: `a="foofoo", b="foo"` — cache pollution from external preview.
+#[test]
+fn sr16_external_before_self_ref() {
+    run_fixture("sr16-external-before-self-ref");
+}
+
+// ── sr17–sr19: mixed-concat semantics (review #124 item a) ──────────────────
+//
+// These tests pin the contract of `fold_optional_self_ref_absent` for concats
+// that mix optional self-refs with other substitutions or literals.
+//
+// Contract (S13a):
+//   - fold_optional_self_ref_absent walks a Concat node-by-node.
+//   - A node that IS the self-ref AND is required → returns None → `?` short-
+//     circuits the whole concat → save is skipped → required-self-ref error
+//     fires at resolve time (sr05-like behaviour).
+//   - A node that IS the self-ref AND is optional → returns Some(known_absent)
+//     → resolve_subst returns Ok(None) → the operand is simply dropped from
+//     the concat fold (omission rule, Phase 6 #3b).
+//   - A node that is NOT the self-ref (e.g. ${b}, a literal, or ${a}
+//     referencing a different key) → falls through to `_ => Some(v.clone())`
+//     → saved as-is in the prior → evaluated at resolve time where it either
+//     resolves normally or errors per its own required/optional status.
+//
+// Consequence: `fold_optional_self_ref_absent` is NOT broken for mixed concats.
+// The `?`-propagation only fires on the exact self-ref node; all other nodes
+// are preserved in the saved prior and deferred to resolve time.
+
+/// sr17: Pure-optional concat `a = ${?a}foo${?b}` no prior.
+/// Both optional refs drop at resolve time; literal "foo" remains → a = "foo".
+/// Pins: non-self-ref optional ${?b} is preserved in saved prior and drops at
+/// resolve time (not incorrectly skipped during fold).
+#[test]
+fn sr17_pure_optional_concat_no_prior() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${?b}: no prior for a, b not defined anywhere.
+    // fold_or_skip_prior: contains_self_ref=true (${?a}), old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} node → known_absent Subst (optional self-ref, no prior).
+    //   "foo" literal → Some(literal).
+    //   ${?b} node → NOT self-ref of a → _ arm → Some(${?b} Subst).
+    //   → prior saved as Concat([known_absent_a, "foo", ${?b}]).
+    // At resolve time: known_absent_a → None (dropped); "foo" → "foo";
+    //   ${?b} → None (b undefined, optional) → dropped.
+    //   concat operands: ["foo"] → a = "foo".
+    let result = hocon::parse_with_env("a = ${?a}foo${?b}", &env);
+    assert!(
+        result.is_ok(),
+        "expected Ok but got error: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        result.unwrap().get_string("a").unwrap(),
+        "foo",
+        "a = ${{?a}}foo${{?b}} no prior should resolve to \"foo\""
+    );
+}
+
+/// sr18: Required external ref `a = ${?a}foo${b}` no prior for either.
+/// ${b} is required and has no definition → resolve-time error.
+/// Pins: `fold_optional_self_ref_absent` does NOT fold required non-self-ref
+/// ${b} to absent; it preserves ${b} in the saved prior so the required-missing
+/// error fires correctly at resolve time (not silently swallowed at fold time).
+#[test]
+fn sr18_required_external_no_def_errors() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${b}: no prior for a, b not defined.
+    // fold_or_skip_prior: contains_self_ref=true (${?a}), old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} → known_absent.  "foo" → literal.  ${b} → _ arm → Some(${b}).
+    //   → prior saved as Concat([known_absent_a, "foo", ${b}]).
+    // At resolve time: known_absent_a drops; "foo" stays; ${b} required+missing
+    //   → Err("could not resolve substitution: ${b}").
+    let result = hocon::parse_with_env("a = ${?a}foo${b}", &env);
+    assert!(
+        result.is_err(),
+        "expected resolve error for required missing ${{b}}, got Ok"
+    );
+    let err_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_msg.contains("could not resolve substitution") || err_msg.contains("b"),
+        "error message should mention unresolved substitution b, got: {err_msg}"
+    );
+}
+
+/// sr19: Required self-ref `a = ${?a}foo${a}` no prior.
+/// The required ${a} is a self-ref with no prior → resolve error (sr05-like).
+/// Pins: `fold_optional_self_ref_absent` returns None for the required self-ref
+/// node, which short-circuits the entire Concat via `?` → save is skipped →
+/// at resolve time the original value fires the required-self-ref error path.
+#[test]
+fn sr19_required_self_ref_mixed_no_prior() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${a}: no prior; ${a} is required self-ref.
+    // fold_or_skip_prior: contains_self_ref=true, old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} → Some(known_absent).  "foo" → Some(literal).
+    //   ${a} (required self-ref) → None → Concat short-circuits → outer None.
+    //   → fold_or_skip_prior returns None → save skipped.
+    // At resolve time: no prior, original value = Concat([${?a},"foo",${a}]).
+    //   is_self_ref fires on ${a} (required, no prior) → Err(self-referential).
+    let result = hocon::parse_with_env("a = ${?a}foo${a}", &env);
+    assert!(
+        result.is_err(),
+        "expected resolve error for required self-ref ${{a}} with no prior, got Ok"
+    );
+    let err_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_msg.contains("self-referential") || err_msg.contains("no prior"),
+        "error message should mention self-referential substitution, got: {err_msg}"
+    );
+}
+
+// ── sr21: Codex round-3 review #124 regression guard ──────────────────────
+
+/// sr21: Strict-subset Obj-Obj overwrite where existing has unresolved self-ref.
+///
+/// Codex P2 finding from round-3 review of rs.hocon #124: the fix in commit
+/// 6c0e3f3 (combined gate: same-key OR strict-subset OR Obj-non-Obj) folds
+/// every nested self-reference in existing and saves the folded object as the
+/// outer prior for `o`. But when the strict-subset overwrite leaves the
+/// existing self-ref field LIVE (not overwritten by new), the live ${?o.a}
+/// substitution then reads the outer folded prior (`o.a = "xbar"`) instead
+/// of the inner leaf prior (`o.a = "x"`), producing `o.a = "xbarbar"`.
+///
+/// Input:
+/// ```
+/// o.a = "x"
+/// o.b = 0
+/// o.a = ${?o.a}bar
+/// o = {b = 1}
+/// ```
+/// `o = {b = 1}` is a strict-subset deep-merge; after merge `o.a` is still
+/// the live Concat[${?o.a}, "bar"]. ${?o.a} should resolve via the inner
+/// leaf prior `a = "x"` (the spec-correct previous value of o.a) → "xbar".
+///
+/// Expected: `o.a = "xbar"`, `o.b = 1` (after merge).
+/// Regression: `o.a = "xbarbar"`.
+#[test]
+fn sr21_strict_subset_obj_overwrite_keeps_live_self_ref() {
+    let env = std::collections::HashMap::new();
+    let input = "o.a = \"x\"\no.b = 0\no.a = ${?o.a}bar\no = {b = 1}";
+    let cfg = hocon::parse_with_env(input, &env)
+        .unwrap_or_else(|e| panic!("sr21: unexpected parse error: {:?}", e));
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "xbar",
+        "sr21: o.a should be \"xbar\" (Concat resolves via inner leaf prior o.a=\"x\"); \
+         got wrong value — folded outer prior incorrectly preempted leaf prior"
+    );
+    assert_eq!(
+        cfg.get_string("o.b").unwrap(),
+        "1",
+        "sr21: o.b should be \"1\" (deep merge of new value)"
+    );
+}
+
+// ── sr20: Codex round-2 review #124 regression guard ────────────────────────
+
+/// sr20: Same-key Obj-Obj overwrite with nested self-ref.
+///
+/// Codex P2 finding from round-2 review of rs.hocon #124: the fix in commit
+/// 30ce495 dropped the original same-key Obj-Obj fold case, causing ${?o}
+/// inside `o = {a=1, prev=${?o}}` to see the unfolded state of `o` (where
+/// `o.a` is already 1) instead of the prior folded state (where `o.a = "xbar"`).
+///
+/// Input:
+/// ```
+/// o.a = "x"
+/// o.prev = 0
+/// o.a = ${?o.a}bar
+/// o = {a = 1, prev = ${?o}}
+/// ```
+/// `${?o}` on the last line should preview the prior `o` which had `a = "xbar"`.
+/// Expected: `o.prev.a = "xbar"`.
+/// Regression (pre-fix #124 round-2): `o.prev.a = "1bar"`.
+#[test]
+fn sr20_obj_overwrite_same_keys_with_self_ref() {
+    let env = std::collections::HashMap::new();
+    let input = "o.a = \"x\"\no.prev = 0\no.a = ${?o.a}bar\no = {a = 1, prev = ${?o}}";
+    let cfg = hocon::parse_with_env(input, &env)
+        .unwrap_or_else(|e| panic!("sr20: unexpected parse error: {:?}", e));
+    // o.prev is the prior `o` object at the point of the final `o = {...}` overwrite.
+    // At that point o had: a="xbar", prev=0 (from the two dotted assignments).
+    // So o.prev.a should be "xbar".
+    assert_eq!(
+        cfg.get_string("o.prev.a").unwrap(),
+        "xbar",
+        "sr20: o.prev.a should be \"xbar\" (prior o.a = ${{?o.a}}bar resolved to \"xbar\"); \
+         got wrong value — same-key Obj-Obj fold regression"
+    );
+    // Also verify the final o.a = 1 (the last assignment wins).
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "1",
+        "sr20: o.a should be \"1\" (last assignment wins)"
+    );
 }
