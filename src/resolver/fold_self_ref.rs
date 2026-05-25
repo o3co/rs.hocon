@@ -192,6 +192,265 @@ pub(crate) fn subst_full_key(sp: &SubstPlaceholder) -> String {
     segments_to_key(&sp.segments)
 }
 
+#[cfg(test)]
+mod tests {
+    //! Unit tests for `fold_optional_self_ref_absent` branch coverage.
+    //!
+    //! `fold_optional_self_ref_absent` is private; exercised via the
+    //! `fold_or_skip_prior(prior, key, None)` path, which calls
+    //! `fold_optional_self_ref_absent` when `contains_self_ref` is true.
+    //!
+    //! For the fallback branch (`_ => Some(v.clone())`), we call
+    //! `fold_optional_self_ref_absent` directly since it is in the same module.
+    //!
+    //! Covers: UnresolvedArray, Obj, and fallback branches that have no
+    //! fixture coverage from sr01–sr21 (sr15 only exercises Subst + Concat).
+
+    use super::*;
+    use crate::lexer::Segment;
+    use crate::value::{HoconValue, ScalarValue};
+    use indexmap::IndexMap;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    fn seg(text: &str) -> Segment {
+        Segment {
+            text: text.to_string(),
+            line: 1,
+            col: 1,
+        }
+    }
+
+    fn make_subst(key: &str, optional: bool) -> ResolverValue {
+        ResolverValue::Subst(SubstPlaceholder {
+            segments: vec![seg(key)],
+            optional,
+            known_absent: false,
+            list_suffix: false,
+            line: 1,
+            col: 1,
+            prefix_len: 0,
+        })
+    }
+
+    fn subst_known_absent(v: &ResolverValue) -> bool {
+        match v {
+            ResolverValue::Subst(sp) => sp.known_absent,
+            _ => panic!("expected Subst, got {:?}", v),
+        }
+    }
+
+    // ── UnresolvedArray branch ───────────────────────────────────────────────
+
+    /// UnresolvedArray containing an optional self-ref item → item folded to
+    /// known_absent=true. Tests the `ResolverValue::UnresolvedArray` arm of
+    /// `fold_optional_self_ref_absent`.
+    #[test]
+    fn unresolved_array_optional_self_ref_folded() {
+        let array = ResolverValue::UnresolvedArray(vec![make_subst("a", true)]);
+        let result = fold_or_skip_prior(&array, "a", None);
+        assert!(result.is_some(), "expected Some for optional self-ref array");
+        match result.unwrap() {
+            ResolverValue::UnresolvedArray(elems) => {
+                assert_eq!(elems.len(), 1);
+                assert!(
+                    subst_known_absent(&elems[0]),
+                    "array item should be known_absent after fold"
+                );
+            }
+            other => panic!("expected UnresolvedArray, got {:?}", other),
+        }
+    }
+
+    /// UnresolvedArray containing a required self-ref item → returns None
+    /// (short-circuit: save is skipped).
+    #[test]
+    fn unresolved_array_required_self_ref_returns_none() {
+        let array = ResolverValue::UnresolvedArray(vec![make_subst("a", false)]);
+        let result = fold_or_skip_prior(&array, "a", None);
+        assert!(
+            result.is_none(),
+            "expected None for required self-ref in array"
+        );
+    }
+
+    /// UnresolvedArray with no self-ref to key "a" → cloned and returned as-is.
+    #[test]
+    fn unresolved_array_no_self_ref_passes_through() {
+        // contains_self_ref("a") is false for ${?b} → fold_or_skip_prior
+        // takes the `Some(prior.clone())` fast path. Tests the no-self-ref
+        // clone path through the array.
+        let array = ResolverValue::UnresolvedArray(vec![make_subst("b", true)]);
+        let result = fold_or_skip_prior(&array, "a", None);
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::UnresolvedArray(elems) => {
+                assert_eq!(elems.len(), 1);
+                // "b" is not "a" so known_absent must remain false
+                assert!(!subst_known_absent(&elems[0]));
+            }
+            other => panic!("expected UnresolvedArray, got {:?}", other),
+        }
+    }
+
+    /// UnresolvedArray with mixed items: optional self-ref + non-self-ref.
+    /// Self-ref item folded; other item preserved unchanged.
+    #[test]
+    fn unresolved_array_mixed_items_only_self_ref_folded() {
+        let array = ResolverValue::UnresolvedArray(vec![
+            make_subst("a", true), // self-ref → fold
+            make_subst("b", true), // not self-ref → preserve
+        ]);
+        let result = fold_or_skip_prior(&array, "a", None);
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::UnresolvedArray(elems) => {
+                assert_eq!(elems.len(), 2);
+                assert!(subst_known_absent(&elems[0]), "first item should be known_absent");
+                assert!(!subst_known_absent(&elems[1]), "second item should not be known_absent");
+            }
+            other => panic!("expected UnresolvedArray, got {:?}", other),
+        }
+    }
+
+    // ── Obj branch ───────────────────────────────────────────────────────────
+
+    /// ResObj with a field containing an optional self-ref → field folded to
+    /// known_absent=true. Tests the `ResolverValue::Obj` arm of
+    /// `fold_optional_self_ref_absent`.
+    #[test]
+    fn obj_optional_self_ref_field_folded() {
+        let mut fields = IndexMap::new();
+        fields.insert("history".to_string(), make_subst("a", true));
+        let obj = ResolverValue::Obj(ResObj {
+            fields,
+            prior_values: IndexMap::new(),
+        });
+        let result = fold_or_skip_prior(&obj, "a", None);
+        assert!(result.is_some(), "expected Some for optional self-ref in obj field");
+        match result.unwrap() {
+            ResolverValue::Obj(o) => {
+                let field = o.fields.get("history").expect("history field missing");
+                assert!(
+                    subst_known_absent(field),
+                    "obj field should be known_absent after fold"
+                );
+            }
+            other => panic!("expected Obj, got {:?}", other),
+        }
+    }
+
+    /// ResObj with a field containing a required self-ref → returns None.
+    #[test]
+    fn obj_required_self_ref_field_returns_none() {
+        let mut fields = IndexMap::new();
+        fields.insert("history".to_string(), make_subst("a", false));
+        let obj = ResolverValue::Obj(ResObj {
+            fields,
+            prior_values: IndexMap::new(),
+        });
+        let result = fold_or_skip_prior(&obj, "a", None);
+        assert!(
+            result.is_none(),
+            "expected None for required self-ref in obj field"
+        );
+    }
+
+    /// ResObj with multiple fields: only the self-ref field is folded.
+    #[test]
+    fn obj_multiple_fields_only_self_ref_folded() {
+        let mut fields = IndexMap::new();
+        fields.insert("history".to_string(), make_subst("a", true));
+        fields.insert("other".to_string(), make_subst("b", true));
+        let obj = ResolverValue::Obj(ResObj {
+            fields,
+            prior_values: IndexMap::new(),
+        });
+        let result = fold_or_skip_prior(&obj, "a", None);
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::Obj(o) => {
+                let history = o.fields.get("history").expect("history missing");
+                let other = o.fields.get("other").expect("other missing");
+                assert!(subst_known_absent(history), "history should be known_absent");
+                assert!(!subst_known_absent(other), "other should not be known_absent");
+            }
+            other => panic!("expected Obj, got {:?}", other),
+        }
+    }
+
+    // ── Fallback branch (`_ => Some(v.clone())`) ─────────────────────────────
+
+    /// Resolved scalar value has no self-ref → `fold_optional_self_ref_absent`
+    /// takes the `_` fallback arm, returning `Some(v.clone())`.
+    ///
+    /// We call `fold_optional_self_ref_absent` directly because
+    /// `contains_self_ref` on a Resolved value returns false, so
+    /// `fold_or_skip_prior` would return `Some(prior.clone())` before ever
+    /// calling `fold_optional_self_ref_absent`.  The fallback arm is only
+    /// reachable from within a recursive call where a parent node (e.g.
+    /// UnresolvedArray or Obj) contains a self-ref but one of its children is
+    /// a non-self-ref Resolved value.
+    #[test]
+    fn fallback_resolved_scalar_passthrough() {
+        let scalar = ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::string(
+            "hello".to_string(),
+        )));
+        // Direct call to exercise the `_` arm.
+        let result = fold_optional_self_ref_absent(&scalar, "a");
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::Resolved(HoconValue::Scalar(sv)) => {
+                assert_eq!(sv.raw, "hello");
+            }
+            other => panic!("expected Resolved(Scalar), got {:?}", other),
+        }
+    }
+
+    /// Resolved number scalar passes through the fallback arm unchanged.
+    #[test]
+    fn fallback_resolved_number_passthrough() {
+        let num = ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::number(
+            "42".to_string(),
+        )));
+        let result = fold_optional_self_ref_absent(&num, "a");
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::Resolved(HoconValue::Scalar(sv)) => {
+                assert_eq!(sv.raw, "42");
+            }
+            other => panic!("expected Resolved(Scalar), got {:?}", other),
+        }
+    }
+
+    /// UnresolvedArray with Resolved scalar + optional self-ref: verifies that
+    /// the Resolved item hits the `_` fallback arm during recursive traversal.
+    #[test]
+    fn unresolved_array_resolved_item_hits_fallback() {
+        let array = ResolverValue::UnresolvedArray(vec![
+            ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::string("x".to_string()))),
+            make_subst("a", true),
+        ]);
+        let result = fold_or_skip_prior(&array, "a", None);
+        assert!(result.is_some());
+        match result.unwrap() {
+            ResolverValue::UnresolvedArray(elems) => {
+                assert_eq!(elems.len(), 2);
+                // First item is Resolved scalar → passes through fallback
+                match &elems[0] {
+                    ResolverValue::Resolved(HoconValue::Scalar(sv)) => {
+                        assert_eq!(sv.raw, "x");
+                    }
+                    other => panic!("expected Resolved(Scalar) at [0], got {:?}", other),
+                }
+                // Second item is the self-ref → folded to known_absent
+                assert!(subst_known_absent(&elems[1]));
+            }
+            other => panic!("expected UnresolvedArray, got {:?}", other),
+        }
+    }
+}
+
 /// Recursively folds nested self-references inside a value tree using each
 /// enclosing `ResObj`'s `prior_values` as the substitution target. This remains
 /// necessary when an object assignment overwrites existing child keys, but sr13
