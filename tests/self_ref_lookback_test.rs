@@ -310,3 +310,110 @@ fn sr15_double_self_ref() {
 fn sr16_external_before_self_ref() {
     run_fixture("sr16-external-before-self-ref");
 }
+
+// ── sr17–sr19: mixed-concat semantics (review #124 item a) ──────────────────
+//
+// These tests pin the contract of `fold_optional_self_ref_absent` for concats
+// that mix optional self-refs with other substitutions or literals.
+//
+// Contract (S13a):
+//   - fold_optional_self_ref_absent walks a Concat node-by-node.
+//   - A node that IS the self-ref AND is required → returns None → `?` short-
+//     circuits the whole concat → save is skipped → required-self-ref error
+//     fires at resolve time (sr05-like behaviour).
+//   - A node that IS the self-ref AND is optional → returns Some(known_absent)
+//     → resolve_subst returns Ok(None) → the operand is simply dropped from
+//     the concat fold (omission rule, Phase 6 #3b).
+//   - A node that is NOT the self-ref (e.g. ${b}, a literal, or ${a}
+//     referencing a different key) → falls through to `_ => Some(v.clone())`
+//     → saved as-is in the prior → evaluated at resolve time where it either
+//     resolves normally or errors per its own required/optional status.
+//
+// Consequence: `fold_optional_self_ref_absent` is NOT broken for mixed concats.
+// The `?`-propagation only fires on the exact self-ref node; all other nodes
+// are preserved in the saved prior and deferred to resolve time.
+
+/// sr17: Pure-optional concat `a = ${?a}foo${?b}` no prior.
+/// Both optional refs drop at resolve time; literal "foo" remains → a = "foo".
+/// Pins: non-self-ref optional ${?b} is preserved in saved prior and drops at
+/// resolve time (not incorrectly skipped during fold).
+#[test]
+fn sr17_pure_optional_concat_no_prior() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${?b}: no prior for a, b not defined anywhere.
+    // fold_or_skip_prior: contains_self_ref=true (${?a}), old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} node → known_absent Subst (optional self-ref, no prior).
+    //   "foo" literal → Some(literal).
+    //   ${?b} node → NOT self-ref of a → _ arm → Some(${?b} Subst).
+    //   → prior saved as Concat([known_absent_a, "foo", ${?b}]).
+    // At resolve time: known_absent_a → None (dropped); "foo" → "foo";
+    //   ${?b} → None (b undefined, optional) → dropped.
+    //   concat operands: ["foo"] → a = "foo".
+    let result = hocon::parse_with_env("a = ${?a}foo${?b}", &env);
+    assert!(
+        result.is_ok(),
+        "expected Ok but got error: {:?}",
+        result.err()
+    );
+    assert_eq!(
+        result.unwrap().get_string("a").unwrap(),
+        "foo",
+        "a = ${{?a}}foo${{?b}} no prior should resolve to \"foo\""
+    );
+}
+
+/// sr18: Required external ref `a = ${?a}foo${b}` no prior for either.
+/// ${b} is required and has no definition → resolve-time error.
+/// Pins: `fold_optional_self_ref_absent` does NOT fold required non-self-ref
+/// ${b} to absent; it preserves ${b} in the saved prior so the required-missing
+/// error fires correctly at resolve time (not silently swallowed at fold time).
+#[test]
+fn sr18_required_external_no_def_errors() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${b}: no prior for a, b not defined.
+    // fold_or_skip_prior: contains_self_ref=true (${?a}), old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} → known_absent.  "foo" → literal.  ${b} → _ arm → Some(${b}).
+    //   → prior saved as Concat([known_absent_a, "foo", ${b}]).
+    // At resolve time: known_absent_a drops; "foo" stays; ${b} required+missing
+    //   → Err("could not resolve substitution: ${b}").
+    let result = hocon::parse_with_env("a = ${?a}foo${b}", &env);
+    assert!(
+        result.is_err(),
+        "expected resolve error for required missing ${{b}}, got Ok"
+    );
+    let err_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_msg.contains("could not resolve substitution") || err_msg.contains("b"),
+        "error message should mention unresolved substitution b, got: {err_msg}"
+    );
+}
+
+/// sr19: Required self-ref `a = ${?a}foo${a}` no prior.
+/// The required ${a} is a self-ref with no prior → resolve error (sr05-like).
+/// Pins: `fold_optional_self_ref_absent` returns None for the required self-ref
+/// node, which short-circuits the entire Concat via `?` → save is skipped →
+/// at resolve time the original value fires the required-self-ref error path.
+#[test]
+fn sr19_required_self_ref_mixed_no_prior() {
+    let env = std::collections::HashMap::new();
+    // a = ${?a}foo${a}: no prior; ${a} is required self-ref.
+    // fold_or_skip_prior: contains_self_ref=true, old=None →
+    //   fold_optional_self_ref_absent called.
+    //   ${?a} → Some(known_absent).  "foo" → Some(literal).
+    //   ${a} (required self-ref) → None → Concat short-circuits → outer None.
+    //   → fold_or_skip_prior returns None → save skipped.
+    // At resolve time: no prior, original value = Concat([${?a},"foo",${a}]).
+    //   is_self_ref fires on ${a} (required, no prior) → Err(self-referential).
+    let result = hocon::parse_with_env("a = ${?a}foo${a}", &env);
+    assert!(
+        result.is_err(),
+        "expected resolve error for required self-ref ${{a}} with no prior, got Ok"
+    );
+    let err_msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        err_msg.contains("self-referential") || err_msg.contains("no prior"),
+        "error message should mention self-referential substitution, got: {err_msg}"
+    );
+}

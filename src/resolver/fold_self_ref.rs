@@ -113,6 +113,35 @@ pub(crate) fn fold_or_skip_prior(
     fold_optional_self_ref_absent(prior, full_key)
 }
 
+/// Mixed-concat contract (review #124 item a):
+///
+/// This function walks a value tree and decides, node by node, whether a node
+/// containing a self-reference can be included in the saved prior when there is
+/// no previously-assigned value for the key (`old == None`).
+///
+/// The `?`-propagation rule applies ONLY to nodes that are the self-referencing
+/// substitution itself:
+///
+///   * Node IS the self-ref AND optional  → mark known_absent → `Some(...)`.
+///     At resolve time the concat-omission rule (Phase 6 §3b) drops it.
+///   * Node IS the self-ref AND required  → return `None` → `?` short-circuits
+///     the entire enclosing `Concat` → save is skipped entirely → at resolve
+///     time the required-self-ref-no-prior error fires (sr05-like).
+///   * Node is NOT the self-ref (e.g. a literal, `${b}`, or a different key's
+///     substitution) → `_ => Some(v.clone())` → preserved in the saved prior
+///     → evaluated normally at resolve time.
+///
+/// Consequence: mixed concats like `a = ${?a}foo${b}` or `a = ${?a}foo${?b}`
+/// are handled correctly without special-casing:
+///   - `${b}` (required, external) is saved and errors at resolve time if b
+///     has no definition.
+///   - `${?b}` (optional, external) is saved and drops silently at resolve
+///     time if b is absent.
+///   - `a = ${?a}foo${a}` (required self-ref in concat) short-circuits → save
+///     skipped → required-self-ref error at resolve time.
+///
+/// Tests: sr17 (pure-optional), sr18 (required external), sr19 (required
+/// self-ref mixed) in tests/self_ref_lookback_test.rs.
 fn fold_optional_self_ref_absent(v: &ResolverValue, full_key: &str) -> Option<ResolverValue> {
     match v {
         ResolverValue::Subst(sp) if subst_full_key(sp) == full_key => {
