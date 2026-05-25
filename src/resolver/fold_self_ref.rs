@@ -249,7 +249,10 @@ mod tests {
     fn unresolved_array_optional_self_ref_folded() {
         let array = ResolverValue::UnresolvedArray(vec![make_subst("a", true)]);
         let result = fold_or_skip_prior(&array, "a", None);
-        assert!(result.is_some(), "expected Some for optional self-ref array");
+        assert!(
+            result.is_some(),
+            "expected Some for optional self-ref array"
+        );
         match result.unwrap() {
             ResolverValue::UnresolvedArray(elems) => {
                 assert_eq!(elems.len(), 1);
@@ -306,8 +309,14 @@ mod tests {
         match result.unwrap() {
             ResolverValue::UnresolvedArray(elems) => {
                 assert_eq!(elems.len(), 2);
-                assert!(subst_known_absent(&elems[0]), "first item should be known_absent");
-                assert!(!subst_known_absent(&elems[1]), "second item should not be known_absent");
+                assert!(
+                    subst_known_absent(&elems[0]),
+                    "first item should be known_absent"
+                );
+                assert!(
+                    !subst_known_absent(&elems[1]),
+                    "second item should not be known_absent"
+                );
             }
             other => panic!("expected UnresolvedArray, got {:?}", other),
         }
@@ -327,7 +336,10 @@ mod tests {
             prior_values: IndexMap::new(),
         });
         let result = fold_or_skip_prior(&obj, "a", None);
-        assert!(result.is_some(), "expected Some for optional self-ref in obj field");
+        assert!(
+            result.is_some(),
+            "expected Some for optional self-ref in obj field"
+        );
         match result.unwrap() {
             ResolverValue::Obj(o) => {
                 let field = o.fields.get("history").expect("history field missing");
@@ -372,8 +384,14 @@ mod tests {
             ResolverValue::Obj(o) => {
                 let history = o.fields.get("history").expect("history missing");
                 let other = o.fields.get("other").expect("other missing");
-                assert!(subst_known_absent(history), "history should be known_absent");
-                assert!(!subst_known_absent(other), "other should not be known_absent");
+                assert!(
+                    subst_known_absent(history),
+                    "history should be known_absent"
+                );
+                assert!(
+                    !subst_known_absent(other),
+                    "other should not be known_absent"
+                );
             }
             other => panic!("expected Obj, got {:?}", other),
         }
@@ -393,9 +411,8 @@ mod tests {
     /// a non-self-ref Resolved value.
     #[test]
     fn fallback_resolved_scalar_passthrough() {
-        let scalar = ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::string(
-            "hello".to_string(),
-        )));
+        let scalar =
+            ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::string("hello".to_string())));
         // Direct call to exercise the `_` arm.
         let result = fold_optional_self_ref_absent(&scalar, "a");
         assert!(result.is_some());
@@ -410,9 +427,8 @@ mod tests {
     /// Resolved number scalar passes through the fallback arm unchanged.
     #[test]
     fn fallback_resolved_number_passthrough() {
-        let num = ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::number(
-            "42".to_string(),
-        )));
+        let num =
+            ResolverValue::Resolved(HoconValue::Scalar(ScalarValue::number("42".to_string())));
         let result = fold_optional_self_ref_absent(&num, "a");
         assert!(result.is_some());
         match result.unwrap() {
