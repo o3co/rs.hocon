@@ -1701,3 +1701,32 @@ c = ${a.b}
         "c = ${{a.b}} must return \"nested\" (no cache collision with \"a.b\" quoted key)"
     );
 }
+
+// --- Review #124 Issue 3: should_fold_nested gate for non-Obj overwrite --------
+/// Regression: when an object field that contains nested self-refs is then
+/// overwritten by a non-object value (e.g. `o = ${?o}`), the prior saved for
+/// `o` must capture the sub-field state with self-refs folded.
+///
+/// Pre-fix: `should_fold_nested` required `new_val` to be an `Obj` with
+/// overlapping keys, so for `new_val = Subst(${?o})` the gate was false.
+/// The existing value `{a:Concat[${?o.a},bar]}` was saved as-is. At resolve
+/// time the prior's `${?o.a}` looked up `o.a` in root where `o = ${?o}` (a
+/// Subst, not an Obj), returning None → `o.a = "bar"` instead of `"xbar"`.
+///
+/// Fix: fold when `existing` is an Obj AND `new_val` is NOT an Obj (review
+/// #124 Issue 3, cross-impl with ts.hocon Codex P1 + Claude #1).
+#[test]
+fn should_fold_nested_gate_non_obj_overwrite() {
+    // o.a = "x"         → prior for "o" = Obj({a:Resolved("x")}) after step 2
+    // o.a = ${?o.a}bar  → o.a becomes "xbar"; prior should reflect that
+    // o = ${?o}         → new_val is Subst; existing prior must be folded so
+    //                     resolve(${?o}) returns {a:"xbar"} not {a:"bar"}
+    let input = "o.a = \"x\"\no.a = ${?o.a}bar\no = ${?o}";
+    let cfg = hocon::parse_with_env(input, &std::collections::HashMap::new())
+        .expect("parse failed");
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "xbar",
+        "o.a must be \"xbar\" (non-Obj overwrite must fold nested self-refs in prior)"
+    );
+}
