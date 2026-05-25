@@ -184,7 +184,10 @@ impl<'a> StructureBuilder<'a> {
                     if let ResolverValue::Obj(existing_obj) = ex {
                         // Fold only when new keys are a subset of existing keys (same-key
                         // or strict-subset Obj-Obj).  Adding new keys → skip (sr13 guard).
-                        new_obj.fields.keys().all(|k| existing_obj.fields.contains_key(k))
+                        new_obj
+                            .fields
+                            .keys()
+                            .all(|k| existing_obj.fields.contains_key(k))
                     } else {
                         false
                     }

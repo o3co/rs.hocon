@@ -5,7 +5,9 @@ use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
-use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key, string_segments_to_key};
+use super::utils::{
+    deep_merge_hocon_objects, lookup_path, segments_to_key, string_segments_to_key,
+};
 
 pub(crate) struct SubstitutionResolver<'a> {
     root: &'a ResObj,
@@ -337,7 +339,10 @@ impl<'a> SubstitutionResolver<'a> {
                             // sr12 guard: if the leaf prior itself contains a
                             // self-ref to the same key, treat as no-prior to
                             // avoid infinite recursion.
-                            if !super::fold_self_ref::contains_subst_by_path(&leaf_prior, &s.segments) {
+                            if !super::fold_self_ref::contains_subst_by_path(
+                                &leaf_prior,
+                                &s.segments,
+                            ) {
                                 let result = self.resolve_val(&leaf_prior, scope)?;
                                 if let Some(ref r) = result {
                                     self.cache.insert(key.to_string(), r.clone());
