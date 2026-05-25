@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
-use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key};
+use super::utils::{deep_merge_hocon_objects, lookup_path, segments_to_key, string_segments_to_key};
 
 pub(crate) struct SubstitutionResolver<'a> {
     root: &'a ResObj,
@@ -65,7 +65,14 @@ impl<'a> SubstitutionResolver<'a> {
         let mut result = IndexMap::new();
         for (key, val) in &obj.fields {
             self.resolving_field_path.push(key.clone());
-            let full_cache_key = self.resolving_field_path.join(".");
+            // Use the same escaping as segments_to_key / string_segments_to_key so
+            // that a quoted key like `"a.b"` produces cache key `"a.b"` (quoted),
+            // not `a.b` (unescaped). Without this, a top-level `"a.b" = "literal"`
+            // field and a nested `a { b = "nested" }` path produce the same raw
+            // dot-join `a.b`, causing a cache collision that makes `${a.b}` return
+            // "literal" instead of "nested". (Review #124 Issue 1.)
+            let full_cache_key =
+                string_segments_to_key(self.resolving_field_path.iter().map(String::as_str));
             // xx.hocon#27 cluster 3h sr16: invalidate any cached entry for
             // this field's key BEFORE resolving it. The cache may hold a
             // stale "preview" value written when an earlier field (e.g.
@@ -134,7 +141,11 @@ impl<'a> SubstitutionResolver<'a> {
     fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) {
         if let HoconValue::Object(fields) = value {
             for (key, child) in fields {
-                let child_key = format!("{prefix}.{key}");
+                // Use the same quoting rule as string_segments_to_key so that
+                // a field key containing a dot (e.g. `"a.b"`) is stored as
+                // `prefix."a.b"` (quoted), not `prefix.a.b` (ambiguous).
+                let escaped_key = string_segments_to_key(std::iter::once(key.as_str()));
+                let child_key = format!("{prefix}.{escaped_key}");
                 self.cache.insert(child_key.clone(), child.clone());
                 self.cache_descendants(&child_key, child);
             }

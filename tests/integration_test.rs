@@ -1665,3 +1665,39 @@ fn s13a_13_external_reference_to_self_ref_field() {
     assert_eq!(cfg.get_string("a").unwrap(), "foo");
     assert_eq!(cfg.get_string("b").unwrap(), "foo");
 }
+
+// --- Review #124 Issue 1: dotted-key cache collision fix ----------------------
+/// Regression: a quoted key containing a dot (`"a.b" = "literal"`) and a
+/// nested path with the same segments (`a { b = "nested" }`) must NOT
+/// collide in the substitution cache.  Before the fix, both were stored
+/// under the raw key `a.b`; the literal field's write then overwrote the
+/// nested field's entry, so `${a.b}` returned `"literal"` instead of
+/// `"nested"`.  The resolver now uses `string_segments_to_key` (which
+/// quotes keys containing dots) for the `full_cache_key` in `resolve_res_obj`
+/// and in `cache_descendants`.
+#[test]
+fn dotted_quoted_key_no_cache_collision_with_nested_path() {
+    // `a { b = "nested" }` stores `a.b = "nested"` (two-segment path).
+    // `"a.b" = "literal"` is a top-level key whose *text* contains a literal
+    // dot — it is a single segment `a.b`, stored as `"a.b"` (quoted) in the cache.
+    // `c = ${a.b}` resolves via segments [a, b] → cache key `a.b` (unquoted)
+    // → must find "nested", not "literal".
+    let input = r#"a { b = "nested" }
+"a.b" = "literal"
+c = ${a.b}
+"#;
+    let cfg = hocon::parse_with_env(input, &std::collections::HashMap::new())
+        .expect("parse failed");
+    // The two-segment path resolves correctly.
+    assert_eq!(
+        cfg.get_string("a.b").unwrap(),
+        "nested",
+        "two-segment path a.b must resolve to \"nested\""
+    );
+    // The substitution ${a.b} must NOT be poisoned by the quoted-key entry.
+    assert_eq!(
+        cfg.get_string("c").unwrap(),
+        "nested",
+        "c = ${{a.b}} must return \"nested\" (no cache collision with \"a.b\" quoted key)"
+    );
+}
