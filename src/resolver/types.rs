@@ -107,7 +107,10 @@ pub struct SubstPlaceholder {
     pub optional: bool,
     /// Internal sentinel used when folding an optional self-reference with no
     /// prior value. It resolves to undefined without performing a lookup.
-    pub known_absent: bool,
+    /// `pub(crate)` because `SubstPlaceholder` is an internal resolver type not
+    /// re-exported through `lib.rs`; downstream consumers cannot reach this
+    /// field via the public API. (Review #124 Issue 2.)
+    pub(crate) known_absent: bool,
     /// Propagated from `AstNode::Substitution::list_suffix`; true for `${X[]}` / `${?X[]}`.
     pub list_suffix: bool,
     pub line: usize,
