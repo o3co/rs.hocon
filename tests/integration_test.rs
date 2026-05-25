@@ -1686,8 +1686,8 @@ fn dotted_quoted_key_no_cache_collision_with_nested_path() {
 "a.b" = "literal"
 c = ${a.b}
 "#;
-    let cfg = hocon::parse_with_env(input, &std::collections::HashMap::new())
-        .expect("parse failed");
+    let cfg =
+        hocon::parse_with_env(input, &std::collections::HashMap::new()).expect("parse failed");
     // The two-segment path resolves correctly.
     assert_eq!(
         cfg.get_string("a.b").unwrap(),
@@ -1722,8 +1722,8 @@ fn should_fold_nested_gate_non_obj_overwrite() {
     // o = ${?o}         → new_val is Subst; existing prior must be folded so
     //                     resolve(${?o}) returns {a:"xbar"} not {a:"bar"}
     let input = "o.a = \"x\"\no.a = ${?o.a}bar\no = ${?o}";
-    let cfg = hocon::parse_with_env(input, &std::collections::HashMap::new())
-        .expect("parse failed");
+    let cfg =
+        hocon::parse_with_env(input, &std::collections::HashMap::new()).expect("parse failed");
     assert_eq!(
         cfg.get_string("o.a").unwrap(),
         "xbar",
