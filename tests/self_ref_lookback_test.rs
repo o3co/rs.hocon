@@ -418,6 +418,50 @@ fn sr19_required_self_ref_mixed_no_prior() {
     );
 }
 
+// ── sr21: Codex round-3 review #124 regression guard ──────────────────────
+
+/// sr21: Strict-subset Obj-Obj overwrite where existing has unresolved self-ref.
+///
+/// Codex P2 finding from round-3 review of rs.hocon #124: the fix in commit
+/// 6c0e3f3 (combined gate: same-key OR strict-subset OR Obj-non-Obj) folds
+/// every nested self-reference in existing and saves the folded object as the
+/// outer prior for `o`. But when the strict-subset overwrite leaves the
+/// existing self-ref field LIVE (not overwritten by new), the live ${?o.a}
+/// substitution then reads the outer folded prior (`o.a = "xbar"`) instead
+/// of the inner leaf prior (`o.a = "x"`), producing `o.a = "xbarbar"`.
+///
+/// Input:
+/// ```
+/// o.a = "x"
+/// o.b = 0
+/// o.a = ${?o.a}bar
+/// o = {b = 1}
+/// ```
+/// `o = {b = 1}` is a strict-subset deep-merge; after merge `o.a` is still
+/// the live Concat[${?o.a}, "bar"]. ${?o.a} should resolve via the inner
+/// leaf prior `a = "x"` (the spec-correct previous value of o.a) → "xbar".
+///
+/// Expected: `o.a = "xbar"`, `o.b = 1` (after merge).
+/// Regression: `o.a = "xbarbar"`.
+#[test]
+fn sr21_strict_subset_obj_overwrite_keeps_live_self_ref() {
+    let env = std::collections::HashMap::new();
+    let input = "o.a = \"x\"\no.b = 0\no.a = ${?o.a}bar\no = {b = 1}";
+    let cfg = hocon::parse_with_env(input, &env)
+        .unwrap_or_else(|e| panic!("sr21: unexpected parse error: {:?}", e));
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "xbar",
+        "sr21: o.a should be \"xbar\" (Concat resolves via inner leaf prior o.a=\"x\"); \
+         got wrong value — folded outer prior incorrectly preempted leaf prior"
+    );
+    assert_eq!(
+        cfg.get_string("o.b").unwrap(),
+        "1",
+        "sr21: o.b should be \"1\" (deep merge of new value)"
+    );
+}
+
 // ── sr20: Codex round-2 review #124 regression guard ────────────────────────
 
 /// sr20: Same-key Obj-Obj overwrite with nested self-ref.

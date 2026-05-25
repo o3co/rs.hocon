@@ -312,6 +312,40 @@ impl<'a> SubstitutionResolver<'a> {
                 let is_self_ref =
                     is_owner && super::fold_self_ref::contains_subst_by_path(&found, &s.segments);
                 if is_self_ref {
+                    // xx.hocon#27 round-3 review #124 (Codex P2): for multi-segment
+                    // self-refs (`${?o.a}` while resolving `o.a`), prefer the LEAF
+                    // prior in the current scope (`scope.prior_values[a] = "x"`)
+                    // over navigating into the outer prior root (`root.prior[o].a`
+                    // which may be the post-fold form `"xbar"` when a partial
+                    // overwrite saved a folded snapshot at the parent level).
+                    //
+                    // The leaf prior is the spec-correct "previous value of this
+                    // specific field" — the outer-prior navigation can yield a
+                    // post-fold value when an Obj-Obj overwrite folded existing
+                    // nested self-refs to seed `${?o}` (whole-object) references
+                    // in the new value. For `${?o.a}` self-ref, the unfolded leaf
+                    // prior is what spec says to consult.
+                    //
+                    // sr21 repro: `o.a="x"; o.b=0; o.a=${?o.a}bar; o={b=1}` — the
+                    // strict-subset overwrite folds outer prior to `{a:"xbar",b:0}`,
+                    // but the live `${?o.a}` Concat must read inner leaf prior
+                    // `a="x"` to produce `"xbar"`, not the folded `"xbar"` which
+                    // double-folds to `"xbarbar"`.
+                    if s.segments.len() > 1 {
+                        let leaf_seg = s.segments.last().map(|seg| seg.text.as_str()).unwrap_or("");
+                        if let Some(leaf_prior) = scope.prior_values.get(leaf_seg).cloned() {
+                            // sr12 guard: if the leaf prior itself contains a
+                            // self-ref to the same key, treat as no-prior to
+                            // avoid infinite recursion.
+                            if !super::fold_self_ref::contains_subst_by_path(&leaf_prior, &s.segments) {
+                                let result = self.resolve_val(&leaf_prior, scope)?;
+                                if let Some(ref r) = result {
+                                    self.cache.insert(key.to_string(), r.clone());
+                                }
+                                return Ok(result);
+                            }
+                        }
+                    }
                     let root_seg = s.segments.first().map(|s| s.text.as_str()).unwrap_or("");
                     let prior_root = scope
                         .prior_values
@@ -350,26 +384,6 @@ impl<'a> SubstitutionResolver<'a> {
                         }
                         // Prior root exists but nested path not found OR prior
                         // contains the same self-ref — fall through.
-                    }
-                    // Object-literal form fallback: when `foo { a = "x"; a = ${?foo.a}bar }`
-                    // is used, the prior for the leaf key `a` is stored directly in the
-                    // current scope (inner_obj.prior_values["a"]), not in the root scope
-                    // under the parent key "foo".  The root-segment lookup above only
-                    // finds the parent object's prior (used for dotted-path reassignments
-                    // at root level), so it finds nothing here.
-                    //
-                    // Guard: only fire this fallback when the substitution is multi-segment
-                    // (len > 1) — single-segment priors are already handled above — and the
-                    // leaf segment's prior lives directly in `scope`.
-                    if s.segments.len() > 1 {
-                        let leaf_seg = s.segments.last().map(|seg| seg.text.as_str()).unwrap_or("");
-                        if let Some(leaf_prior) = scope.prior_values.get(leaf_seg).cloned() {
-                            let result = self.resolve_val(&leaf_prior, scope)?;
-                            if let Some(ref r) = result {
-                                self.cache.insert(key.to_string(), r.clone());
-                            }
-                            return Ok(result);
-                        }
                     }
                     // Spec L841: no prior + self-ref → optional yields undefined; required errors.
                     if s.optional {
