@@ -101,15 +101,25 @@ pub enum ResolverValue {
     UnresolvedArray(Vec<ResolverValue>),
 }
 
+/// Substitution placeholder in the resolver's pre-resolve tree.
+///
+/// `#[non_exhaustive]`: the resolver module is `pub` but `#[doc(hidden)]`
+/// (see lib.rs:130-136) for integration-test access. External consumers
+/// that reach this type via `hocon::resolver::types` do so outside the
+/// stable API contract; `#[non_exhaustive]` formally signals that
+/// additional fields may be added without a major version bump.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct SubstPlaceholder {
     pub segments: Vec<Segment>,
     pub optional: bool,
     /// Internal sentinel used when folding an optional self-reference with no
     /// prior value. It resolves to undefined without performing a lookup.
-    /// `pub(crate)` because `SubstPlaceholder` is an internal resolver type not
-    /// re-exported through `lib.rs`; downstream consumers cannot reach this
-    /// field via the public API. (Review #124 Issue 2.)
+    /// `pub(crate)` because this is purely an internal fold-time marker —
+    /// callers outside the resolver crate have no reason to set it. The
+    /// surrounding `#[non_exhaustive]` keeps that semantic forward-compatible
+    /// (downstream cannot construct the struct via pattern literal anyway).
+    /// (Review #124 Issue 2.)
     pub(crate) known_absent: bool,
     /// Propagated from `AstNode::Substitution::list_suffix`; true for `${X[]}` / `${?X[]}`.
     pub list_suffix: bool,
