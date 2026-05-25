@@ -417,3 +417,45 @@ fn sr19_required_self_ref_mixed_no_prior() {
         "error message should mention self-referential substitution, got: {err_msg}"
     );
 }
+
+// ── sr20: Codex round-2 review #124 regression guard ────────────────────────
+
+/// sr20: Same-key Obj-Obj overwrite with nested self-ref.
+///
+/// Codex P2 finding from round-2 review of rs.hocon #124: the fix in commit
+/// 30ce495 dropped the original same-key Obj-Obj fold case, causing ${?o}
+/// inside `o = {a=1, prev=${?o}}` to see the unfolded state of `o` (where
+/// `o.a` is already 1) instead of the prior folded state (where `o.a = "xbar"`).
+///
+/// Input:
+/// ```
+/// o.a = "x"
+/// o.prev = 0
+/// o.a = ${?o.a}bar
+/// o = {a = 1, prev = ${?o}}
+/// ```
+/// `${?o}` on the last line should preview the prior `o` which had `a = "xbar"`.
+/// Expected: `o.prev.a = "xbar"`.
+/// Regression (pre-fix #124 round-2): `o.prev.a = "1bar"`.
+#[test]
+fn sr20_obj_overwrite_same_keys_with_self_ref() {
+    let env = std::collections::HashMap::new();
+    let input = "o.a = \"x\"\no.prev = 0\no.a = ${?o.a}bar\no = {a = 1, prev = ${?o}}";
+    let cfg = hocon::parse_with_env(input, &env)
+        .unwrap_or_else(|e| panic!("sr20: unexpected parse error: {:?}", e));
+    // o.prev is the prior `o` object at the point of the final `o = {...}` overwrite.
+    // At that point o had: a="xbar", prev=0 (from the two dotted assignments).
+    // So o.prev.a should be "xbar".
+    assert_eq!(
+        cfg.get_string("o.prev.a").unwrap(),
+        "xbar",
+        "sr20: o.prev.a should be \"xbar\" (prior o.a = ${{?o.a}}bar resolved to \"xbar\"); \
+         got wrong value — same-key Obj-Obj fold regression"
+    );
+    // Also verify the final o.a = 1 (the last assignment wins).
+    assert_eq!(
+        cfg.get_string("o.a").unwrap(),
+        "1",
+        "sr20: o.a should be \"1\" (last assignment wins)"
+    );
+}

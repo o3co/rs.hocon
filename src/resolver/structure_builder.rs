@@ -167,18 +167,30 @@ impl<'a> StructureBuilder<'a> {
             let old_prior = obj.prior_values.get(&head).cloned();
             let prior_source;
             // xx.hocon#27 review #124 Issue 3 (cross-impl with ts.hocon Codex P1 + Claude #1):
-            // fold nested self-refs in `existing` when `existing` is an Obj and `new_val`
-            // is NOT an Obj (e.g. `o = ${?o}` overwriting `{a:Concat[...]}` with a Subst).
-            // In this case the prior for `o` must capture the pre-overwrite state with
-            // sub-field references resolved, so that `${?o}` at resolve time returns
-            // `{a:"xbar"}` not `{a:"bar"}`.  The original gate (`both Obj + same keys`)
-            // is preserved for Obj-overwrites-Obj cases to prevent the sr13 double-fold:
-            // when `new_val` is an Obj adding new keys, the sub-field resolve is handled
-            // at resolve time via the leaf-prior fallback in resolve_subst_inner.
-            let should_fold_nested = if matches!(ex, ResolverValue::Obj(_)) {
-                !matches!(new_val, ResolverValue::Obj(_))
-            } else {
-                false
+            // fold nested self-refs in `existing` when `existing` is an Obj and either:
+            //   (a) `new_val` is NOT an Obj (e.g. `o = ${?o}` overwriting `{a:Concat[...]}`)
+            //       — prior must capture pre-overwrite state with sub-fields resolved so
+            //       `${?o}` at resolve time returns `{a:"xbar"}` not `{a:"bar"}`; or
+            //   (b) `new_val` IS an Obj whose keys are a subset of `existing`'s keys
+            //       (same-key Obj-Obj overwrite, e.g. `o = {a=1, prev=${?o}}` after
+            //       `o.a = "xbar"`) — same sub-field resolution requirement applies.
+            //
+            // Do NOT fold for the sr13 case: Obj-Obj adding new keys.  When `new_val`
+            // has keys not in `existing`, the leaf-prior fallback in resolve_subst_inner
+            // handles sub-field resolution; folding here would double-fold on the 3rd
+            // write producing the "xbarbar" regression.
+            let should_fold_nested = match (ex, &new_val) {
+                (ResolverValue::Obj(_), ResolverValue::Obj(new_obj)) => {
+                    if let ResolverValue::Obj(existing_obj) = ex {
+                        // Fold only when new keys are a subset of existing keys (same-key
+                        // or strict-subset Obj-Obj).  Adding new keys → skip (sr13 guard).
+                        new_obj.fields.keys().all(|k| existing_obj.fields.contains_key(k))
+                    } else {
+                        false
+                    }
+                }
+                (ResolverValue::Obj(_), _) => true, // Obj overwritten by non-Obj
+                _ => false,
             };
             let prior_input = if should_fold_nested {
                 prior_source = fold_nested_self_refs(ex, &child_prefix);
