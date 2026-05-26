@@ -524,15 +524,13 @@ fn s13c_ev12c_e6_cross_source_include_config_wins() {
     let mut env = HashMap::new();
     env.insert("S13C_EV12C_X_0".to_string(), "env-val".to_string());
 
-    let cfg = hocon::parse_file_with_env(
-        fixture_path("ev12c-include-config-defined-wins"),
-        &env,
-    )
-    .expect("ev12c: cross-source resolution should succeed");
+    let cfg = hocon::parse_file_with_env(fixture_path("ev12c-include-config-defined-wins"), &env)
+        .expect("ev12c: cross-source resolution should succeed");
     let got = config_to_json(&cfg);
     let expected = load_expected_json("ev12c-include-config-defined-wins");
     assert_eq!(
-        got, expected,
+        got,
+        expected,
         "ev12c: cross-source config-defined wins mismatch (env-list candidate present — \
          a failure here likely means listSuffix ran before S14c.2)\n  \
          got:      {}\n  expected: {}",
