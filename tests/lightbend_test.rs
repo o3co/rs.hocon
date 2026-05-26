@@ -423,6 +423,12 @@ fn lightbend_suite_expected_json() {
     let skip: std::collections::HashSet<&str> = [
         "test01-expected.json", // system.* contains env-specific values (HOME, PATH, etc.)
         "test10-expected.json", // ConfigDelayedMerge: c.e missing q field from ${a} merge
+        // test03 includes test01 which transitively pulls in machine-dependent
+        // system.* fields AND null-valued keys. The xx.hocon Lightbend 1.4.6
+        // generator strips both (path-filter + JSON null-elision); rs.hocon
+        // correctly preserves them. S14c.2 cross-source coverage for test03 is
+        // pinned by lightbend_test03_includes_with_substitution_fallback above.
+        "test03-expected.json",
     ]
     .into_iter()
     .collect();

@@ -498,3 +498,48 @@ fn s13c_lex_quoted_segment_with_suffix_ok() {
         _ => panic!("expected scalar element"),
     }
 }
+
+// ── E6 cross-source: ev12c (xx.hocon#22) ─────────────────────────────────────
+
+/// ev12c — E6 cross-source: `${X[]}` in an included file falls back to root
+/// config when `X` is defined in the including (parent) file at root, AND
+/// must win over a competing env-var list expansion candidate.
+///
+/// Fixture has no `.env` sidecar; this test seeds explicit env entries
+/// (`S13C_EV12C_X_0 = "env-val"`) so the assertion proves resolver ORDER,
+/// not just S14c.2 reachability. With config-first ordering (Lightbend 1.4.6
+/// reference behavior) the result is `["root-val"]`; with a hypothetical
+/// env-list-first ordering it would be `["env-val"]`.
+///
+/// `SubstitutionResolver::resolve_substitution` runs (in order): primary
+/// lookup → S14c.2 original-path fallback → listSuffix env expansion →
+/// scalar env fallback. The S14c.2 hit at root wins before the listSuffix
+/// branch runs. Pinned here as a cross-impl regression after xx.hocon#22
+/// (cluster C1) shipped the fixture.
+#[test]
+fn s13c_ev12c_e6_cross_source_include_config_wins() {
+    // Seed an env-list candidate that would beat config IF the resolver
+    // erroneously consulted listSuffix before S14c.2. Per E6 / Lightbend 1.4.6
+    // semantics, root config `S13C_EV12C_X = ["root-val"]` must win.
+    let mut env = HashMap::new();
+    env.insert("S13C_EV12C_X_0".to_string(), "env-val".to_string());
+
+    let cfg = hocon::parse_file_with_env(fixture_path("ev12c-include-config-defined-wins"), &env)
+        .expect("ev12c: cross-source resolution should succeed");
+    let got = config_to_json(&cfg);
+    let expected = load_expected_json("ev12c-include-config-defined-wins");
+    assert_eq!(
+        got,
+        expected,
+        "ev12c: cross-source config-defined wins mismatch (env-list candidate present — \
+         a failure here likely means listSuffix ran before S14c.2)\n  \
+         got:      {}\n  expected: {}",
+        serde_json::to_string_pretty(&got).unwrap(),
+        serde_json::to_string_pretty(&expected).unwrap(),
+    );
+}
+
+// Note: resolver-order unit test (spec OQ-4) was considered but dropped as
+// redundant: ev05 already pins same-source config-wins-over-env (with sidecar
+// env vars set), and ev12c above pins cross-source config-wins via S14c.2.
+// Together they cover the full ordering: primary → S14c.2 → listSuffix.
