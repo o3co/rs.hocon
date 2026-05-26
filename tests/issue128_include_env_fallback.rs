@@ -90,9 +90,9 @@ fn issue128_include_file_env_unset_preserves_prior_default() {
     .unwrap();
     let input = format!("include \"{}/child.conf\"\n", dir_str);
     let cfg = hocon::parse(&input).expect("parse must succeed");
-    let got = cfg.get_string("registry.instance-id").expect(
-        "registry.instance-id missing — prior default must remain when ${?ENV} is unset",
-    );
+    let got = cfg
+        .get_string("registry.instance-id")
+        .expect("registry.instance-id missing — prior default must remain when ${?ENV} is unset");
     assert_eq!(got, "localhost");
 }
 
@@ -133,9 +133,9 @@ fn issue128_include_package_env_unset_preserves_prior_default() {
             r#"include package("github.com/o3co/rs.hocon/test/issue128-unset", "reference.conf")"#,
         )
         .expect("parse must succeed");
-    let got = cfg.get_string("registry.instance-id").expect(
-        "registry.instance-id missing — prior default must remain when ${?ENV} is unset",
-    );
+    let got = cfg
+        .get_string("registry.instance-id")
+        .expect("registry.instance-id missing — prior default must remain when ${?ENV} is unset");
     assert_eq!(got, "localhost");
 }
 
@@ -150,9 +150,7 @@ fn issue128_include_package_env_set_applies_env_value() {
         CHILD_DEFAULT_PLUS_OPTIONAL_PKG_SET,
     );
     let cfg = parser
-        .parse(
-            r#"include package("github.com/o3co/rs.hocon/test/issue128-set", "reference.conf")"#,
-        )
+        .parse(r#"include package("github.com/o3co/rs.hocon/test/issue128-set", "reference.conf")"#)
         .expect("parse must succeed");
     let got = cfg
         .get_string("registry.instance-id")
@@ -161,4 +159,3 @@ fn issue128_include_package_env_set_applies_env_value() {
     std::env::remove_var("GH128_RS_PKG_SET");
     assert_eq!(got, "from-pkg-env");
 }
-
