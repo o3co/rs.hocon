@@ -508,12 +508,12 @@ fn s13c_lex_quoted_segment_with_suffix_ok() {
 /// Fixture has no `.env` sidecar; this test seeds explicit env entries
 /// (`S13C_EV12C_X_0 = "env-val"`) so the assertion proves resolver ORDER,
 /// not just S14c.2 reachability. With config-first ordering (Lightbend 1.4.6
-/// `ResolveSource.java:100-130`) the result is `["root-val"]`; with a
-/// hypothetical env-list-first ordering it would be `["env-val"]`.
+/// reference behavior) the result is `["root-val"]`; with a hypothetical
+/// env-list-first ordering it would be `["env-val"]`.
 ///
-/// rs.hocon's resolver order (substitution_resolver.rs:443-504): primary
-/// lookup → S14c.2 original-path fallback (`:443-493`) → listSuffix env
-/// expansion (`:495-504`). The S14c.2 hit at root wins before the listSuffix
+/// `SubstitutionResolver::resolve_substitution` runs (in order): primary
+/// lookup → S14c.2 original-path fallback → listSuffix env expansion →
+/// scalar env fallback. The S14c.2 hit at root wins before the listSuffix
 /// branch runs. Pinned here as a cross-impl regression after xx.hocon#22
 /// (cluster C1) shipped the fixture.
 #[test]
