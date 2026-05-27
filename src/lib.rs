@@ -300,19 +300,7 @@ impl Parser {
         input: &str,
         env: &HashMap<String, String>,
     ) -> Result<Config, HoconError> {
-        let tokens = lexer::tokenize(input)?;
-        assert_non_empty_document(&tokens)?;
-        let ast = parser::parse_tokens(&tokens)?;
-        let opts = self.into_resolve_opts(env.clone(), None);
-        let value = resolver::resolve(ast, &opts)?;
-        match value {
-            HoconValue::Object(fields) => Ok(Config::new(fields)),
-            _ => Err(HoconError::Parse(ParseError {
-                message: "root must be an object".into(),
-                line: 1,
-                col: 1,
-            })),
-        }
+        self.parse_with_options(input, ParseOptions::defaults().with_env(env.clone()))
     }
 
     /// Parse a HOCON file with a custom environment map and the registered registry.
@@ -321,22 +309,71 @@ impl Parser {
         path: impl AsRef<Path>,
         env: &HashMap<String, String>,
     ) -> Result<Config, HoconError> {
+        self.parse_file_with_options(path, ParseOptions::defaults().with_env(env.clone()))
+    }
+
+    /// Parse a HOCON string with explicit [`ParseOptions`] and the registered registry.
+    ///
+    /// Equivalent to the module-level [`parse_string_with_options`] but threads the
+    /// per-`Parser` package registry through phase 1, enabling
+    /// `include package("identifier", "file")` to resolve against `register_package`-supplied
+    /// content. Supports both fused (`resolve_substitutions = true`, default) and deferred
+    /// (`resolve_substitutions = false`) lifecycles. The latter returns an unresolved
+    /// `Config` whose `Config::resolve` call performs phase 2 — includes are already
+    /// inlined at phase 1 so the registry is not needed after this call returns.
+    pub fn parse_with_options(self, input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
+        let tokens = lexer::tokenize(input)?;
+        assert_non_empty_document(&tokens)?;
+        let ast = parser::parse_tokens(&tokens)?;
+
+        let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
+            if opts.resolve_substitutions {
+                std::env::vars().collect()
+            } else {
+                HashMap::new()
+            }
+        });
+
+        let internal_opts = self.into_resolve_opts(env, opts.base_dir.clone());
+
+        if opts.resolve_substitutions {
+            let value = resolver::resolve(ast, &internal_opts)?;
+            match value {
+                HoconValue::Object(fields) => {
+                    let mut cfg = Config::new(fields);
+                    cfg.parse_base_dir = opts.base_dir;
+                    cfg.origin_description = opts.origin_description;
+                    Ok(cfg)
+                }
+                _ => Err(HoconError::Parse(ParseError {
+                    message: "root must be an object".into(),
+                    line: 1,
+                    col: 1,
+                })),
+            }
+        } else {
+            let tree = resolver::build_tree(ast, &internal_opts)?;
+            Ok(Config::new_from_res_obj(
+                tree,
+                opts.base_dir,
+                opts.origin_description,
+            ))
+        }
+    }
+
+    /// Parse a HOCON file with explicit [`ParseOptions`] and the registered registry.
+    /// File's parent directory is used as base_dir (overrides `opts.base_dir`).
+    pub fn parse_file_with_options(
+        self,
+        path: impl AsRef<Path>,
+        opts: ParseOptions,
+    ) -> Result<Config, HoconError> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
-        let tokens = lexer::tokenize(&content)?;
-        assert_non_empty_document(&tokens)?;
-        let ast = parser::parse_tokens(&tokens)?;
-        let opts = self.into_resolve_opts(env.clone(), path.parent().map(|p| p.to_path_buf()));
-        let value = resolver::resolve(ast, &opts)?;
-        match value {
-            HoconValue::Object(fields) => Ok(Config::new(fields)),
-            _ => Err(HoconError::Parse(ParseError {
-                message: "root must be an object".into(),
-                line: 1,
-                col: 1,
-            })),
-        }
+        let base_dir = path.parent().map(|p| p.to_path_buf());
+        let opts = ParseOptions { base_dir, ..opts };
+        self.parse_with_options(&content, opts)
     }
 
     /// Convert this `Parser` into `ResolveOptions`, threading the registry in.
@@ -364,6 +401,9 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
 /// `opts.resolve_substitutions = true` (default): fused parse + resolve, same
 /// as [`parse`]. `opts.resolve_substitutions = false`: phase 1 only; returned
 /// `Config` may have `is_resolved() = false`. Use [`Config::resolve`] later.
+///
+/// This module-level function does **not** thread a package registry — for that,
+/// use [`Parser::parse_with_options`] (feature `include-package`).
 pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
     assert_non_empty_document(&tokens)?;
