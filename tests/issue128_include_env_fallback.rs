@@ -26,11 +26,13 @@
 //! behaviour so a future refactor to a multi-pass shape can't silently
 //! regress.
 //!
-//! Hermeticity: env is injected via `Parser::parse_with_env` and
-//! `parse_file_with_env`; `std::env` is never read or mutated. Matches
-//! the cross-impl convention used by `ts.hocon` (`parse(input, { env })`).
-//! As a result these tests are safe to run in parallel — no shared
-//! mutable process state.
+//! Hermeticity: env is injected via `hocon::parse_with_env` (string
+//! entry point, for the include "file" tests that build their input as
+//! a string referencing a tempdir path) and `Parser::parse_with_env`
+//! (for the include package(...) tests that need a registry). `std::env`
+//! is never read or mutated. Matches the cross-impl convention used by
+//! `ts.hocon` (`parse(input, { env })`). As a result these tests are
+//! safe to run in parallel — no shared mutable process state.
 //!
 //! Run: `cargo test --features include-package --test issue128_include_env_fallback`
 
