@@ -26,17 +26,19 @@
 //! behaviour so a future refactor to a multi-pass shape can't silently
 //! regress.
 //!
+//! Hermeticity: env is injected via `Parser::parse_with_env` and
+//! `parse_file_with_env`; `std::env` is never read or mutated. Matches
+//! the cross-impl convention used by `ts.hocon` (`parse(input, { env })`).
+//! As a result these tests are safe to run in parallel — no shared
+//! mutable process state.
+//!
 //! Run: `cargo test --features include-package --test issue128_include_env_fallback`
 
 #![cfg(feature = "include-package")]
 
 use hocon::Parser;
-use std::sync::Mutex;
+use std::collections::HashMap;
 use tempfile::tempdir;
-
-// Rust tests run in parallel by default; serialise the ones that touch
-// process env so they don't see one another's writes.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 const CHILD_DEFAULT_PLUS_OPTIONAL_FILE_UNSET: &str = r#"
 registry {
@@ -68,8 +70,8 @@ registry {
 
 // Note on deferred-resolve coverage: rs.hocon's `Parser` (the
 // package-registry entry point) does not currently expose a
-// deferred-resolve variant — `Parser::parse` always runs both phases.
-// The module-level `parse_string_with_options(... with_resolve_substitutions(false))`
+// deferred-resolve variant — `Parser::parse_with_env` always runs both
+// phases. The module-level `parse_string_with_options(... with_resolve_substitutions(false))`
 // supports deferred resolution but does not thread a package registry.
 // Pinning the deferred path through `include package(...)` therefore
 // awaits a Parser API addition; the immediate-resolve coverage below
@@ -78,9 +80,6 @@ registry {
 
 #[test]
 fn issue128_include_file_env_unset_preserves_prior_default() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    std::env::remove_var("GH128_RS_FILE_UNSET");
-
     let dir = tempdir().unwrap();
     let dir_str = dir.path().display().to_string().replace('\\', "/");
     std::fs::write(
@@ -89,7 +88,8 @@ fn issue128_include_file_env_unset_preserves_prior_default() {
     )
     .unwrap();
     let input = format!("include \"{}/child.conf\"\n", dir_str);
-    let cfg = hocon::parse(&input).expect("parse must succeed");
+    let env: HashMap<String, String> = HashMap::new();
+    let cfg = hocon::parse_with_env(&input, &env).expect("parse must succeed");
     let got = cfg
         .get_string("registry.instance-id")
         .expect("registry.instance-id missing — prior default must remain when ${?ENV} is unset");
@@ -98,9 +98,6 @@ fn issue128_include_file_env_unset_preserves_prior_default() {
 
 #[test]
 fn issue128_include_file_env_set_applies_env_value() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("GH128_RS_FILE_SET", "from-env");
-
     let dir = tempdir().unwrap();
     let dir_str = dir.path().display().to_string().replace('\\', "/");
     std::fs::write(
@@ -109,28 +106,27 @@ fn issue128_include_file_env_set_applies_env_value() {
     )
     .unwrap();
     let input = format!("include \"{}/child.conf\"\n", dir_str);
-    let cfg = hocon::parse(&input).expect("parse must succeed");
+    let mut env: HashMap<String, String> = HashMap::new();
+    env.insert("GH128_RS_FILE_SET".into(), "from-env".into());
+    let cfg = hocon::parse_with_env(&input, &env).expect("parse must succeed");
     let got = cfg
         .get_string("registry.instance-id")
         .expect("registry.instance-id missing");
-
-    std::env::remove_var("GH128_RS_FILE_SET");
     assert_eq!(got, "from-env");
 }
 
 #[test]
 fn issue128_include_package_env_unset_preserves_prior_default() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    std::env::remove_var("GH128_RS_PKG_UNSET");
-
     let parser = Parser::new().register_package(
         "github.com/o3co/rs.hocon/test/issue128-unset",
         "reference.conf",
         CHILD_DEFAULT_PLUS_OPTIONAL_PKG_UNSET,
     );
+    let env: HashMap<String, String> = HashMap::new();
     let cfg = parser
-        .parse(
+        .parse_with_env(
             r#"include package("github.com/o3co/rs.hocon/test/issue128-unset", "reference.conf")"#,
+            &env,
         )
         .expect("parse must succeed");
     let got = cfg
@@ -141,21 +137,21 @@ fn issue128_include_package_env_unset_preserves_prior_default() {
 
 #[test]
 fn issue128_include_package_env_set_applies_env_value() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("GH128_RS_PKG_SET", "from-pkg-env");
-
     let parser = Parser::new().register_package(
         "github.com/o3co/rs.hocon/test/issue128-set",
         "reference.conf",
         CHILD_DEFAULT_PLUS_OPTIONAL_PKG_SET,
     );
+    let mut env: HashMap<String, String> = HashMap::new();
+    env.insert("GH128_RS_PKG_SET".into(), "from-pkg-env".into());
     let cfg = parser
-        .parse(r#"include package("github.com/o3co/rs.hocon/test/issue128-set", "reference.conf")"#)
+        .parse_with_env(
+            r#"include package("github.com/o3co/rs.hocon/test/issue128-set", "reference.conf")"#,
+            &env,
+        )
         .expect("parse must succeed");
     let got = cfg
         .get_string("registry.instance-id")
         .expect("registry.instance-id missing");
-
-    std::env::remove_var("GH128_RS_PKG_SET");
     assert_eq!(got, "from-pkg-env");
 }
