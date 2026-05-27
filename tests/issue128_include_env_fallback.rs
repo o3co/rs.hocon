@@ -28,9 +28,11 @@
 //!
 //! Hermeticity: env is injected via `hocon::parse_with_env` (string
 //! entry point, for the include "file" tests that build their input as
-//! a string referencing a tempdir path) and `Parser::parse_with_env`
-//! (for the include package(...) tests that need a registry). `std::env`
-//! is never read or mutated. Matches the cross-impl convention used by
+//! a string referencing a tempdir path), `Parser::parse_with_env` (for
+//! the include package(...) tests that need a registry), and
+//! `Parser::parse_with_options` (for the deferred-resolve path
+//! exercised against an include package(...) source). `std::env` is
+//! never read or mutated. Matches the cross-impl convention used by
 //! `ts.hocon` (`parse(input, { env })`). As a result these tests are
 //! safe to run in parallel — no shared mutable process state.
 //!
@@ -38,7 +40,7 @@
 
 #![cfg(feature = "include-package")]
 
-use hocon::Parser;
+use hocon::{ParseOptions, Parser, ResolveOptions};
 use std::collections::HashMap;
 use tempfile::tempdir;
 
@@ -70,15 +72,21 @@ registry {
 }
 "#;
 
-// Note on deferred-resolve coverage: rs.hocon's `Parser` (the
-// package-registry entry point) does not currently expose a
-// deferred-resolve variant — `Parser::parse_with_env` always runs both
-// phases. The module-level `parse_string_with_options(... with_resolve_substitutions(false))`
-// supports deferred resolution but does not thread a package registry.
-// Pinning the deferred path through `include package(...)` therefore
-// awaits a Parser API addition; the immediate-resolve coverage below
-// is sufficient to pin the priorValues-through-merge invariant exercised
-// by go.hocon#128.
+const CHILD_DEFAULT_PLUS_OPTIONAL_PKG_DEFERRED: &str = r#"
+registry {
+  instance-id = "localhost"
+  instance-id = ${?GH128_RS_PKG_DEFERRED}
+}
+"#;
+
+// Deferred-resolve coverage uses `Parser::parse_with_options(...
+// ParseOptions::defaults().with_resolve_substitutions(false).with_env(...))`,
+// which threads the per-Parser package registry through phase 1 and
+// returns an unresolved `Config`. Includes are already inlined at phase 1
+// so the registry is no longer needed when `Config::resolve` runs phase 2.
+// This pins go.hocon#128 (parity with the go.hocon
+// TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault
+// regression).
 
 #[test]
 fn issue128_include_file_env_unset_preserves_prior_default() {
@@ -156,4 +164,30 @@ fn issue128_include_package_env_set_applies_env_value() {
         .get_string("registry.instance-id")
         .expect("registry.instance-id missing");
     assert_eq!(got, "from-pkg-env");
+}
+
+#[test]
+fn issue128_include_package_deferred_env_unset_preserves_prior_default() {
+    let parser = Parser::new().register_package(
+        "github.com/o3co/rs.hocon/test/issue128-deferred",
+        "reference.conf",
+        CHILD_DEFAULT_PLUS_OPTIONAL_PKG_DEFERRED,
+    );
+    let env: HashMap<String, String> = HashMap::new();
+    let opts = ParseOptions::defaults()
+        .with_resolve_substitutions(false)
+        .with_env(env);
+    let unresolved = parser
+        .parse_with_options(
+            r#"include package("github.com/o3co/rs.hocon/test/issue128-deferred", "reference.conf")"#,
+            opts,
+        )
+        .expect("parse must succeed");
+    let resolved = unresolved
+        .resolve(ResolveOptions::defaults().with_use_system_environment(false))
+        .expect("Resolve must succeed");
+    let got = resolved
+        .get_string("registry.instance-id")
+        .expect("registry.instance-id missing — prior default must remain when ${?ENV} is unset");
+    assert_eq!(got, "localhost");
 }

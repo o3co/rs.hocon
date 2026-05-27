@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `Parser::parse_with_options` / `Parser::parse_file_with_options`
+
+- **New `Parser` entry points that accept `ParseOptions`**, mirroring the module-level [`parse_string_with_options`] / [`parse_file_with_options`] but threading the per-`Parser` package registry through phase 1. This closes an API gap where the deferred-resolve lifecycle (`ParseOptions::with_resolve_substitutions(false)`) was previously only available via the module-level functions, which do not carry a package registry — so deferred parsing of an `include package("identifier", "file")` source was structurally unreachable. The existing `Parser::parse` / `parse_file` / `parse_with_env` / `parse_file_with_env` are now thin delegates to the new methods (no behavioural change for those callers). Pinned by `tests/issue128_include_env_fallback.rs::issue128_include_package_deferred_env_unset_preserves_prior_default`, parity with the go.hocon `TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault` regression.
+
 ### Changed — E13 key-position parsing (xx.hocon [#42](https://github.com/o3co/xx.hocon/issues/42))
 
 - **S8.6 is no longer enforced on key path segments** — `foo -bar = 1`, `foo.-bar = 1`, `-foo bar = 1`, `foo -1bar = 1` etc. now parse verbatim per Lightbend 1.4.3. The HOCON.md L270-276 "begin with `-` requires digit" rule is a value-position lexer-disambiguation rule (governed by E8 in [xx.hocon extra-spec-conventions](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md)); key-position is governed by path-element parsing rules where Lightbend takes characters verbatim. Pinned by 8 new fixtures (`key-hyphen-position/kh01–kh08`) in xx.hocon main. Pure loosening — no previously-valid input is now rejected.
