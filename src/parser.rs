@@ -1055,11 +1055,17 @@ fn parse_scalar_value(raw: &str) -> ScalarValue {
     let starts_like_number = matches!(raw.as_bytes(), [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..]);
 
     if starts_like_number {
-        // i64 first for canonical-form normalization: `01` → "1", `-0` → "0",
-        // matching Lightbend's parseLong (which silently drops leading zeros
-        // and the negative-zero sign). This is the F3 BREAKING surface.
-        if let Ok(n) = raw.parse::<i64>() {
-            return ScalarValue::number(n.to_string());
+        // S10.11 (go.hocon#133): a numeric value stringifies "as written in the
+        // source file" when it is the target of a substitution inside a string
+        // concatenation. Lightbend keeps the original lexeme ("05" → "26.05")
+        // for stringification while still rendering the standalone value
+        // semantically (getInt / serde re-parse the lexeme, dropping leading
+        // zeros and the negative-zero sign). So preserve the raw token text here
+        // rather than canonicalizing via `n.to_string()`; the numeric accessors
+        // (`get_i64`, serde `ScalarType::Number`) already parse `raw`, so the
+        // standalone semantic value is unchanged (`01` still reads as 1).
+        if raw.parse::<i64>().is_ok() {
+            return ScalarValue::number(raw.to_string());
         }
         // f64 fallback for fractional / scientific forms — preserve the
         // original input text rather than f64-round-tripping (Lightbend

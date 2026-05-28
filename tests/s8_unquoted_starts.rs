@@ -271,34 +271,34 @@ fn e8_value_start_hyphen_alone_lexes_as_unquoted() {
 }
 
 #[test]
-fn e8_value_start_leading_zero_normalizes_to_number_one() {
-    // F3 BREAKING (vs all prior rs.hocon behavior): `a = 01` is a digit-
-    // leading run that the E8 amendment specifies should be coerced via the
-    // greedy numeric path with i64-first parsing. `parse_scalar_value` now
-    // normalizes leading zeros: `"01".parse::<i64>()` returns 1, so the
-    // stored `raw` becomes `"1"`. Lightbend produces the same `{"a":1}`
-    // JSON via its parseLong fallback.
+fn e8_value_start_leading_zero_preserves_lexeme_but_reads_as_number() {
+    // `a = 01` is a digit-leading run coerced via the E8 greedy numeric path
+    // (value_type = Number). S10.11 (go.hocon#133) refines the earlier F3
+    // decision: a numeric value stringifies "as written in the source file",
+    // so the stored `raw` must KEEP the original lexeme `"01"` for string
+    // concatenation, while the typed/semantic accessors re-parse it. Lightbend
+    // does the same — `${a}` in a string concat yields "01", but the standalone
+    // value reads as 1 and renders as `1` in JSON.
     //
-    // BREAKING surface: `get_string("a")` now returns `"1"` (was `"01"`);
-    // typed `get_i64("a")` returns 1 (unchanged); JSON serialization
-    // produces `1` (unchanged).
+    // (Earlier this asserted `raw == "1"`; that over-canonicalized the lexeme
+    // and was the go.hocon#133 bug — corrected here cross-impl.)
     let cfg = parse("a = 01");
     let sv = get_scalar(&cfg, "a");
     assert_eq!(sv.value_type, hocon::ScalarType::Number);
-    assert_eq!(
-        sv.raw, "1",
-        "leading zero must be normalized to canonical i64 form"
-    );
+    assert_eq!(sv.raw, "01", "S10.11: numeric lexeme preserved as written");
+    // Semantic value still canonical:
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
 }
 
 #[test]
-fn e8_value_start_negative_zero_normalizes_to_zero() {
-    // `-0` parses as i64 = 0; the canonical form drops the sign (no negative
-    // zero in integer arithmetic). Lightbend's parseLong does the same.
+fn e8_value_start_negative_zero_preserves_lexeme_but_reads_as_zero() {
+    // `-0` reads as i64 = 0 (no negative zero in integer arithmetic), but its
+    // source lexeme `"-0"` is preserved in `raw` for S10.11 stringification.
     let cfg = parse("a = -0");
     let sv = get_scalar(&cfg, "a");
     assert_eq!(sv.value_type, hocon::ScalarType::Number);
-    assert_eq!(sv.raw, "0");
+    assert_eq!(sv.raw, "-0", "S10.11: numeric lexeme preserved as written");
+    assert_eq!(cfg.get_i64("a").unwrap(), 0);
 }
 
 #[test]
