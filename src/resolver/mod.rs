@@ -52,7 +52,6 @@ fn rv_has_placeholder(v: &types::ResolverValue) -> bool {
         ResolverValue::Subst(_) | ResolverValue::Concat(_) => true,
         ResolverValue::Obj(inner) => contains_placeholders(inner),
         ResolverValue::UnresolvedArray(items) => items.iter().any(rv_has_placeholder),
-        ResolverValue::Append(a) => rv_has_placeholder(&a.existing) || rv_has_placeholder(&a.elem),
         ResolverValue::Resolved(_) => false,
     }
 }
@@ -196,10 +195,6 @@ fn resolver_value_to_hocon(v: &types::ResolverValue) -> crate::value::HoconValue
         ResolverValue::UnresolvedArray(items) => {
             HoconValue::Array(items.iter().map(resolver_value_to_hocon).collect())
         }
-        ResolverValue::Append(_) => HoconValue::Placeholder(PlaceholderValue {
-            path: "<append>".into(),
-            optional: false,
-        }),
     }
 }
 
@@ -220,7 +215,7 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
     match v {
         HoconValue::Placeholder(pv) => {
             // T2 fix: sentinel paths (those beginning with '<') are internal markers
-            // produced by resolver_value_to_hocon for Concat/Append/unresolved-concat
+            // produced by resolver_value_to_hocon for Concat / unresolved-concat
             // placeholders. They must NOT be reconstructed as substitution keys — doing
             // so would silently produce a bogus lookup like "${<unresolved-concat>}".
             // Pass them through as Resolved(Placeholder) so the re-resolution path

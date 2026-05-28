@@ -83,6 +83,59 @@ pub(crate) fn fold_self_ref(
                 // Preserve prior_values from the original so per-object look-back
                 // continues to find them post-fold.
                 prior_values: o.prior_values.clone(),
+                reset_keys: o.reset_keys.clone(),
+            })
+        }
+        _ => v.clone(),
+    }
+}
+
+/// Replace every `known_absent` self-reference to `full_key` with `replacement`.
+///
+/// Counterpart to [`fold_self_ref`], which targets the NON-absent self-refs. An
+/// included file's bare `+=` chain folds its bottom-most `${?key}` to
+/// `known_absent` while building in isolation (no in-file prior). When that file
+/// is merged into a destination that already has a value for `key`, this
+/// re-opens the absent bottom so the included chain accumulates onto the
+/// destination's value across the include boundary (go.hocon#134). Walks the
+/// same Subst / Concat / UnresolvedArray / Obj shapes as [`fold_self_ref`].
+pub(crate) fn fold_known_absent_self_ref(
+    v: &ResolverValue,
+    full_key: &str,
+    replacement: &ResolverValue,
+) -> ResolverValue {
+    match v {
+        ResolverValue::Subst(sp) if sp.known_absent && subst_full_key(sp) == full_key => {
+            replacement.clone()
+        }
+        ResolverValue::Concat(c) => ResolverValue::Concat(ConcatPlaceholder {
+            nodes: c
+                .nodes
+                .iter()
+                .map(|n| fold_known_absent_self_ref(n, full_key, replacement))
+                .collect(),
+            separator_flags: c.separator_flags.clone(),
+            line: c.line,
+            col: c.col,
+        }),
+        ResolverValue::UnresolvedArray(elems) => ResolverValue::UnresolvedArray(
+            elems
+                .iter()
+                .map(|e| fold_known_absent_self_ref(e, full_key, replacement))
+                .collect(),
+        ),
+        ResolverValue::Obj(o) => {
+            let mut new_fields = indexmap::IndexMap::new();
+            for (k, val) in &o.fields {
+                new_fields.insert(
+                    k.clone(),
+                    fold_known_absent_self_ref(val, full_key, replacement),
+                );
+            }
+            ResolverValue::Obj(ResObj {
+                fields: new_fields,
+                prior_values: o.prior_values.clone(),
+                reset_keys: o.reset_keys.clone(),
             })
         }
         _ => v.clone(),
@@ -179,6 +232,7 @@ fn fold_optional_self_ref_absent(v: &ResolverValue, full_key: &str) -> Option<Re
             Some(ResolverValue::Obj(ResObj {
                 fields: new_fields,
                 prior_values: o.prior_values.clone(),
+                reset_keys: o.reset_keys.clone(),
             }))
         }
         _ => Some(v.clone()),
@@ -334,6 +388,7 @@ mod tests {
         let obj = ResolverValue::Obj(ResObj {
             fields,
             prior_values: IndexMap::new(),
+            reset_keys: std::collections::HashSet::new(),
         });
         let result = fold_or_skip_prior(&obj, "a", None);
         assert!(
@@ -360,6 +415,7 @@ mod tests {
         let obj = ResolverValue::Obj(ResObj {
             fields,
             prior_values: IndexMap::new(),
+            reset_keys: std::collections::HashSet::new(),
         });
         let result = fold_or_skip_prior(&obj, "a", None);
         assert!(
@@ -377,6 +433,7 @@ mod tests {
         let obj = ResolverValue::Obj(ResObj {
             fields,
             prior_values: IndexMap::new(),
+            reset_keys: std::collections::HashSet::new(),
         });
         let result = fold_or_skip_prior(&obj, "a", None);
         assert!(result.is_some());
@@ -496,6 +553,7 @@ pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -
         ResolverValue::Obj(ResObj {
             fields: new_fields,
             prior_values: o.prior_values.clone(),
+            reset_keys: o.reset_keys.clone(),
         })
     } else {
         v.clone()

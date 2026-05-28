@@ -87,7 +87,12 @@ fn as_res_obj(val: &ResolverValue) -> Option<ResObj> {
 }
 
 pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix: &[String]) {
-    for (k, src_val) in src.fields {
+    let ResObj {
+        fields: src_fields,
+        prior_values: src_priors,
+        reset_keys: src_reset_keys,
+    } = src;
+    for (k, src_val) in src_fields {
         let dst_is_obj = dst.fields.get(&k).and_then(as_res_obj);
         let src_obj = as_res_obj(&src_val);
 
@@ -124,28 +129,62 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix
             continue;
         }
 
-        if let Some(old) = dst.fields.get(&k) {
-            // Same fold-or-skip discipline as the both-objects branch above.
-            // The non-merge case was the pre-#120 save site; with #120 we
-            // also apply the fold so the saved prior is self-ref-free
-            // (chain-class invariant — applies when the include-merged value
-            // is itself a self-referential concat from a sibling include).
-            let prior_existing = dst.prior_values.get(&k).cloned();
-            if let Some(prior) =
-                super::fold_self_ref::fold_or_skip_prior(old, &full_key, prior_existing.as_ref())
-            {
-                dst.prior_values.insert(k.clone(), prior);
+        // Non-object collision: distinguish how src's value for `k` composes
+        // with dst's pre-merge value (go.hocon#134, S13b.2 `+=` accumulation
+        // across includes). Three cases:
+        //   (1) src reset `k` (explicit non-self-ref `k = [...]`) → src replaces
+        //       dst; drop dst's stale prior, let src's prior carry over.
+        //   (2a) src is a within-file `+=` chain (has its own prior for `k`) →
+        //       splice dst's value into the chain's `known_absent` bottom so the
+        //       included chain accumulates onto dst across the include boundary.
+        //   (2b) src is a bare `+=` (no in-file prior) → dst's value becomes the
+        //       prior that src's field-level `${?k}` chains off.
+        // Cases 2a/2b keep the same fold-or-skip / self-ref-free-prior discipline
+        // (#118/#120 chain-class invariant) as the both-objects branch above.
+        if dst.fields.contains_key(&k) {
+            if src_reset_keys.contains(&k) {
+                dst.prior_values.shift_remove(&k);
+            } else {
+                let dst_old = dst.fields.get(&k).cloned().unwrap();
+                let dst_prior = dst.prior_values.get(&k).cloned();
+                if let Some(dst_folded) = super::fold_self_ref::fold_or_skip_prior(
+                    &dst_old,
+                    &full_key,
+                    dst_prior.as_ref(),
+                ) {
+                    if let Some(src_prior) = src_priors.get(&k) {
+                        dst.prior_values.insert(
+                            k.clone(),
+                            super::fold_self_ref::fold_known_absent_self_ref(
+                                src_prior,
+                                &full_key,
+                                &dst_folded,
+                            ),
+                        );
+                    } else {
+                        dst.prior_values.insert(k.clone(), dst_folded);
+                    }
+                }
+                // dst_folded == None only for a required self-ref with no prior,
+                // unreachable through `+=`; leave src's prior to carry over.
             }
         }
         dst.fields.insert(k, src_val);
     }
     // Carry over prior_values from src that aren't already set in dst.
-    // This preserves delayed-merge chains from included files.
-    for (k, src_prior) in src.prior_values {
+    // This preserves delayed-merge chains from included files (and, for a reset
+    // key whose dst prior was dropped above, installs src's own prior).
+    for (k, src_prior) in src_priors {
         if !dst.prior_values.contains_key(&k) {
             dst.prior_values.insert(k, src_prior);
         }
     }
+    // go.hocon#134: propagate reset origin so a future merge that treats this
+    // object as an included source composes correctly. If src reset `k`, the
+    // merged value traces back to that reset; if dst had reset `k` and src
+    // chained off it, the merged value still traces to dst's reset — the union
+    // is the correct reset set either way.
+    dst.reset_keys.extend(src_reset_keys);
 }
 
 /// Relativize all substitution paths in a ResolverValue tree by prepending the given prefix.
@@ -172,10 +211,6 @@ pub(crate) fn relativize_subst_paths(val: &mut ResolverValue, prefix_segments: &
             for node in &mut c.nodes {
                 relativize_subst_paths(node, prefix_segments);
             }
-        }
-        ResolverValue::Append(a) => {
-            relativize_subst_paths(&mut a.existing, prefix_segments);
-            relativize_subst_paths(&mut a.elem, prefix_segments);
         }
         ResolverValue::Obj(o) => {
             relativize_res_obj(o, prefix_segments);

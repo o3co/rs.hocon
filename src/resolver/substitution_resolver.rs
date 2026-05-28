@@ -4,7 +4,7 @@ use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
-use super::types::{AppendPlaceholder, ResObj, ResolverValue, SubstPlaceholder};
+use super::types::{ResObj, ResolverValue, SubstPlaceholder};
 use super::utils::{
     deep_merge_hocon_objects, lookup_path, segments_to_key, string_segments_to_key,
 };
@@ -164,7 +164,6 @@ impl<'a> SubstitutionResolver<'a> {
             ResolverValue::Concat(c) => {
                 self.resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
             }
-            ResolverValue::Append(a) => self.resolve_append(a, scope).map(Some),
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
             ResolverValue::UnresolvedArray(items) => {
                 let mut resolved_items = Vec::new();
@@ -701,6 +700,23 @@ impl<'a> SubstitutionResolver<'a> {
                 return Ok(Some(non_sep.into_iter().next().unwrap()));
             }
 
+            // Allow-unresolved: if any operand is still a Placeholder, the
+            // structured concat cannot be folded yet — defer instead of hitting
+            // the S10.13 Scalar/Array type check in join_pair. This covers a
+            // desugared `x += 1` (≡ `x = ${?x} [1]`) whose prior `x` is an
+            // unresolved substitution (`x = ${missing}\nx += 1` under
+            // allow_unresolved). Mirrors the scalar-branch deferral below.
+            if non_sep
+                .iter()
+                .any(|v| matches!(v, HoconValue::Placeholder(_)))
+            {
+                use crate::value::PlaceholderValue;
+                return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                    path: "<unresolved-concat>".into(),
+                    optional: false,
+                })));
+            }
+
             let mut iter = non_sep.into_iter();
             let first = iter.next().unwrap();
             return iter
@@ -737,55 +753,6 @@ impl<'a> SubstitutionResolver<'a> {
         }
         let s: String = resolved.iter().map(|(v, _)| stringify_value(v)).collect();
         Ok(Some(HoconValue::Scalar(ScalarValue::string(s))))
-    }
-
-    fn resolve_append(
-        &mut self,
-        a: &AppendPlaceholder,
-        scope: &ResObj,
-    ) -> Result<HoconValue, ResolveError> {
-        let existing = self
-            .resolve_val(&a.existing, scope)?
-            .unwrap_or_else(|| HoconValue::Array(vec![]));
-
-        // E12: under allow_unresolved, if the prior value is itself an unresolved
-        // placeholder (e.g. `x = ${missing}\nx += 1`), defer the append by
-        // returning a sentinel Placeholder. Mirrors the resolve_concat short-
-        // circuit at the top of this file. Without this guard, the S13b.2
-        // non-array check below would classify the placeholder as a concrete
-        // non-array and throw, violating the E12 deferral contract.
-        if self.allow_unresolved && matches!(existing, HoconValue::Placeholder(_)) {
-            use crate::value::PlaceholderValue;
-            return Ok(HoconValue::Placeholder(PlaceholderValue {
-                path: "<unresolved-append>".into(),
-                optional: false,
-            }));
-        }
-
-        let elem = self.resolve_val(&a.elem, scope)?;
-
-        // S13b.2 (HOCON.md L732): `a += b` is sugar for `a = ${?a} [b]`. The
-        // prior value must be an array (or absent → empty array fallback). A
-        // non-array prior must produce a resolve-time error. Previously the
-        // resolver silently wrapped the non-array as a single-element array.
-        let mut items: Vec<HoconValue> = match existing {
-            HoconValue::Array(arr) => arr,
-            other => {
-                return Err(ResolveError {
-                    message: format!(
-                        "'+=' on non-array value: prior value is {} (spec L732)",
-                        type_name(&other),
-                    ),
-                    path: self.resolving_field_path.join("."),
-                    line: a.line,
-                    col: a.col,
-                });
-            }
-        };
-        if let Some(e) = elem {
-            items.push(e);
-        }
-        Ok(HoconValue::Array(items))
     }
 }
 

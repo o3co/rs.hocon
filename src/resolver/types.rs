@@ -1,7 +1,7 @@
 use crate::lexer::Segment;
 use crate::value::HoconValue;
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // ---- Include cycle detection key ----
@@ -96,7 +96,6 @@ pub enum ResolverValue {
     Resolved(HoconValue),
     Subst(SubstPlaceholder),
     Concat(ConcatPlaceholder),
-    Append(AppendPlaceholder),
     Obj(ResObj),
     UnresolvedArray(Vec<ResolverValue>),
 }
@@ -139,21 +138,17 @@ pub struct ConcatPlaceholder {
     pub col: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct AppendPlaceholder {
-    pub existing: Box<ResolverValue>,
-    pub elem: Box<ResolverValue>,
-    /// Source position of the `+=` field — populated by the structure
-    /// builder so resolve-time errors (e.g. S13b.2 non-array prior) can
-    /// report a useful location instead of `0:0`.
-    pub line: usize,
-    pub col: usize,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ResObj {
     pub fields: IndexMap<String, ResolverValue>,
     pub prior_values: IndexMap<String, ResolverValue>,
+    /// Keys whose net value in THIS object was established by an explicit
+    /// non-self-referential assignment (`k = [...]`), i.e. a reset rather than
+    /// a `+=`/self-ref append. Used by [`deep_merge_res_obj_into`] to decide
+    /// whether an included file's `k` chains off the destination's pre-merge
+    /// value (append origin → splice) or replaces it (reset origin → discard).
+    /// See go.hocon#134 (S13b.2 `+=` accumulation across includes).
+    pub reset_keys: HashSet<String>,
 }
 
 impl ResObj {
