@@ -165,8 +165,11 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix
                         dst.prior_values.insert(k.clone(), dst_folded);
                     }
                 }
-                // dst_folded == None only for a required self-ref with no prior,
-                // unreachable through `+=`; leave src's prior to carry over.
+                // dst_folded == None only when dst's value is a *required*
+                // self-ref with no prior — unreachable through `+=` (which
+                // desugars to the *optional* `${?key}`). If it were ever hit,
+                // doing nothing here is the safe default: src's own prior
+                // carries over via the loop below and the chain is unaffected.
             }
         }
         dst.fields.insert(k, src_val);

@@ -237,3 +237,53 @@ fn s13b2_three_level_within_file_chain_in_include() {
     let items = cfg.get_list("items").expect("items");
     assert_eq!(hv_strings(&items), vec!["first", "s1", "s2", "s3"]);
 }
+
+#[test]
+fn s13b2_degenerate_self_ref_element_in_chain() {
+    // Pin the degenerate expansion `items += ${?items}` ≡ `items = ${?items}
+    // [${?items}]`: after `items += "a"` (→ ["a"]), the optional self-ref
+    // *element* resolves to the current array, nesting it. This is the
+    // literal-correct expansion; the test guards against a future change
+    // silently altering it.
+    let cfg = hocon::parse("items += \"a\"\nitems += ${?items}\n").expect("parse");
+    let items = cfg.get_list("items").expect("items");
+    assert_eq!(items.len(), 2);
+    match &items[0] {
+        hocon::HoconValue::Scalar(s) => assert_eq!(s.raw, "a"),
+        other => panic!("items[0] expected scalar \"a\", got {:?}", other),
+    }
+    match &items[1] {
+        hocon::HoconValue::Array(inner) => assert_eq!(hv_strings(inner), vec!["a"]),
+        other => panic!("items[1] expected nested array [\"a\"], got {:?}", other),
+    }
+}
+
+#[test]
+fn s13b2_allow_unresolved_cross_include_plus_equals_defers() {
+    // The new resolve_concat structured-branch allow-unresolved deferral:
+    // a cross-include `+=` whose prior is still an unresolved mandatory
+    // substitution must defer (not error with an S10.13 Scalar/Array type
+    // check) under allow_unresolved. `items = ${missing}` (deferred) followed
+    // by `items += "x"` (≡ `items = ${?items} ["x"]`) resolves `${?items}` to
+    // the unresolved `${missing}` placeholder, so the structured concat
+    // `<placeholder> ["x"]` must defer rather than throw.
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("seed.conf"), "items = ${missing}\n").unwrap();
+    let d = dir.path().display().to_string().replace('\\', "/");
+    let src = format!("include \"{d}/seed.conf\"\nitems += \"x\"\n");
+    let c = hocon::parse_string_with_options(
+        &src,
+        hocon::ParseOptions::defaults().with_resolve_substitutions(false),
+    )
+    .expect("parse (deferred)");
+    let r = c.resolve(
+        hocon::ResolveOptions::defaults()
+            .with_allow_unresolved(true)
+            .with_use_system_environment(false),
+    );
+    assert!(
+        r.is_ok(),
+        "allow_unresolved cross-include += must defer, got {:?}",
+        r.err()
+    );
+}
