@@ -21,10 +21,7 @@
 
 #[test]
 fn s10_11_leading_zero_preserved_in_concat() {
-    let cfg = hocon::parse(
-        "major = 26\nminor = 05\nversion = ${major}.${minor}\n",
-    )
-    .expect("parse");
+    let cfg = hocon::parse("major = 26\nminor = 05\nversion = ${major}.${minor}\n").expect("parse");
     assert_eq!(cfg.get_string("version").unwrap(), "26.05");
 }
 
