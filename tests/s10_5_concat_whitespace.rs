@@ -53,8 +53,8 @@ fn s10_5_undefined_optional_keeps_both_runs() {
     // go.hocon#132 canonical repro: env unset → substitution contributes
     // nothing, but the 2 + 2 whitespace runs around it must remain.
     let env: HashMap<String, String> = HashMap::new();
-    let cfg = hocon::parse_with_env("a = \"left\"  ${?GO132_UNSET}  \"right\"\n", &env)
-        .expect("parse");
+    let cfg =
+        hocon::parse_with_env("a = \"left\"  ${?GO132_UNSET}  \"right\"\n", &env).expect("parse");
     assert_eq!(cfg.get_string("a").unwrap(), "left    right");
 }
 
