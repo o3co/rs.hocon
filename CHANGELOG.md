@@ -9,19 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.6.0] - 2026-05-27
 
-Minor-version bump because of the new public-surface addition to `Parser`
-(see "Added" below). Functional content (the fixes) matches [go.hocon
-v1.5.3](https://github.com/o3co/go.hocon/releases/tag/v1.5.3) and
-[ts.hocon v1.5.3](https://github.com/o3co/ts.hocon/releases/tag/v1.5.3),
-so the 3-impl release line has intentionally diverged at this point:
-rs.hocon ships the same fixes plus a backwards-compatible API addition.
-SemVer mandates minor for purely additive changes; the version skip
-(v1.5.2 → v1.6.0) keeps that invariant honest. Safe drop-in upgrade
-from v1.5.2.
+Cross-impl release coordinated to land at v1.6.0 across go.hocon /
+ts.hocon / rs.hocon. Minor-version bump (skipping v1.5.3 for rs.hocon)
+because of the new public-surface addition to `Parser` (see "Added") and
+the two S10 string-concat spec fixes below. Carries the spec-compliance
+content already shipped in [go.hocon
+v1.5.3](https://github.com/o3co/go.hocon/releases/tag/v1.5.3)
+(xx.hocon#22 / #27 / #42, go.hocon#128 pins) plus two cross-impl fixes
+from the go.hocon#131–#135 audit that apply to rs.hocon: S10.5 (#132)
+and S10.11 (#133). (go.hocon#134 — `+=` accumulation across includes —
+also applies to rs.hocon but is deferred to a follow-up: the correct fix
+is a resolver-chain change that needs the multi-agent-review treatment
+the chained-self-ref machinery already required.) Safe drop-in upgrade
+from v1.5.2; the only one-time source-visible change is `Token` becoming
+`#[non_exhaustive]` (E13, documented below).
 
 ### Added — `Parser::parse_with_options` / `Parser::parse_file_with_options`
 
 - **New `Parser` entry points that accept `ParseOptions`**, mirroring the module-level `parse_string_with_options` / `parse_file_with_options` but threading the per-`Parser` package registry through phase 1. This closes an API gap where the deferred-resolve lifecycle (`ParseOptions::with_resolve_substitutions(false)`) was previously only available via the module-level functions, which do not carry a package registry — so deferred parsing of an `include package("identifier", "file")` source was structurally unreachable. The existing `Parser::parse` / `parse_file` / `parse_with_env` / `parse_file_with_env` are now thin delegates to the new methods (no behavioural change for those callers). Pinned by `tests/issue128_include_env_fallback.rs::issue128_include_package_deferred_env_unset_preserves_prior_default`, parity with the go.hocon `TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault` regression.
+
+### Fixed — S10.5 inner whitespace in value concatenation ([go.hocon#132](https://github.com/o3co/go.hocon/issues/132))
+
+- **Literal whitespace runs between simple values in a string concatenation are now preserved verbatim** (HOCON.md §String value concatenation L332). `parse_value` inserted a single hardcoded `" "` separator between concat pieces, collapsing every multi-space run to one space (`foo   bar` → `"foo bar"`, and `"left"  ${?UNSET}  "right"` → `"left  right"` instead of Lightbend's `"left    right"`). The fix threads `peek_preceding_whitespace()` (the lexer field E13 already added for key-position whitespace) into the value-position separator. Single-space concatenations are unchanged, so no existing behaviour shifts. Pinned by 6 tests in `tests/s10_5_concat_whitespace.rs`.
+
+### Fixed — S10.11 numeric lexeme preserved for stringification ([go.hocon#133](https://github.com/o3co/go.hocon/issues/133))
+
+- **Numbers now stringify "as written in the source file" when used as the target of a substitution inside a string concatenation** (HOCON.md L366). `parse_scalar_value` canonicalized integer lexemes via `n.to_string()` (`05` → `"5"`, `01` → `"1"`), so `version = ${major}.${minor}` with `minor = 05` produced `"26.5"` instead of `"26.05"`. The `Number` scalar now retains the raw source lexeme; the numeric accessors (`get_i64`, serde `ScalarType::Number`) already re-parse `raw`, so the standalone value is unchanged (`01` still reads as 1 and serializes as `1`). This refines the earlier E8/F3 decision that over-canonicalized the `raw` field — the two affected E8 unit tests are updated to assert lexeme preservation plus a semantic-accessor check; the us13 JSON fixture (`{"a":1}`) is unaffected. Pinned by 6 tests in `tests/s10_11_numeric_lexeme.rs`.
 
 ### Changed — E13 key-position parsing (xx.hocon [#42](https://github.com/o3co/xx.hocon/issues/42))
 
