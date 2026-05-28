@@ -13,7 +13,7 @@ Minor-version bump because of the new public-surface addition to `Parser`
 (see "Added" below). Functional content (the fixes) matches [go.hocon
 v1.5.3](https://github.com/o3co/go.hocon/releases/tag/v1.5.3) and
 [ts.hocon v1.5.3](https://github.com/o3co/ts.hocon/releases/tag/v1.5.3),
-so the 3-impl release pair has intentionally diverged at this point:
+so the 3-impl release line has intentionally diverged at this point:
 rs.hocon ships the same fixes plus a backwards-compatible API addition.
 SemVer mandates minor for purely additive changes; the version skip
 (v1.5.2 → v1.6.0) keeps that invariant honest. Safe drop-in upgrade
@@ -21,7 +21,7 @@ from v1.5.2.
 
 ### Added — `Parser::parse_with_options` / `Parser::parse_file_with_options`
 
-- **New `Parser` entry points that accept `ParseOptions`**, mirroring the module-level [`parse_string_with_options`] / [`parse_file_with_options`] but threading the per-`Parser` package registry through phase 1. This closes an API gap where the deferred-resolve lifecycle (`ParseOptions::with_resolve_substitutions(false)`) was previously only available via the module-level functions, which do not carry a package registry — so deferred parsing of an `include package("identifier", "file")` source was structurally unreachable. The existing `Parser::parse` / `parse_file` / `parse_with_env` / `parse_file_with_env` are now thin delegates to the new methods (no behavioural change for those callers). Pinned by `tests/issue128_include_env_fallback.rs::issue128_include_package_deferred_env_unset_preserves_prior_default`, parity with the go.hocon `TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault` regression.
+- **New `Parser` entry points that accept `ParseOptions`**, mirroring the module-level `parse_string_with_options` / `parse_file_with_options` but threading the per-`Parser` package registry through phase 1. This closes an API gap where the deferred-resolve lifecycle (`ParseOptions::with_resolve_substitutions(false)`) was previously only available via the module-level functions, which do not carry a package registry — so deferred parsing of an `include package("identifier", "file")` source was structurally unreachable. The existing `Parser::parse` / `parse_file` / `parse_with_env` / `parse_file_with_env` are now thin delegates to the new methods (no behavioural change for those callers). Pinned by `tests/issue128_include_env_fallback.rs::issue128_include_package_deferred_env_unset_preserves_prior_default`, parity with the go.hocon `TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault` regression.
 
 ### Changed — E13 key-position parsing (xx.hocon [#42](https://github.com/o3co/xx.hocon/issues/42))
 
@@ -186,7 +186,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.5.2...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
 [1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
