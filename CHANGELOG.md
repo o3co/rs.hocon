@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-27
+
+Minor-version bump because of the new public-surface addition to `Parser`
+(see "Added" below). Functional content (the fixes) matches [go.hocon
+v1.5.3](https://github.com/o3co/go.hocon/releases/tag/v1.5.3) and
+[ts.hocon v1.5.3](https://github.com/o3co/ts.hocon/releases/tag/v1.5.3),
+so the 3-impl release pair has intentionally diverged at this point:
+rs.hocon ships the same fixes plus a backwards-compatible API addition.
+SemVer mandates minor for purely additive changes; the version skip
+(v1.5.2 → v1.6.0) keeps that invariant honest. Safe drop-in upgrade
+from v1.5.2.
+
 ### Added — `Parser::parse_with_options` / `Parser::parse_file_with_options`
 
 - **New `Parser` entry points that accept `ParseOptions`**, mirroring the module-level [`parse_string_with_options`] / [`parse_file_with_options`] but threading the per-`Parser` package registry through phase 1. This closes an API gap where the deferred-resolve lifecycle (`ParseOptions::with_resolve_substitutions(false)`) was previously only available via the module-level functions, which do not carry a package registry — so deferred parsing of an `include package("identifier", "file")` source was structurally unreachable. The existing `Parser::parse` / `parse_file` / `parse_with_env` / `parse_file_with_env` are now thin delegates to the new methods (no behavioural change for those callers). Pinned by `tests/issue128_include_env_fallback.rs::issue128_include_package_deferred_env_unset_preserves_prior_default`, parity with the go.hocon `TestIncludePackage_OptionalEnvFallback_DeferredPath_PreservesPriorDefault` regression.
@@ -29,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Trailing-dot BadPath error now points at the offending `.`** rather than the unrelated next token (`=` / `{` / EOF). Both the unquoted-ends-with-`.` branch and the standalone-dot branch now capture the dot's own `line` / `col` for use in the post-loop error. Pinned by `tests/integration_test.rs::e13_trailing_dot_error_position_points_at_dot`.
 - **`post_dot_prefix.clear()` in the standalone-dot branch's else** — defensive symmetry with the trailing-dot continuation branch above. Not observably exploitable in current grammar but the paired branch already clears, so the asymmetry could leak stale state through a future grammar change.
+
+### Fixed — C3 cluster 3h cross-impl resolver bugs ([xx.hocon#27](https://github.com/o3co/xx.hocon/issues/27) — E14, sr12–sr16)
+
+- **sr15 — universal "drop first concat" cross-impl resolver bug** ([xx.hocon#27](https://github.com/o3co/xx.hocon/issues/27)). Optional self-references with no prior value at save time previously caused `fold_or_skip_prior` to skip the prior-save, so the first concat in chains like `a = ${?a} [...]; a = ${?a} [...]` dropped its element. Fix introduces a `SubstPlaceholder.known_absent` sentinel — optional no-prior self-refs fold to the sentinel rather than skipping the save. The sentinel resolves to undefined in `resolve_subst` and is ignored by pointer-identity self-ref detection. 10 new unit tests for `fold_optional_self_ref_absent` branches (`UnresolvedArray` / `Obj` / fallback).
+- **sr12 — stack overflow on self-ref-to-same-key in saved prior**. Cycle handler + `is_self_ref` branch now detect when a saved prior contains a self-ref to the same key being resolved.
+- **sr13 — post-fold overwrite regression**. Prior is now saved BEFORE `fold_nested_self_refs`. `should_fold_nested` gate refined across rounds 2 + 3 of multi-agent-review (Obj-Obj-subset-keys / Obj-non-Obj convergence, leaf-prior preferred over outer-nav for multi-segment self-refs).
+- **sr14 / sr16 — cache pollution on prior-with-external-ref / order-dependent external-then-self-ref**. `resolve_res_obj` now invalidates the cache before resolving each field, writes the authoritative resolved value after, and recursively caches descendants. Combined with the dotted-key cache-collision fix (`string_segments_to_key` escape for `resolving_field_path` join), the four bugs are fixed under a single shared shape.
+- **`SubstPlaceholder` marked `#[non_exhaustive]`** for forward-compat as the `known_absent: bool` field was added. `pub(crate)` already prevented external struct-literal construction; this attribute documents the closed-construction stance for downstream `match` clauses that bind the struct by name.
+
+### Tests — cross-impl regression coverage for [go.hocon#128](https://github.com/o3co/go.hocon/issues/128) + [xx.hocon#22](https://github.com/o3co/xx.hocon/issues/22) E6 ordering
+
+- **Pin include-child `${?ENV}` env-with-default semantics so a future refactor to a multi-pass shape can't silently regress to go.hocon's pre-fix shape** ([go.hocon#128](https://github.com/o3co/go.hocon/issues/128) — fixed in go.hocon v1.5.3 / [go.hocon#129](https://github.com/o3co/go.hocon/pull/129)). 5 tests in `tests/issue128_include_env_fallback.rs`: include "file" env-unset / env-set, include package(...) env-unset / env-set, and a deferred-resolve path env-unset case (the new `Parser::parse_with_options` API surface). Env is injected via `hocon::parse_with_env` (string entry point) and `Parser::parse_with_env` / `Parser::parse_with_options` (package-registry entry points) — no `std::env` mutation, no `Mutex` serialisation, parallel-safe. rs.hocon's single-pass substitution-resolve over a merge-time-populated `prior_values` (via `deep_merge_res_obj_into`) is structurally immune to the go.hocon bug; the tests pin that invariant.
+- **Pin E6 cross-source list-suffix env-fallback ordering** ([xx.hocon#22](https://github.com/o3co/xx.hocon/issues/22) C4). rs.hocon's resolver had the correct primary → S14c.2 → listSuffix → scalar-env order pre-cycle; the C4 work landed the `ev12c-include-config-defined-wins` fixture in xx.hocon and ts.hocon ported the fix from rs.hocon. The new `tests/env_var_list_test.rs` ev12c-pin regression test in this release reads the shared fixture so any future drift surfaces as a test failure.
 
 ## [1.5.2] - 2026-05-23
 
