@@ -837,6 +837,14 @@ impl<'a> Parser<'a> {
             }
 
             let had_space = self.peek_preceding_space() && !parts.is_empty();
+            // S10.5: inner whitespace between simple values is preserved verbatim,
+            // so capture the literal run (not a collapsed single space) before the
+            // node match advances past the token.
+            let preceding_ws = if had_space {
+                self.peek_preceding_whitespace().to_string()
+            } else {
+                String::new()
+            };
             let t_line = self.peek_line();
             let t_col = self.peek_col();
 
@@ -892,8 +900,17 @@ impl<'a> Parser<'a> {
             };
 
             if had_space {
+                // Preserve the literal whitespace run (S10.5). Defensive fallback to
+                // a single space if the lexer reported preceding_space but captured no
+                // chars (should not happen for value-position whitespace, which is
+                // pure HOCON_WS with no comments).
+                let sep = if preceding_ws.is_empty() {
+                    " ".to_string()
+                } else {
+                    preceding_ws
+                };
                 parts.push(AstNode::Scalar {
-                    value: ScalarValue::string(" ".into()),
+                    value: ScalarValue::string(sep),
                     pos: Pos {
                         line: t_line,
                         col: t_col,
