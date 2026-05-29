@@ -52,7 +52,6 @@ fn rv_has_placeholder(v: &types::ResolverValue) -> bool {
         ResolverValue::Subst(_) | ResolverValue::Concat(_) => true,
         ResolverValue::Obj(inner) => contains_placeholders(inner),
         ResolverValue::UnresolvedArray(items) => items.iter().any(rv_has_placeholder),
-        ResolverValue::Append(a) => rv_has_placeholder(&a.existing) || rv_has_placeholder(&a.elem),
         ResolverValue::Resolved(_) => false,
     }
 }
@@ -112,12 +111,12 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
                 // Barrier: both are Obj, but receiver's prior is non-Obj.
                 // Receiver's Obj wins; fallback Obj is NOT merged.
                 let prior = result.fields.insert(k.clone(), rv).unwrap();
-                result.prior_values.entry(k.clone()).or_insert(prior);
+                save_fallback_prior(&mut result, &k, prior);
             } else {
                 // Non-obj collision: receiver wins; capture existing (fallback's value) as prior.
                 let prior = result.fields.insert(k.clone(), rv).unwrap(); // replace, get old
                                                                           // prior = the fallback value we just displaced
-                result.prior_values.entry(k.clone()).or_insert(prior);
+                save_fallback_prior(&mut result, &k, prior);
             }
         } else {
             result.fields.insert(k.clone(), rv);
@@ -128,6 +127,25 @@ pub fn merge_unresolved(receiver: ResObj, fallback: ResObj) -> ResObj {
         }
     }
     result
+}
+
+/// Record a displaced fallback value as `result.prior_values[k]` (or_insert
+/// semantics — only when no prior is already recorded), folded self-ref-free
+/// first. go.hocon#134: after the `+=` desugar a fallback's `+=` value is a
+/// `${?k} [...]` self-ref concat; recording it raw makes the receiver's `${?k}`
+/// follow a prior that still contains `${?k}`, so the chain never bottoms out
+/// (the fallback's element is dropped — `items += "r"`.with_fallback(`items +=
+/// "f"`) yields `["r"]` instead of `["f","r"]`; ts.hocon stack-overflows on the
+/// same input). Folding to a knownAbsent bottom (no old prior) makes the fallback
+/// resolve to its own base so the receiver accumulates onto it. Mirrors the fold
+/// discipline `deep_merge_res_obj_into` already applies on the include path.
+fn save_fallback_prior(result: &mut types::ResObj, k: &str, prior: types::ResolverValue) {
+    if result.prior_values.contains_key(k) {
+        return;
+    }
+    if let Some(folded) = fold_self_ref::fold_or_skip_prior(&prior, k, None) {
+        result.prior_values.insert(k.to_string(), folded);
+    }
 }
 
 /// Returns true if `obj` or any nested ResObj contains prior_values entries.
@@ -196,10 +214,6 @@ fn resolver_value_to_hocon(v: &types::ResolverValue) -> crate::value::HoconValue
         ResolverValue::UnresolvedArray(items) => {
             HoconValue::Array(items.iter().map(resolver_value_to_hocon).collect())
         }
-        ResolverValue::Append(_) => HoconValue::Placeholder(PlaceholderValue {
-            path: "<append>".into(),
-            optional: false,
-        }),
     }
 }
 
@@ -220,7 +234,7 @@ fn hocon_value_to_resolver(v: &crate::value::HoconValue) -> types::ResolverValue
     match v {
         HoconValue::Placeholder(pv) => {
             // T2 fix: sentinel paths (those beginning with '<') are internal markers
-            // produced by resolver_value_to_hocon for Concat/Append/unresolved-concat
+            // produced by resolver_value_to_hocon for Concat / unresolved-concat
             // placeholders. They must NOT be reconstructed as substitution keys — doing
             // so would silently produce a bogus lookup like "${<unresolved-concat>}".
             // Pass them through as Resolved(Placeholder) so the re-resolution path

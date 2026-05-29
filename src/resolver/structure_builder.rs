@@ -1,14 +1,14 @@
 use crate::error::ResolveError;
+use crate::lexer::Segment;
 use crate::parser::{AstField, AstNode};
 use crate::value::{HoconValue, ScalarValue};
 
-use super::fold_self_ref::{fold_nested_self_refs, fold_or_skip_prior};
+use super::fold_self_ref::{contains_self_ref, fold_nested_self_refs, fold_or_skip_prior};
 use super::include_loader::load_include;
 #[cfg(feature = "include-package")]
 use super::include_loader::load_package_include;
 use super::types::{
-    AppendPlaceholder, ConcatPlaceholder, InternalResolveOptions, ResObj, ResolverValue,
-    SubstPlaceholder,
+    ConcatPlaceholder, InternalResolveOptions, ResObj, ResolverValue, SubstPlaceholder,
 };
 use super::utils::{deep_merge_res_obj_into, relativize_res_obj, string_segments_to_key};
 
@@ -120,42 +120,73 @@ impl<'a> StructureBuilder<'a> {
         }
 
         if field.append {
-            let existing = obj
-                .fields
-                .get(&head)
-                .cloned()
-                .unwrap_or_else(|| ResolverValue::Resolved(HoconValue::Array(vec![])));
+            // S13b.2: `a += b` ≡ `a = ${?a} [b]` (HOCON.md L732). Desugar to that
+            // exact concat AST and re-dispatch through the normal-assignment path
+            // so every `+=` flows through the chained-self-ref machinery
+            // (#118/#119/#120), which already accumulates `a = ${?a} [...]` as a
+            // duplicate-key chain — including across include boundaries (the
+            // cross-include splice in deep_merge_res_obj_into). The self-ref uses
+            // the full nested path so `srv.items += x` references `${?srv.items}`,
+            // and include relativization rewrites it under a mount prefix.
+            //
+            // Reset semantics (an explicit `a = [...]` before the `+=`) are
+            // preserved because the explicit assignment records `a` in
+            // `reset_keys`, which the merge uses to discard rather than splice the
+            // destination's pre-merge value. See go.hocon#134.
             let mut child_prefix = path_prefix.to_vec();
             child_prefix.push(head.clone());
-            // #118 + #120 cross-impl with go.hocon: fold self-references in
-            // `existing` against the OLD prior so the recorded prior is
-            // self-ref-free. Chain invariant: by induction every saved prior
-            // contains no `${full_key}` reference.
-            let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
-            let old_prior = obj.prior_values.get(&head).cloned();
-            if let Some(prior) = fold_or_skip_prior(&existing, &full_key, old_prior.as_ref()) {
-                obj.prior_values.insert(head.clone(), prior);
-            }
-            let elem = self.ast_to_resolver_value(field.value, &child_prefix)?;
-            let field_line = field.pos.line;
-            let field_col = field.pos.col;
-            obj.fields.insert(
-                head,
-                ResolverValue::Append(AppendPlaceholder {
-                    existing: Box::new(existing),
-                    elem: Box::new(elem),
-                    line: field_line,
-                    col: field_col,
-                }),
+            let segments: Vec<Segment> = child_prefix
+                .iter()
+                .map(|s| Segment {
+                    text: s.clone(),
+                    line: field.pos.line,
+                    col: field.pos.col,
+                })
+                .collect();
+            let subst = AstNode::Substitution {
+                segments,
+                optional: true,
+                list_suffix: false,
+                pos: field.pos.clone(),
+            };
+            let elem_array = AstNode::Array {
+                items: vec![field.value],
+                pos: field.pos.clone(),
+            };
+            let synthetic = AstNode::Concat {
+                nodes: vec![subst, elem_array],
+                pos: field.pos.clone(),
+            };
+            return self.apply_field(
+                obj,
+                AstField {
+                    key: vec![head],
+                    value: synthetic,
+                    append: false,
+                    pos: field.pos,
+                },
+                path_prefix,
             );
-            return Ok(());
         }
 
         // Normal assignment
         let existing = obj.fields.get(&head).cloned();
         let mut child_prefix = path_prefix.to_vec();
         child_prefix.push(head.clone());
+        let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
         let new_val = self.ast_to_resolver_value(field.value, &child_prefix)?;
+
+        // go.hocon#134: a non-self-referential assignment to `head` is a *reset* —
+        // its net value does not chain off an outer `${?head}`. Record it so a
+        // cross-include merge discards (rather than splices onto) the
+        // destination's pre-merge value. A desugared `+=` (or an explicit
+        // `head = ${?head} ...`) is self-referential, so it is NOT a reset and the
+        // chain continues across the include boundary. Once set, the flag stays
+        // set: a later `+=` chains off the reset value, so the net contribution
+        // still does not chain off an outer prior.
+        if !contains_self_ref(&new_val, &full_key) {
+            obj.reset_keys.insert(head.clone());
+        }
 
         // #118 + #120: save existing with fold-or-skip (chain-class fix).
         //
@@ -163,7 +194,6 @@ impl<'a> StructureBuilder<'a> {
         // nested fold. If this stores a post-fold object, the next overwrite
         // can fold that already-expanded value again (`xbarbar`).
         if let Some(ref ex) = existing {
-            let full_key = string_segments_to_key(child_prefix.iter().map(String::as_str));
             let old_prior = obj.prior_values.get(&head).cloned();
             let prior_source;
             // xx.hocon#27 review #124 Issue 3 (cross-impl with ts.hocon Codex P1 + Claude #1):
