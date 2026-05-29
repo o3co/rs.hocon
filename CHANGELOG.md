@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [1.6.1] - 2026-05-29
 
 Bugfix release: S13b.2 `+=` accumulation across includes ([go.hocon#134](https://github.com/o3co/go.hocon/issues/134)) — the follow-up deferred from v1.6.0. No public API changes; safe drop-in upgrade from v1.6.0. `Cargo.toml` is pre-bumped to `1.6.1` (the publish workflow's version-set step is idempotent).
@@ -205,7 +207,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/o3co/rs.hocon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
 [1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
