@@ -221,6 +221,35 @@ fn s13b2_reset_in_multi_write_later_include_breaks_chain() {
 }
 
 #[test]
+fn s13b2_deferred_with_fallback_plus_equals_accumulates() {
+    // Multi-agent-review regression (cross-impl with ts.hocon): after the `+=`
+    // desugar, a fallback's `+=` value is a `${?items} [...]` self-ref concat.
+    // merge_unresolved (with_fallback) must fold it self-ref-free before recording
+    // it as the receiver's prior — otherwise the receiver's `${?items}` follows a
+    // prior that still contains `${?items}`, dropping the fallback's element
+    // (`["r"]` instead of `["f","r"]`; ts.hocon stack-overflows on the same input).
+    // Fallback fills, receiver appends → ["f", "r"].
+    let recv = hocon::parse_string_with_options(
+        "items += \"r\"",
+        hocon::ParseOptions::defaults().with_resolve_substitutions(false),
+    )
+    .expect("recv");
+    let fb = hocon::parse_string_with_options(
+        "items += \"f\"",
+        hocon::ParseOptions::defaults().with_resolve_substitutions(false),
+    )
+    .expect("fb");
+    let cfg = recv
+        .with_fallback(&fb)
+        .resolve(hocon::ResolveOptions::defaults())
+        .expect("resolve");
+    assert_eq!(
+        hv_strings(&cfg.get_list("items").expect("items")),
+        vec!["f", "r"]
+    );
+}
+
+#[test]
 fn s13b2_three_level_within_file_chain_in_include() {
     // A 3-deep within-file chain inside the later include exercises the
     // recursive (nested-Concat) arm of fold_known_absent_self_ref.
