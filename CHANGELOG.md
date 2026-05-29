@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-29
+
+Bugfix release: S13b.2 `+=` accumulation across includes ([go.hocon#134](https://github.com/o3co/go.hocon/issues/134)) — the follow-up deferred from v1.6.0. No public API changes; safe drop-in upgrade from v1.6.0. `Cargo.toml` is pre-bumped to `1.6.1` (the publish workflow's version-set step is idempotent).
+
 ### Fixed — S13b.2 `+=` accumulation across includes ([go.hocon#134](https://github.com/o3co/go.hocon/issues/134))
 
 - **Repeated `+=` array appends across included files now accumulate in document order**, matching Lightbend's treat-includes-as-textual-inlining semantics (HOCON.md L732, `a += b` ≡ `a = ${?a} [b]`). `include "first" (items += "a"); include "second" (items += "b"); items += "main"` now yields `["a", "b", "main"]` instead of dropping earlier includes' elements. `+=` was an eager-snapshot `AppendPlaceholder` whose `existing` was captured in each included file's isolated scope, so the cross-include merge overwrote it. The fix desugars `+=` to the `${?key} [elem]` concat at structure-build time so it flows through the chained-self-ref machinery (#118/#119/#120), and `deep_merge_res_obj_into` now splices the destination's pre-merge value into the included chain's `known_absent` bottom (`fold_known_absent_self_ref`). Reset semantics (an explicit `k = [...]` before a `+=`, in either an included file or the parent) are preserved via a new `ResObj.reset_keys` origin flag — distinguishing a *reset* from a *within-file `+=` chain* (which also records a prior, and which the naive "src has a prior" discriminator wrongly conflated with reset). The eager `AppendPlaceholder` variant and `resolve_append` are removed. The same fold discipline is applied in `merge_unresolved` (the E12 `with_fallback` path) so a deferred `with_fallback` whose fallback uses `+=` accumulates correctly (`parse_string_with_options("items += \"r\"", deferred).with_fallback(parse_string_with_options("items += \"f\"", deferred)).resolve(...)` → `["f","r"]`) instead of dropping the fallback's element. Pinned by 15 tests in `tests/s13b_2_plus_equals_include_accumulation.rs`, including within-file chains inside a later include merged onto a non-empty destination, the deferred `with_fallback` + `+=` case, and the `+= [array]` single-element nesting / degenerate self-ref / allow-unresolved deferral cases.
@@ -203,7 +207,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/o3co/rs.hocon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
 [1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
