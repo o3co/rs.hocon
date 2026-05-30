@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-30
+
+Cross-impl release coordinated to land at v1.7.0 across go.hocon / ts.hocon / rs.hocon. The minor bump is driven by [go.hocon#142](https://github.com/o3co/go.hocon/issues/142) (additive `GetXxxE` accessor family in go.hocon — rs.hocon's `Result`-primary API was the prior art that inspired the go-side addition). **No functional changes in rs.hocon**: this release exists to keep cross-impl version parity per project convention (precedent: v1.6.0's coordinated minor sync). No public API changes; safe drop-in upgrade from v1.6.1. `Cargo.toml` is pre-bumped to `1.7.0` (the publish workflow's version-set step is idempotent).
+
 ## [1.6.1] - 2026-05-29
 
 Bugfix release: S13b.2 `+=` accumulation across includes ([go.hocon#134](https://github.com/o3co/go.hocon/issues/134)) — the follow-up deferred from v1.6.0. No public API changes; safe drop-in upgrade from v1.6.0. `Cargo.toml` is pre-bumped to `1.6.1` (the publish workflow's version-set step is idempotent).
@@ -207,7 +211,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/o3co/rs.hocon/compare/v1.6.1...v1.7.0
 [1.6.1]: https://github.com/o3co/rs.hocon/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
