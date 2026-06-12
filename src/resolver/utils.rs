@@ -130,8 +130,9 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix
                     // the prior would then trip contains_subst_by_path on a
                     // self-ref the leaf-level path already has a folded
                     // value for.
-                    let prior = super::fold_self_ref::fold_nested_self_refs(&prior, &child_prefix);
-                    dst.prior_values.insert(k.clone(), prior);
+                    let prior_self_ref_free =
+                        super::fold_self_ref::fold_nested_self_refs(&prior, &child_prefix);
+                    dst.prior_values.insert(k.clone(), prior_self_ref_free);
                 }
             }
             deep_merge_res_obj_into(&mut dst_obj, src_obj, &child_prefix);
