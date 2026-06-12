@@ -32,9 +32,9 @@ Two related defects in the cycle-recovery path:
    substitutions this returned the wrong subtree — typically an
    `Object` where the substitution targeted a leaf — which then
    surfaced as a downstream `S10` kind-mismatch in any concat that
-   consumed the result. The defect was masked by (1) on `develop`
-   because most multi-segment cycle paths bailed out via
-   `skip_due_to_self_ref` before the broken resolution call.
+   consumed the result. The defect was masked by (1) — most
+   multi-segment cycle paths bailed out via `skip_due_to_self_ref`
+   before the broken resolution call.
 
 `pyhocon`, Lightbend's reference impl, and `mockersf/hocon` all
 parse the same shapes correctly. No public API changes; safe drop-in.
