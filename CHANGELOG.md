@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — false-positive `circular substitution` from cycle-recovery on chained self-refs nested below an outer-merge boundary
+
+Two related defects in the cycle-recovery path:
+
+1. **`utils::deep_merge_res_obj_into`** does not fold deeply-nested
+   self-refs inside the value it stores as an outer-level prior.
+   `fold_or_skip_prior` only matches `Subst` nodes whose path equals
+   the outer key, so a `Subst("<outer-key>.x.y.z")` nested inside
+   `prior` passes through unfolded — silently breaking the
+   "every saved prior is self-ref-free" invariant from
+   `fold_self_ref.rs`'s module comment. A later cycle-recovery descent
+   into the saved prior trips `contains_subst_by_path` on a
+   self-reference the leaf-level path already has a folded value for,
+   the `xx.hocon#27 sr12` short-circuit fires, and the resolver errors
+   `circular substitution` even though the leaf has a resolvable
+   prior chain. Fixed by adding a `fold_nested_self_refs` pass after
+   `fold_or_skip_prior` in `deep_merge_res_obj_into`'s Obj-Obj branch.
+
+2. **`substitution_resolver::resolve_subst`'s cycle-recovery call**
+   resolved `&prior` (the whole outer prior, often the entire
+   root-segment subtree) instead of `prior_for_check` (the value
+   already descended along `s.segments[1..]`). For multi-segment
+   substitutions this returned the wrong subtree — typically an
+   `Object` where the substitution targeted a leaf — which then
+   surfaced as a downstream `S10` kind-mismatch in any concat that
+   consumed the result. The defect was masked by (1) on `develop`
+   because most multi-segment cycle paths bailed out via
+   `skip_due_to_self_ref` before the broken resolution call.
+
+`pyhocon`, Lightbend's reference impl, and `mockersf/hocon` all
+parse the same shapes correctly. No public API changes; safe drop-in.
+
 ### Fixed
 
 - **CI: testdata fixtures are fetched fresh instead of partially cached**

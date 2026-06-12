@@ -235,7 +235,17 @@ impl<'a> SubstitutionResolver<'a> {
                     let mut fresh_resolving = self.resolving.clone();
                     fresh_resolving.remove(&key);
                     std::mem::swap(&mut self.resolving, &mut fresh_resolving);
-                    let result = self.resolve_val(&prior, scope);
+                    // Resolve the descended value at the substitution's exact
+                    // path (`prior_for_check`), not the whole outer prior.
+                    // For a multi-segment substitution `${a.b.c.d}`, `prior`
+                    // is the entire `a` subtree; resolving it returns the
+                    // whole Object instead of the leaf the substitution
+                    // targets. `prior_for_check` is `None` only on the
+                    // unreachable `_ => None` arm above (prior is not an
+                    // Obj); falling back to `&prior` preserves prior
+                    // behaviour on that path.
+                    let prior_at_path = prior_for_check.as_ref().unwrap_or(&prior);
+                    let result = self.resolve_val(prior_at_path, scope);
                     std::mem::swap(&mut self.resolving, &mut fresh_resolving);
                     return result;
                 }
