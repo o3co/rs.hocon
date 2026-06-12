@@ -121,6 +121,16 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix
                     &full_key,
                     prior_existing.as_ref(),
                 ) {
+                    // fold_or_skip_prior only matches Subst nodes whose path
+                    // equals `full_key` (the outer key). It does not detect
+                    // self-refs nested at child paths inside `prior`, so
+                    // without a recursive fold the saved prior breaks the
+                    // "every saved prior is self-ref-free" invariant from
+                    // fold_self_ref.rs. A later cycle-recovery descent into
+                    // the prior would then trip contains_subst_by_path on a
+                    // self-ref the leaf-level path already has a folded
+                    // value for.
+                    let prior = super::fold_self_ref::fold_nested_self_refs(&prior, &child_prefix);
                     dst.prior_values.insert(k.clone(), prior);
                 }
             }
