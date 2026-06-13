@@ -9,19 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **CI: testdata cache no longer skips the `.conf` fixture download** (follow-up
-  to [#101](https://github.com/o3co/rs.hocon/issues/101)). Two defects let
-  `make testdata` short-circuit while `tests/testdata/hocon/` (the `.conf`
-  fixtures) was absent, causing nondeterministic `No such file` failures on
-  whichever matrix jobs (macOS / Windows / coverage) hit a warm cache:
-  (1) the cache only stored `tests/testdata/expected` + `.xx-hocon-version`, not
-  `tests/testdata/hocon`, so a cache hit restored the sidecars but never the
-  `.conf` files; and (2) the Makefile's early-exit checked `EXPECTED_DIR` but not
-  `TESTDATA_DIR`, and treated an empty pin (`"" = ""`, e.g. an unauthenticated
-  GitHub API rate-limit returning no SHA) as up-to-date. Fixed by caching
-  `tests/testdata/hocon` alongside `tests/testdata/expected` in both workflows
-  and gating the Makefile early-exit on `[ -d TESTDATA_DIR ]` + a non-empty
-  remote SHA. No production code touched.
+- **CI: testdata fixtures are fetched fresh instead of partially cached**
+  (follow-up to [#101](https://github.com/o3co/rs.hocon/issues/101)). The
+  testdata cache stored only `tests/testdata/expected` + `.xx-hocon-version`,
+  not the `tests/testdata/hocon/` `.conf` fixtures. On a warm-cache job
+  `make testdata` short-circuited (matching pin) and never downloaded the
+  fetched-only `.conf` files, so `cargo test` panicked with `No such file` on
+  fixtures like `concat-errors/ce09`, `ce15` — nondeterministically across
+  macOS / Windows / coverage depending on which jobs hit a warm vs cold cache.
+  Rather than patch the partial cache (caching the whole `hocon/` tree would
+  clobber git-tracked fixtures with stale cached copies), the CI cache is
+  removed and `make testdata` now fetches the fixtures fresh each run: it
+  resolves the xx.hocon SHA once via `git ls-remote` (no REST API rate-limit),
+  downloads the archive for that exact SHA (pin always matches content), and
+  writes the same SHA to `.xx-hocon-version`, with `set -e` so any failed step
+  aborts instead of leaving partial/empty state. No production code touched.
 
 ## [1.7.0] - 2026-05-30
 
