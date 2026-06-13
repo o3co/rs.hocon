@@ -240,12 +240,21 @@ impl<'a> SubstitutionResolver<'a> {
                     // For a multi-segment substitution `${a.b.c.d}`, `prior`
                     // is the entire `a` subtree; resolving it would return the
                     // whole Object instead of the leaf the substitution
-                    // targets. `prior_for_check` falls back to `&prior` when
-                    // the descent at `s.segments[1..]` could not match
-                    // (currently only when `prior` is not an Obj, but the
-                    // fallback keeps the recovery defensive against future
-                    // changes that could legitimately produce other paths
-                    // to `None`).
+                    // targets.
+                    //
+                    // `prior_for_check` is `None` in two cases (see its
+                    // construction above): (1) multi-segment and `prior` is not
+                    // an Obj, and (2) multi-segment, `prior` IS an Obj but
+                    // `lookup_path` cannot descend `s.segments[1..]` inside it
+                    // (the descended path is absent). In both the fallback
+                    // resolves the whole `&prior` — the pre-fix whole-subtree
+                    // behaviour. Case (2) is currently dormant:
+                    // `resolve_subst_inner` emits the "self-referential with no
+                    // prior value" error for an absent descended path before
+                    // this cycle branch is reached with such a prior, so the
+                    // fallback is not observed to leak a whole subtree today. It
+                    // is kept as the conservative default rather than asserting
+                    // unreachability via `expect`.
                     let prior_at_path = prior_for_check.as_ref().unwrap_or(&prior);
                     let result = self.resolve_val(prior_at_path, scope);
                     std::mem::swap(&mut self.resolving, &mut fresh_resolving);
