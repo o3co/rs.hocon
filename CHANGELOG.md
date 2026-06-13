@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI: testdata fixtures are fetched fresh instead of partially cached**
+  (follow-up to [#101](https://github.com/o3co/rs.hocon/issues/101)). The
+  testdata cache stored only `tests/testdata/expected` + `.xx-hocon-version`,
+  not the `tests/testdata/hocon/` `.conf` fixtures. On a warm-cache job
+  `make testdata` short-circuited (matching pin) and never downloaded the
+  fetched-only `.conf` files, so `cargo test` panicked with `No such file` on
+  fixtures like `concat-errors/ce09`, `ce15` — nondeterministically across
+  macOS / Windows / coverage depending on which jobs hit a warm vs cold cache.
+  Rather than patch the partial cache (caching the whole `hocon/` tree would
+  clobber git-tracked fixtures with stale cached copies), the CI cache is
+  removed and `make testdata` now fetches the fixtures fresh each run: it
+  resolves the xx.hocon SHA once via `git ls-remote` (no REST API rate-limit),
+  downloads the archive for that exact SHA (pin always matches content), and
+  writes the same SHA to `.xx-hocon-version`, with `set -e` so any failed step
+  aborts instead of leaving partial/empty state. No production code touched.
+
 ## [1.7.0] - 2026-05-30
 
 Cross-impl release coordinated to land at v1.7.0 across go.hocon / ts.hocon / rs.hocon. The minor bump is driven by [go.hocon#142](https://github.com/o3co/go.hocon/issues/142) (additive `GetXxxE` accessor family in go.hocon — rs.hocon's `Result`-primary API was the prior art that inspired the go-side addition). **No functional changes in rs.hocon**: this release exists to keep cross-impl version parity per project convention (precedent: v1.6.0's coordinated minor sync). No public API changes; safe drop-in upgrade from v1.6.1. `Cargo.toml` is pre-bumped to `1.7.0` (the publish workflow's version-set step is idempotent).

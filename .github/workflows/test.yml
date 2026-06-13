@@ -22,32 +22,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      # Cache is split into restore+save so the save key is content-addressable
-      # via the post-fetch hash of `.xx-hocon-version`. On a fresh checkout,
-      # `.xx-hocon-version` is gitignored and absent at restore time, so the
-      # restore step relies on `restore-keys` to match the most recent entry.
-      # (closes #101)
-      - name: Restore expected JSON cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            tests/testdata/expected
-            .xx-hocon-version
-          key: xx-hocon-expected-pending
-          restore-keys: xx-hocon-expected-
-      - name: Fetch expected JSON
+      # No cache: `make testdata` fetches the fixtures fresh each run (a small
+      # tarball). Caching only part of the fixture tree previously left the
+      # fetched-only `.conf` files absent on warm-cache jobs (#101 resurfaced),
+      # and caching the whole tree would clobber git-tracked fixtures with stale
+      # cached copies. Fetching is ~1-2s and always correct.
+      - name: Fetch testdata fixtures
         run: make testdata
-      # Default `if: success()` — skip the save if `make testdata` failed so
-      # we don't write a partial/missing-pin cache under the empty-hash key
-      # (which would collapse to the constant `xx-hocon-expected-` and
-      # recreate the bug this PR is fixing). Copilot review thread.
-      - name: Save expected JSON cache
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            tests/testdata/expected
-            .xx-hocon-version
-          key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
       - run: cargo test
         if: matrix.rust == 'stable'
       # MSRV: remove criterion dev-dependency before testing because
@@ -67,32 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # Cache is split into restore+save so the save key is content-addressable
-      # via the post-fetch hash of `.xx-hocon-version`. On a fresh checkout,
-      # `.xx-hocon-version` is gitignored and absent at restore time, so the
-      # restore step relies on `restore-keys` to match the most recent entry.
-      # (closes #101)
-      - name: Restore expected JSON cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            tests/testdata/expected
-            .xx-hocon-version
-          key: xx-hocon-expected-pending
-          restore-keys: xx-hocon-expected-
-      - name: Fetch expected JSON
+      # No cache — see the test job above.
+      - name: Fetch testdata fixtures
         run: make testdata
-      # Default `if: success()` — skip the save if `make testdata` failed so
-      # we don't write a partial/missing-pin cache under the empty-hash key
-      # (which would collapse to the constant `xx-hocon-expected-` and
-      # recreate the bug this PR is fixing). Copilot review thread.
-      - name: Save expected JSON cache
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            tests/testdata/expected
-            .xx-hocon-version
-          key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
       - uses: taiki-e/install-action@cargo-llvm-cov
       - run: cargo llvm-cov --features serde --lcov --output-path lcov.info
       - uses: codecov/codecov-action@v5
