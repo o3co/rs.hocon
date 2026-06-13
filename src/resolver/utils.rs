@@ -130,6 +130,19 @@ pub(crate) fn deep_merge_res_obj_into(dst: &mut ResObj, src: ResObj, path_prefix
                     // the prior would then trip contains_subst_by_path on a
                     // self-ref the leaf-level path already has a folded
                     // value for.
+                    //
+                    // Unlike structure_builder.rs's sr13 site, this fold needs
+                    // no `should_fold_nested` guard. The two folds here target
+                    // disjoint key sets: fold_or_skip_prior folds only the
+                    // outer-key self-ref `${full_key}`, while fold_nested_self_refs
+                    // folds only deeper nested-path self-refs against each
+                    // sub-object's own prior_values — no node is folded twice.
+                    // fold_nested_self_refs is also self-guarded by
+                    // contains_self_ref per leaf, so applying it to an
+                    // already-self-ref-free prior (e.g. on a subsequent merge
+                    // into the same key) is a no-op. That idempotence is what
+                    // sr13's guard exists to enforce structurally there; here it
+                    // holds for free, so the unconditional fold is safe.
                     let prior_self_ref_free =
                         super::fold_self_ref::fold_nested_self_refs(&prior, &child_prefix);
                     dst.prior_values.insert(k.clone(), prior_self_ref_free);
