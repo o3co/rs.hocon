@@ -6,10 +6,10 @@ EXPECTED_DIR   := tests/testdata/expected
 .PHONY: testdata test
 
 testdata:
-	@if [ -f .xx-hocon-version ] && [ -d "$(EXPECTED_DIR)" ]; then \
+	@if [ -f .xx-hocon-version ] && [ -d "$(EXPECTED_DIR)" ] && [ -d "$(TESTDATA_DIR)" ]; then \
 	  remote_sha=$$(curl -sf "https://api.github.com/repos/$(TESTDATA_REPO)/commits/$(TESTDATA_REF)" | grep '"sha"' | head -1 | cut -d'"' -f4) && \
 	  local_sha=$$(cat .xx-hocon-version) && \
-	  if [ "$$remote_sha" = "$$local_sha" ]; then \
+	  if [ -n "$$remote_sha" ] && [ "$$remote_sha" = "$$local_sha" ]; then \
 	    echo "Expected JSON up to date ($$local_sha)"; exit 0; \
 	  fi; \
 	fi; \

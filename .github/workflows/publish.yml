@@ -38,6 +38,7 @@ jobs:
         with:
           path: |
             tests/testdata/expected
+            tests/testdata/hocon
             .xx-hocon-version
           key: xx-hocon-expected-pending
           restore-keys: xx-hocon-expected-
@@ -62,6 +63,7 @@ jobs:
         with:
           path: |
             tests/testdata/expected
+            tests/testdata/hocon
             .xx-hocon-version
           key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}
 

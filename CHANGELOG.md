@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI: testdata cache no longer skips the `.conf` fixture download** (follow-up
+  to [#101](https://github.com/o3co/rs.hocon/issues/101)). Two defects let
+  `make testdata` short-circuit while `tests/testdata/hocon/` (the `.conf`
+  fixtures) was absent, causing nondeterministic `No such file` failures on
+  whichever matrix jobs (macOS / Windows / coverage) hit a warm cache:
+  (1) the cache only stored `tests/testdata/expected` + `.xx-hocon-version`, not
+  `tests/testdata/hocon`, so a cache hit restored the sidecars but never the
+  `.conf` files; and (2) the Makefile's early-exit checked `EXPECTED_DIR` but not
+  `TESTDATA_DIR`, and treated an empty pin (`"" = ""`, e.g. an unauthenticated
+  GitHub API rate-limit returning no SHA) as up-to-date. Fixed by caching
+  `tests/testdata/hocon` alongside `tests/testdata/expected` in both workflows
+  and gating the Makefile early-exit on `[ -d TESTDATA_DIR ]` + a non-empty
+  remote SHA. No production code touched.
+
 ## [1.7.0] - 2026-05-30
 
 Cross-impl release coordinated to land at v1.7.0 across go.hocon / ts.hocon / rs.hocon. The minor bump is driven by [go.hocon#142](https://github.com/o3co/go.hocon/issues/142) (additive `GetXxxE` accessor family in go.hocon — rs.hocon's `Result`-primary API was the prior art that inspired the go-side addition). **No functional changes in rs.hocon**: this release exists to keep cross-impl version parity per project convention (precedent: v1.6.0's coordinated minor sync). No public API changes; safe drop-in upgrade from v1.6.1. `Cargo.toml` is pre-bumped to `1.7.0` (the publish workflow's version-set step is idempotent).
