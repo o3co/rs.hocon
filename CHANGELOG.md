@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-14
+
+Cross-impl coordinated patch release (v1.7.1 across go.hocon / ts.hocon / rs.hocon). The substantive change is in rs.hocon: a false-positive `circular substitution` fix from a cross-impl audit of the cycle-recovery path ([#135](https://github.com/o3co/rs.hocon/issues/135) / [#136](https://github.com/o3co/rs.hocon/pull/136)); go.hocon already resolved the same shapes at v1.7.0 (its #135 defer-substitution work) and ts.hocon was unaffected, so their v1.7.1 carries no functional change and exists for cross-impl version parity. Also includes a CI testdata-cache fix ([#137](https://github.com/o3co/rs.hocon/pull/137)). No public API changes; safe drop-in upgrade from v1.7.0.
+
 ### Fixed — false-positive `circular substitution` from cycle-recovery on chained self-refs nested below an outer-merge boundary
 
 Two related defects in the cycle-recovery path:
