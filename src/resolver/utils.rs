@@ -300,7 +300,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::fold_self_ref;
+    use super::super::types::{ConcatPlaceholder, SubstPlaceholder};
     use super::*;
+    use std::collections::HashSet;
+    use ResObj as ResObjTy;
 
     fn seg(text: &str) -> Segment {
         Segment {
@@ -308,6 +312,127 @@ mod tests {
             line: 1,
             col: 1,
         }
+    }
+
+    // ── issue #135 / PR #136 defect 1 ─────────────────────────────────────
+    //
+    // Invariant under test (fold_self_ref.rs module comment): *every saved
+    // prior is self-ref-free*. The Obj-Obj branch of `deep_merge_res_obj_into`
+    // saves dst's pre-merge value as the outer prior via `fold_or_skip_prior`,
+    // which only detects a `Subst` whose path EQUALS the outer key. A self-ref
+    // nested at a deeper child path (`a.b.child.f1` under outer key `a`) slips
+    // through unfolded unless `fold_nested_self_refs` runs. This is a white-box
+    // pin of the invariant: the end-to-end false-positive needs an additional
+    // in-resolution cycle to *consult* the broken prior (hard to minimise in
+    // rs.hocon — see issue #135 — though go.hocon#147 reproduces the same code
+    // gap end-to-end). On develop pre-#136 this FAILS; with the fix it PASSES.
+
+    fn subst(path: &[&str]) -> ResolverValue {
+        ResolverValue::Subst(SubstPlaceholder {
+            segments: path.iter().map(|s| seg(s)).collect(),
+            optional: false,
+            known_absent: false,
+            list_suffix: false,
+            line: 1,
+            col: 1,
+            prefix_len: 0,
+        })
+    }
+
+    fn obj_with(
+        fields: Vec<(&str, ResolverValue)>,
+        priors: Vec<(&str, ResolverValue)>,
+        resets: &[&str],
+    ) -> ResObjTy {
+        let mut f = IndexMap::new();
+        for (k, v) in fields {
+            f.insert(k.to_string(), v);
+        }
+        let mut p = IndexMap::new();
+        for (k, v) in priors {
+            p.insert(k.to_string(), v);
+        }
+        ResObjTy {
+            fields: f,
+            prior_values: p,
+            reset_keys: resets.iter().map(|s| s.to_string()).collect::<HashSet<_>>(),
+        }
+    }
+
+    #[test]
+    fn issue135_obj_obj_merge_saves_self_ref_free_outer_prior() {
+        // dst = file-1 accumulated tree, rooted at top-level key `a`:
+        //   a.b.child.f1 = ${a.b.parent.f1} ${a.b.child.f1}
+        // with a leaf prior for f1 (the value the chain folds against — e.g.
+        // an `include` two lines above).
+        let f1_chain = ResolverValue::Concat(ConcatPlaceholder {
+            nodes: vec![
+                subst(&["a", "b", "parent", "f1"]),
+                subst(&["a", "b", "child", "f1"]),
+            ],
+            separator_flags: vec![false, false],
+            line: 1,
+            col: 1,
+        });
+        let leaf_prior = ResolverValue::Resolved({
+            let mut m = IndexMap::new();
+            m.insert(
+                "k".to_string(),
+                HoconValue::Scalar(crate::value::ScalarValue::number("1".to_string())),
+            );
+            HoconValue::Object(m)
+        });
+        let child = obj_with(vec![("f1", f1_chain)], vec![("f1", leaf_prior)], &["f1"]);
+        let b = obj_with(
+            vec![("child", ResolverValue::Obj(child))],
+            vec![],
+            &["child"],
+        );
+        let a = obj_with(vec![("b", ResolverValue::Obj(b))], vec![], &["b"]);
+        let mut dst = obj_with(vec![("a", ResolverValue::Obj(a))], vec![], &["a"]);
+
+        // src = file-2 layered on top: also an object at `a` (so the Obj-Obj
+        // branch fires and dst's pre-merge `a` is captured as the outer prior).
+        let outer = obj_with(
+            vec![(
+                "values",
+                ResolverValue::Resolved(HoconValue::Scalar(crate::value::ScalarValue::string(
+                    "x".to_string(),
+                ))),
+            )],
+            vec![],
+            &["values"],
+        );
+        let inner_b = obj_with(
+            vec![("outer", ResolverValue::Obj(outer))],
+            vec![],
+            &["outer"],
+        );
+        let src_a = obj_with(vec![("b", ResolverValue::Obj(inner_b))], vec![], &["b"]);
+        let src = obj_with(vec![("a", ResolverValue::Obj(src_a))], vec![], &["a"]);
+
+        deep_merge_res_obj_into(&mut dst, src, &[]);
+
+        // The outer prior saved at `a` must be self-ref-free at every depth.
+        let saved = dst
+            .prior_values
+            .get("a")
+            .expect("outer prior for `a` should be saved during Obj-Obj merge");
+        let saved_obj = match saved {
+            ResolverValue::Obj(o) => o,
+            other => panic!("expected Obj prior, got {other:?}"),
+        };
+        let descended = lookup_path(saved_obj, &[seg("b"), seg("child"), seg("f1")])
+            .expect("a.b.child.f1 should exist in the saved prior");
+        assert!(
+            !fold_self_ref::contains_subst_by_path(
+                descended,
+                &[seg("a"), seg("b"), seg("child"), seg("f1")]
+            ),
+            "saved outer prior for `a` still contains an unfolded self-ref \
+             ${{a.b.child.f1}} — breaks the self-ref-free-prior invariant \
+             (issue #135 defect 1). descended value: {descended:?}"
+        );
     }
 
     #[test]
