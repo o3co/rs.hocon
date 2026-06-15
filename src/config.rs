@@ -763,7 +763,29 @@ impl Config {
         &self,
     ) -> Result<T, crate::serde::DeserializeError> {
         let value = HoconValue::Object(self.root.clone());
-        T::deserialize(crate::serde::HoconDeserializer::new(&value))
+        crate::serde::from_value(&value)
+    }
+
+    /// Deserialize the value at `path` into any type implementing
+    /// [`serde::Deserialize`].
+    ///
+    /// Unlike [`Config::get_config`] + [`Config::deserialize`] (object subtrees
+    /// only), this accepts **any** node at `path` — object, array, or scalar —
+    /// so e.g. `get_as::<Vec<T>>("servers")` deserializes a list directly.
+    ///
+    /// Requires the `serde` feature. HOCON-aware coercion is applied. Errors:
+    /// missing path, an unresolved substitution at/under `path`
+    /// (`ConfigError::is_not_resolved()` is then `true`), or a deserialization
+    /// failure (type mismatch etc.).
+    pub fn get_as<T: ::serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, ConfigError> {
+        let node = self.lookup_node(path).ok_or_else(|| missing(path))?;
+        if value_contains_placeholder(node) {
+            return Err(not_resolved(path));
+        }
+        crate::serde::from_value(node).map_err(|e| ConfigError {
+            message: e.message,
+            path: path.to_string(),
+        })
     }
 }
 
@@ -1006,6 +1028,19 @@ fn not_resolved(path: &str) -> ConfigError {
         message: "value is not resolved (call Config::resolve() before accessing values)"
             .to_string(),
         path: path.to_string(),
+    }
+}
+
+/// Whether `value` is, or transitively contains, an unresolved substitution
+/// placeholder. Used by `get_as` to map such cases to `not_resolved` (so
+/// `ConfigError::is_not_resolved()` holds) before attempting deserialization.
+#[cfg(feature = "serde")]
+fn value_contains_placeholder(value: &HoconValue) -> bool {
+    match value {
+        HoconValue::Placeholder(_) => true,
+        HoconValue::Object(map) => map.values().any(value_contains_placeholder),
+        HoconValue::Array(items) => items.iter().any(value_contains_placeholder),
+        HoconValue::Scalar(_) => false,
     }
 }
 
