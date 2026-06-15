@@ -132,20 +132,111 @@ impl HoconValue {
 
 /// Coerce a scalar to `i64` with the same rules as [`Config::get_i64`] and the
 /// serde integer path (`parse_int_from_scalar`): direct parse, else whole-number
-/// float/exponent truncation for any float-like raw (quoted or not). Kept in sync
+/// float/exponent coercion for any float-like raw (quoted or not). Kept in sync
 /// so `HoconValue::as_i64`, `Config::get_i64`, and `get_as::<i64>` all agree.
 fn scalar_as_i64(sv: &ScalarValue) -> Option<i64> {
-    if let Ok(n) = sv.raw.parse::<i64>() {
-        return Some(n);
+    sv.raw
+        .parse::<i64>()
+        .ok()
+        .or_else(|| whole_float_to_i64(&sv.raw))
+}
+
+/// Coerce a whole-number float/exponent **raw string** to an exact `i64`.
+///
+/// This is the float-like fallback shared by [`HoconValue::as_i64`],
+/// [`Config::get_i64`](crate::Config::get_i64), and the serde integer path; it is
+/// used only after a direct `parse::<i64>()` of the raw string fails. Returns
+/// `None` unless the text is float-like (`.`/`e`/`E`), denotes a whole number, and
+/// fits `i64`.
+///
+/// Wholeness and the integer value are derived from the decimal digits, never
+/// from an intermediate `f64` (xx.hocon#56). Above 2^52 an `f64` can no longer
+/// represent fractional parts, so `"4503599627370496.5".parse::<f64>().fract()`
+/// is `0.0` (false-accept) and `"9007199254740993.0"` rounds to the wrong integer
+/// (silent off-by-one). Parsing the digits directly avoids both, while still
+/// accepting genuinely whole large literals such as `1e16`.
+pub(crate) fn whole_float_to_i64(raw: &str) -> Option<i64> {
+    // Plain integers are handled by the caller's direct `parse::<i64>()`.
+    if !raw.contains(['.', 'e', 'E']) {
+        return None;
     }
-    if sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E') {
-        if let Ok(f) = sv.raw.parse::<f64>() {
-            if f.fract() == 0.0 && f.is_finite() && f >= i64::MIN as f64 && f < (i64::MAX as f64) {
-                return Some(f as i64);
-            }
+    let s = raw.trim();
+    let (neg, body) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    // Mantissa and base-10 exponent (default 0).
+    let (mantissa, exp) = match body.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.parse::<i32>().ok()?),
+        None => (body, 0),
+    };
+    // Integer and fractional digit runs.
+    let (int_part, frac_part) = match mantissa.split_once('.') {
+        Some((i, f)) => (i, f),
+        None => (mantissa, ""),
+    };
+    if int_part.is_empty() && frac_part.is_empty() {
+        return None;
+    }
+    if !int_part.bytes().all(|b| b.is_ascii_digit())
+        || !frac_part.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    // Significant digits as one run; leading zeros never affect the value, so
+    // drop them (keeps the overflow guard and u64 parse below significant-only).
+    // The decimal point sits `r` places from the right after applying exponent.
+    let combined = format!("{int_part}{frac_part}");
+    let digits = combined.trim_start_matches('0');
+    let r = frac_part.len() as i64 - exp as i64;
+    // i64 has at most 19 decimal digits; any longer magnitude cannot fit, so it
+    // is reported as out-of-range below — but for the right-shift (append-zeros)
+    // branch we must bound BEFORE materializing the zeros, or a huge exponent
+    // such as "1e2147483647" would allocate gigabytes before failing.
+    let mag_str: String = if r <= 0 {
+        let zeros = (-r) as usize;
+        if digits.len().saturating_add(zeros) > 19 {
+            return None;
         }
+        let mut t = String::with_capacity(digits.len() + zeros);
+        t.push_str(digits);
+        t.extend(std::iter::repeat_n('0', zeros));
+        t
+    } else {
+        let r = r as usize;
+        if r >= digits.len() {
+            // |value| < 1: whole only if every digit is zero.
+            if digits.bytes().all(|b| b == b'0') {
+                String::from("0")
+            } else {
+                return None;
+            }
+        } else {
+            let (head, tail) = digits.split_at(digits.len() - r);
+            // Whole only if the fractional digits are all zero.
+            if !tail.bytes().all(|b| b == b'0') {
+                return None;
+            }
+            head.to_string()
+        }
+    };
+    // Parse the unsigned magnitude, then apply the sign with an explicit range
+    // check so that i64::MIN (magnitude 2^63, which does not fit i64) is
+    // preserved for float-like spellings like "-9223372036854775808.0".
+    let mag: u64 = if mag_str.is_empty() {
+        0
+    } else {
+        mag_str.parse().ok()? // overflow -> None
+    };
+    if neg {
+        match mag.cmp(&((i64::MAX as u64) + 1)) {
+            std::cmp::Ordering::Less => Some(-(mag as i64)),
+            std::cmp::Ordering::Equal => Some(i64::MIN),
+            std::cmp::Ordering::Greater => None,
+        }
+    } else {
+        i64::try_from(mag).ok()
     }
-    None
 }
 
 /// The type tag for a scalar value.

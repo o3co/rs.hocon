@@ -75,17 +75,12 @@ where
     if let Ok(n) = sv.raw.parse::<T>() {
         return Ok(n);
     }
-    // Whole-number float/exponent truncation fallback, for any float-like raw
-    // (quoted or not) — consistent with `Config::get_i64`.
-    let is_float_like = sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E');
-    if is_float_like {
-        if let Ok(f) = sv.raw.parse::<f64>() {
-            if f.fract() == 0.0 && f.is_finite() && f >= i64::MIN as f64 && f < (i64::MAX as f64) {
-                let as_i64 = f as i64;
-                if let Ok(n) = T::try_from(as_i64) {
-                    return Ok(n);
-                }
-            }
+    // Whole-number float/exponent coercion fallback, for any float-like raw
+    // (quoted or not) — consistent with `Config::get_i64`. Wholeness/value are
+    // derived from the raw text, never via f64 (xx.hocon#56).
+    if let Some(as_i64) = crate::value::whole_float_to_i64(&sv.raw) {
+        if let Ok(n) = T::try_from(as_i64) {
+            return Ok(n);
         }
     }
     Err(DeserializeError {
