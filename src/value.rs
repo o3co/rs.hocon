@@ -130,17 +130,15 @@ impl HoconValue {
     }
 }
 
-/// Coerce a scalar to `i64` with the same rules as the serde integer path
-/// (`parse_int_from_scalar`): direct parse, else whole-number-float truncation
-/// for `Number`-typed scalars. Kept in sync so `HoconValue::as_i64` and
-/// `Config::get_i64` / `get_as::<i64>` agree.
+/// Coerce a scalar to `i64` with the same rules as [`Config::get_i64`] and the
+/// serde integer path (`parse_int_from_scalar`): direct parse, else whole-number
+/// float/exponent truncation for any float-like raw (quoted or not). Kept in sync
+/// so `HoconValue::as_i64`, `Config::get_i64`, and `get_as::<i64>` all agree.
 fn scalar_as_i64(sv: &ScalarValue) -> Option<i64> {
     if let Ok(n) = sv.raw.parse::<i64>() {
         return Some(n);
     }
-    if sv.value_type == ScalarType::Number
-        && (sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E'))
-    {
+    if sv.raw.contains('.') || sv.raw.contains('e') || sv.raw.contains('E') {
         if let Ok(f) = sv.raw.parse::<f64>() {
             if f.fract() == 0.0 && f.is_finite() && f >= i64::MIN as f64 && f < (i64::MAX as f64) {
                 return Some(f as i64);
