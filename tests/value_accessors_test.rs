@@ -45,6 +45,20 @@ fn as_i64_coerces_whole_number_float_and_exponent() {
 }
 
 #[test]
+fn as_i64_coerces_quoted_numeric_strings() {
+    // Consistent with Config::get_i64: a quoted float-like numeric string coerces too.
+    let c = parse(
+        r#"a = "1e3"
+           b = "1.0"
+           s = "hello""#,
+    )
+    .unwrap();
+    assert_eq!(c.get("a").unwrap().as_i64(), Some(1000));
+    assert_eq!(c.get("b").unwrap().as_i64(), Some(1));
+    assert_eq!(c.get("s").unwrap().as_i64(), None);
+}
+
+#[test]
 fn as_bool_coerces() {
     let c = parse(
         r#"b = true

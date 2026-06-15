@@ -83,6 +83,15 @@ fn get_as_nested_unresolved_is_not_resolved() {
 }
 
 #[test]
+fn get_as_coerces_quoted_numeric_like_get_i64() {
+    // Integer coercion is consistent across get_i64 / get_as / from_value:
+    // a quoted float-like numeric string coerces to the integer.
+    let c = parse(r#"port = "1e3""#).unwrap();
+    assert_eq!(c.get_as::<i64>("port").unwrap(), 1000);
+    assert_eq!(c.get_i64("port").unwrap(), 1000);
+}
+
+#[test]
 fn get_as_type_mismatch_errors() {
     let c = parse(r#"port = "not_a_number""#).unwrap();
     let err = c.get_as::<i64>("port").unwrap_err();

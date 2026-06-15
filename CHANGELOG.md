@@ -27,6 +27,14 @@ deserialized, and a borrowed `HoconValue` had no typed accessors. All additive.
   a numeric-keyed object is not coerced; use `get_as`/`from_value` for that), and
   `is_object` / `is_array` / `is_scalar` / `is_null`.
 
+### Changed
+
+- Integer deserialization (serde `Config::deserialize` / `get_as` / `from_value`)
+  now coerces **quoted** whole-number float/exponent strings (e.g. `"1e3"`, `"1.0"`)
+  to integers, matching `Config::get_i64`. Previously this truncation applied only
+  to unquoted `Number`-typed scalars, so `get_i64` and the serde path disagreed on
+  quoted numeric strings; they are now consistent.
+
 ## [1.7.1] - 2026-06-14
 
 Cross-impl coordinated patch release (v1.7.1 across go.hocon / ts.hocon / rs.hocon). The substantive change is in rs.hocon: a false-positive `circular substitution` fix from a cross-impl audit of the cycle-recovery path ([#135](https://github.com/o3co/rs.hocon/issues/135) / [#136](https://github.com/o3co/rs.hocon/pull/136)); go.hocon already resolved the same shapes at v1.7.0 (its #135 defer-substitution work) and ts.hocon was unaffected, so their v1.7.1 carries no functional change and exists for cross-impl version parity. Also includes a CI testdata-cache fix ([#137](https://github.com/o3co/rs.hocon/pull/137)). No public API changes; safe drop-in upgrade from v1.7.0.
