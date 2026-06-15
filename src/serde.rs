@@ -33,14 +33,35 @@ impl ::serde::de::Error for DeserializeError {
 // Deserializer
 // ---------------------------------------------------------------------------
 
-pub(crate) struct HoconDeserializer<'de> {
+/// A `serde::Deserializer` over a borrowed [`HoconValue`].
+///
+/// Public so it can be handed to serde composition points (`DeserializeSeed`,
+/// `#[serde(deserialize_with = ...)]`, or generic code abstracting over a
+/// `Deserializer`). For the common "value → type" case prefer [`from_value`].
+pub struct HoconDeserializer<'de> {
     value: &'de HoconValue,
 }
 
 impl<'de> HoconDeserializer<'de> {
-    pub(crate) fn new(value: &'de HoconValue) -> Self {
+    /// Create a deserializer over the given borrowed value.
+    pub fn new(value: &'de HoconValue) -> Self {
         Self { value }
     }
+}
+
+/// Deserialize an arbitrary [`HoconValue`] fragment into a typed value.
+///
+/// Accepts **any** node — object, array, or scalar — with the same HOCON-aware
+/// coercion used by [`Config::deserialize`](crate::Config::deserialize). Use this
+/// when you hold a `&HoconValue` (e.g. from [`Config::get`](crate::Config::get) or
+/// a [`Config::get_list`](crate::Config::get_list) element) and want it as `T`.
+///
+/// Mirrors `serde_json::from_value`, but borrows the value rather than consuming it.
+pub fn from_value<T>(value: &HoconValue) -> Result<T, DeserializeError>
+where
+    T: ::serde::de::DeserializeOwned,
+{
+    T::deserialize(HoconDeserializer::new(value))
 }
 
 /// Helper: parse raw string as integer type with float truncation fallback.

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — deserialize any node + `HoconValue` accessors
+
+Closes the "value → type for any node" gap: previously only the whole config root
+(`Config::deserialize`) or object subtrees (`get_config().deserialize()`) could be
+deserialized, and a borrowed `HoconValue` had no typed accessors. All additive.
+
+- `hocon::from_value::<T>(&HoconValue)` — deserialize an arbitrary value fragment
+  (object, array, or scalar) into `T`. Mirrors `serde_json::from_value` (borrowing).
+  Requires the `serde` feature.
+- `HoconDeserializer` and `HoconDeserializer::new` are now `pub` (reachable as
+  `hocon::serde::HoconDeserializer`) so the deserializer can be used at serde
+  composition points (`DeserializeSeed`, `#[serde(deserialize_with = ...)]`).
+- `Config::get_as::<T>(path)` — deserialize the node at `path` into `T`, accepting
+  any node (e.g. `get_as::<Vec<_>>("servers")`), not just objects. Errors map to
+  `ConfigError` consistently with the other getters (`is_not_resolved()` preserved).
+- `HoconValue` accessors: `as_str` (strict — string scalars only), `as_i64`,
+  `as_f64`, `as_bool` (HOCON-aware coercion), `as_object`, `as_array` (structural —
+  a numeric-keyed object is not coerced; use `get_as`/`from_value` for that), and
+  `is_object` / `is_array` / `is_scalar` / `is_null`.
+
 ## [1.7.1] - 2026-06-14
 
 Cross-impl coordinated patch release (v1.7.1 across go.hocon / ts.hocon / rs.hocon). The substantive change is in rs.hocon: a false-positive `circular substitution` fix from a cross-impl audit of the cycle-recovery path ([#135](https://github.com/o3co/rs.hocon/issues/135) / [#136](https://github.com/o3co/rs.hocon/pull/136)); go.hocon already resolved the same shapes at v1.7.0 (its #135 defer-substitution work) and ts.hocon was unaffected, so their v1.7.1 carries no functional change and exists for cross-impl version parity. Also includes a CI testdata-cache fix ([#137](https://github.com/o3co/rs.hocon/pull/137)). No public API changes; safe drop-in upgrade from v1.7.0.
