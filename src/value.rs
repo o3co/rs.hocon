@@ -188,6 +188,13 @@ pub(crate) fn whole_float_to_i64(raw: &str) -> Option<i64> {
     // The decimal point sits `r` places from the right after applying exponent.
     let combined = format!("{int_part}{frac_part}");
     let digits = combined.trim_start_matches('0');
+    // An all-zero mantissa is exactly 0 regardless of the exponent; handle it
+    // before the append-zeros guard below (which is keyed off the exponent and
+    // would otherwise reject e.g. "0e2147483647"). After this, `digits` is
+    // non-empty, so its leading byte is always a non-zero digit.
+    if digits.is_empty() {
+        return Some(0);
+    }
     let r = frac_part.len() as i64 - exp as i64;
     // i64 has at most 19 decimal digits; any longer magnitude cannot fit, so it
     // is reported as out-of-range below — but for the right-shift (append-zeros)
@@ -204,30 +211,22 @@ pub(crate) fn whole_float_to_i64(raw: &str) -> Option<i64> {
         t
     } else {
         let r = r as usize;
+        // `digits` is non-empty with a non-zero leading byte, so if every
+        // significant digit is fractional the value is < 1 and not whole.
         if r >= digits.len() {
-            // |value| < 1: whole only if every digit is zero.
-            if digits.bytes().all(|b| b == b'0') {
-                String::from("0")
-            } else {
-                return None;
-            }
-        } else {
-            let (head, tail) = digits.split_at(digits.len() - r);
-            // Whole only if the fractional digits are all zero.
-            if !tail.bytes().all(|b| b == b'0') {
-                return None;
-            }
-            head.to_string()
+            return None;
         }
+        let (head, tail) = digits.split_at(digits.len() - r);
+        // Whole only if the fractional digits are all zero.
+        if !tail.bytes().all(|b| b == b'0') {
+            return None;
+        }
+        head.to_string()
     };
     // Parse the unsigned magnitude, then apply the sign with an explicit range
     // check so that i64::MIN (magnitude 2^63, which does not fit i64) is
     // preserved for float-like spellings like "-9223372036854775808.0".
-    let mag: u64 = if mag_str.is_empty() {
-        0
-    } else {
-        mag_str.parse().ok()? // overflow -> None
-    };
+    let mag: u64 = mag_str.parse().ok()?; // overflow -> None
     if neg {
         match mag.cmp(&((i64::MAX as u64) + 1)) {
             std::cmp::Ordering::Less => Some(-(mag as i64)),
