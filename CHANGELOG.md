@@ -35,6 +35,22 @@ deserialized, and a borrowed `HoconValue` had no typed accessors. All additive.
   to unquoted `Number`-typed scalars, so `get_i64` and the serde path disagreed on
   quoted numeric strings; they are now consistent.
 
+### Fixed — integer coercion precision hole for float-like literals ≥ 2^52 ([xx.hocon#56](https://github.com/o3co/xx.hocon/issues/56))
+
+- **Float-like integer coercion now derives wholeness and the integer value from
+  the raw decimal text instead of an intermediate `f64`**, across all three i64
+  coercion surfaces (`Config::get_i64`, `HoconValue::as_i64`, serde `get_as::<i64>`
+  / `from_value`). The previous `f64::fract() == 0.0` check was unsound at high
+  magnitudes: above 2^52 an `f64` cannot represent fractional parts, so a non-whole
+  literal like `9007199254740992.5` rounded to a whole `f64` and was wrongly
+  accepted, and a would-be-whole literal like `9007199254740993.0` rounded to the
+  wrong integer (silent off-by-one). The text-based check rejects genuinely
+  non-whole values at any magnitude and yields the exact integer for whole ones,
+  while still accepting large whole literals such as `1e16`. The triplicated f64
+  fallback is replaced by a single shared `whole_float_to_i64` helper. ts.hocon is
+  unaffected (no integer coercion: `number` is float64, int-ness is a zod concern).
+  Pinned by `tests/issue56_i64_coercion_precision.rs`.
+
 ## [1.7.1] - 2026-06-14
 
 Cross-impl coordinated patch release (v1.7.1 across go.hocon / ts.hocon / rs.hocon). The substantive change is in rs.hocon: a false-positive `circular substitution` fix from a cross-impl audit of the cycle-recovery path ([#135](https://github.com/o3co/rs.hocon/issues/135) / [#136](https://github.com/o3co/rs.hocon/pull/136)); go.hocon already resolved the same shapes at v1.7.0 (its #135 defer-substitution work) and ts.hocon was unaffected, so their v1.7.1 carries no functional change and exists for cross-impl version parity. Also includes a CI testdata-cache fix ([#137](https://github.com/o3co/rs.hocon/pull/137)). No public API changes; safe drop-in upgrade from v1.7.0.
