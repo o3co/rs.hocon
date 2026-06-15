@@ -115,6 +115,23 @@ fn negative_exponent_consistent_across_surfaces() {
 }
 
 #[test]
+fn all_zero_mantissa_is_zero_regardless_of_exponent() {
+    // An all-zero mantissa denotes 0 for any exponent; must not be rejected by
+    // the huge-exponent allocation guard.
+    let c = parse(
+        r#"a = 0.0
+           b = 0e2147483647
+           c = 0.000
+           d = -0.0"#,
+    )
+    .unwrap();
+    assert_eq!(c.get("a").unwrap().as_i64(), Some(0));
+    assert_eq!(c.get("b").unwrap().as_i64(), Some(0));
+    assert_eq!(c.get("c").unwrap().as_i64(), Some(0));
+    assert_eq!(c.get("d").unwrap().as_i64(), Some(0));
+}
+
+#[test]
 fn leading_zero_float_forms_coerce() {
     let c = parse(
         r#"a = 0100.0
