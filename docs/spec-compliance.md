@@ -332,8 +332,9 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:211 (resolves_last_assignment_wins_for_substitution); tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
   status: ✅
 - **S13.9** `null` in config blocks env var lookup — §Substitutions (L618)
-  tests: tests/integration_test.rs:1014 (s13_9_null_blocks_env_var_lookup_pin); tests/integration_test.rs:1028 (s13_9_null_blocks_env_var_lookup_spec)
-  status: ❌ (see #74)
+  tests: tests/integration_test.rs (s13_9_null_in_config_blocks_env_var_and_stays_in_tree)
+  status: ✅ — Lightbend-aligned per the xx.hocon `ProbeS13_9.java` ground-truth audit (2026-05-22): "null treated same as missing" (L630) is a getter-level statement; the resolved tree keeps the field as an explicit null scalar, the env value does not leak, and getter-level null rejection is covered by S17.6. [#74](https://github.com/o3co/rs.hocon/issues/74) closed as "not a spec violation"; the former `#[ignore]` spec test (which asserted tree-level erasure) was removed as canon-incorrect.
+
 - **S13.10** Required substitution undefined → error — §Substitutions (L627)
   tests: src/resolver/mod.rs:183 (throws_on_unresolved_mandatory); tests/integration_test.rs:470 (resolve_error_is_hocon_error_resolve_variant); tests/testdata/hocon/cycle-expected-error.json (fixture)
   status: ✅
@@ -347,12 +348,13 @@ same item descriptions verbatim.
   tests: tests/integration_test.rs:1041 (s13_13_optional_undefined_in_string_concat_is_empty)
   status: ✅
 - **S13.14** Optional undefined in obj/array concat → empty obj/array — §Substitutions (L637)
-  tests: tests/integration_test.rs:1054 (s13_14_optional_undefined_in_array_concat_pin); tests/integration_test.rs:1066 (s13_14_optional_undefined_in_array_concat_spec); tests/integration_test.rs:1078 (s13_14_optional_undefined_in_object_concat)
-  status: ⚠️ (see #75) — array case broken (whitespace artefacts leak as extra elements); object case ✅
+  tests: tests/integration_test.rs (s13_14_optional_undefined_in_array_concat_spec, s13_14_optional_undefined_in_object_concat)
+  status: ✅ — both the array and object concat cases pass (the former whitespace-artefact leak in the array case, tracked in [#75](https://github.com/o3co/rs.hocon/issues/75), is fixed; the pin test was removed when the spec test was enabled).
+
 - **S13.15** `foo : ${?bar}${?baz}` skipped only when BOTH undefined — §Substitutions (L640)
-  tests: tests/spec_phase5.rs (s13_15_pin_both_optional_undefined_field_exists; s13_15_spec_both_optional_undefined_field_absent [#ignore]; s13_15_one_defined_field_is_created)
-  status: ❌
-  notes: when both `${?bar}` and `${?baz}` are undefined, `foo` is still created with a null value instead of being dropped. The single-defined sub-case (`bar=hello, foo=${?bar}${?baz}`) correctly produces `foo=hello`.
+  tests: tests/spec_phase5.rs (s13_15_spec_both_optional_undefined_field_absent; s13_15_one_defined_field_is_created)
+  status: ✅ — when both `${?bar}` and `${?baz}` are undefined, `foo` is dropped entirely; the single-defined sub-case produces `foo=hello`. The former field-created-with-null violation is fixed and the spec test runs un-ignored.
+
 - **S13.16** Substitutions only in field values / array elements — §Substitutions (L644)
   tests: tests/integration_test.rs:1087 (s13_16_substitution_in_key_is_rejected)
   status: ✅
@@ -418,8 +420,9 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:103 (handles_plus_equals_on_existing_array); tests/integration_test.rs:84 (parse_with_plus_equals)
   status: ✅
 - **S13b.2** `+=` on non-array prior value → error — §`+=` field separator (L732)
-  tests: tests/integration_test.rs:941 (s13b_2_plus_eq_on_non_array_pin); tests/integration_test.rs:956 (s13b_2_plus_eq_on_non_array_spec)
-  status: ❌ (see #72)
+  tests: tests/integration_test.rs (s13b_2_plus_eq_on_non_array_errors, s13b_2_plus_eq_on_object_errors, s13b_2_plus_eq_under_allow_unresolved_defers_on_unresolved_prior); tests/s13b_2_plus_equals_include_accumulation.rs
+  status: ✅ — `+=` on a scalar or object prior errors instead of silently wrapping ([#72](https://github.com/o3co/rs.hocon/issues/72) fixed).
+
 - **S13b.3** `+=` works on first mention of key (no prior `=`) — §`+=` field separator (L734)
   tests: src/resolver/mod.rs:113 (handles_plus_equals_on_missing_key)
   status: ✅
@@ -626,9 +629,9 @@ same item descriptions verbatim.
   status: ➖
   note: rs.hocon has no `get_null()` typed getter — the "null requested" path does not exist in the API. Internally, quoted `"null"` is correctly stored as `ScalarType::String` (not `Null`), which is consistent with spec intent. Out-of-scope until a null-accessor is added.
 - **S17.6** null → other type: error — §Automatic type conversions (L1252)
-  tests: tests/integration_test.rs:1470 (s17_6_null_to_numeric_and_bool_errors); tests/integration_test.rs:1483 (s17_6_null_to_string_pin); tests/integration_test.rs:1495 (s17_6_null_to_string_spec)
-  status: ⚠️
-  note: `get_i64` and `get_bool` on null correctly error. `get_string` on null returns `Ok("null")` instead of an error — spec requires an error for all typed getters. Bug tracked in #80.
+  tests: tests/integration_test.rs (s17_6_null_to_numeric_and_bool_errors, s17_6_null_to_string_errors)
+  status: ✅ — all typed getters error on null, including `get_string` (fixed in `a7d7aea`, [#80](https://github.com/o3co/rs.hocon/issues/80)).
+
 - **S17.7** object → other type: error — §Automatic type conversions (L1254)
   tests: src/config.rs:563 (get_string_error_on_object)
   status: ✅
@@ -677,7 +680,7 @@ same item descriptions verbatim.
   tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units)
   status: ✅
 - **S19.8** Duration unit names are case sensitive (lowercase only) — §Duration format (L1304)
-  tests: tests/spec_phase5.rs (s19_8_spec_uppercase_ms_rejected; s19_8_spec_mixed_case_seconds_rejected; s19_8_lowercase_units_accepted)
+  tests: tests/spec_phase5.rs (s19_8_spec_uppercase_ms_rejected; s19_8_spec_mixed_case_seconds_rejected; s19_8_spec_uppercase_single_letter_rejected; s19_8_lowercase_units_accepted)
   status: ✅
   notes: `parse_duration` matches the unit string case-sensitively (the former `.to_lowercase()` was removed), consistent with `parse_period` which was already case-sensitive per the same L1304 rule. `"MS"`, `"Seconds"` etc. now return an error (BREAKING: previously accepted). Lowercase units unaffected.
 
