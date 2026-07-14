@@ -350,22 +350,10 @@ fn s18_4_spec_duration_string_no_unit_uses_default() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S19.8  Duration unit names are case sensitive (lowercase only)  (L1304)
-// Status: ❌  — impl lowercases the unit before matching, so uppercase passes
+// Status: ✅
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pin: impl currently accepts uppercase "MS" as milliseconds.
 #[test]
-fn s19_8_pin_uppercase_ms_accepted() {
-    let cfg = hocon::parse_with_env(r#"t = "100 MS""#, &HashMap::new()).unwrap();
-    // impl succeeds — pin that it does succeed (wrong behavior)
-    assert!(
-        cfg.get_duration("t").is_ok(),
-        "[pin] S19.8: impl currently accepts uppercase 'MS' (should reject per spec L1304)"
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S19.8 (L1304): duration unit names are case sensitive and must be lowercase; impl lowercases unit before matching, so 'MS', 'Seconds', 'NS' etc. are wrongly accepted"]
 fn s19_8_spec_uppercase_ms_rejected() {
     let cfg = hocon::parse_with_env(r#"t = "100 MS""#, &HashMap::new()).unwrap();
     assert!(
@@ -375,21 +363,22 @@ fn s19_8_spec_uppercase_ms_rejected() {
 }
 
 #[test]
-fn s19_8_pin_mixed_case_seconds_accepted() {
-    let cfg = hocon::parse_with_env(r#"t = "100 Seconds""#, &HashMap::new()).unwrap();
-    assert!(
-        cfg.get_duration("t").is_ok(),
-        "[pin] S19.8: impl currently accepts 'Seconds' (should reject per spec L1304)"
-    );
-}
-
-#[test]
-#[ignore = "spec violation per S19.8 (L1304): 'Seconds' (mixed case) must be rejected; impl accepts it due to .to_lowercase() in parse_duration"]
 fn s19_8_spec_mixed_case_seconds_rejected() {
     let cfg = hocon::parse_with_env(r#"t = "100 Seconds""#, &HashMap::new()).unwrap();
     assert!(
         cfg.get_duration("t").is_err(),
         "S19.8: 'Seconds' must be rejected (spec requires lowercase only)"
+    );
+}
+
+#[test]
+fn s19_8_spec_uppercase_single_letter_rejected() {
+    // Unlike byte units (where `K`/`k` etc. both exist per Lightbend), duration
+    // units have no uppercase forms at all.
+    let cfg = hocon::parse_with_env(r#"t = "100 S""#, &HashMap::new()).unwrap();
+    assert!(
+        cfg.get_duration("t").is_err(),
+        "S19.8: uppercase 'S' must be rejected (only lowercase duration units allowed)"
     );
 }
 
