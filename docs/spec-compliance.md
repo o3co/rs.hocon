@@ -677,9 +677,9 @@ same item descriptions verbatim.
   tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units)
   status: ✅
 - **S19.8** Duration unit names are case sensitive (lowercase only) — §Duration format (L1304)
-  tests: tests/spec_phase5.rs (s19_8_pin_uppercase_ms_accepted; s19_8_spec_uppercase_ms_rejected [#ignore]; s19_8_pin_mixed_case_seconds_accepted; s19_8_spec_mixed_case_seconds_rejected [#ignore]; s19_8_lowercase_units_accepted)
-  status: ❌
-  notes: `parse_duration` calls `.to_lowercase()` on the unit string before matching, so `"MS"`, `"Seconds"`, `"NS"` etc. are wrongly accepted. Spec (L1304) requires lowercase only. Lowercase units still work correctly.
+  tests: tests/spec_phase5.rs (s19_8_spec_uppercase_ms_rejected; s19_8_spec_mixed_case_seconds_rejected; s19_8_lowercase_units_accepted)
+  status: ✅
+  notes: `parse_duration` matches the unit string case-sensitively (the former `.to_lowercase()` was removed), consistent with `parse_period` which was already case-sensitive per the same L1304 rule. `"MS"`, `"Seconds"` etc. now return an error (BREAKING: previously accepted). Lowercase units unaffected.
 
 ## S20. Period format
 

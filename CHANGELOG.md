@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — **BREAKING**: duration unit names are case-sensitive (S19.8, HOCON.md L1304)
+
+- **`get_duration` (and `get_duration_option`) now reject non-lowercase duration units** per HOCON.md L1304 ("The
+  supported unit strings for duration are case sensitive and must be lowercase").
+  Previously `parse_duration` lowercased the unit before matching, so `"100 MS"`,
+  `"100 Seconds"` etc. were wrongly accepted; they now return `Err`. Lowercase units
+  are unaffected. This also makes `get_duration` consistent with `get_period`, whose
+  unit match was already case-sensitive under the same spec rule. Aligns with
+  go.hocon (already compliant) and ts.hocon's equivalent fix in the same cross-impl
+  cycle. Flips the S19.8 compliance cell ❌ → ✅.
+
 ## [1.8.0] - 2026-06-16
 
 ### Added — deserialize any node + `HoconValue` accessors

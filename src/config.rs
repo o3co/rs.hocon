@@ -466,6 +466,10 @@ impl Config {
     /// `ms`/`milli`/`millis`/`millisecond`/`milliseconds`,
     /// `s`/`second`/`seconds`, `m`/`minute`/`minutes`,
     /// `h`/`hour`/`hours`, `d`/`day`/`days`, `w`/`week`/`weeks`.
+    ///
+    /// Unit names are case-sensitive and must be lowercase (HOCON spec,
+    /// S19.8): `"100 MS"` and `"100 Seconds"` are errors. This also applies
+    /// to [`get_duration_option`](Self::get_duration_option).
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -821,14 +825,15 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
         .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
         .unwrap_or(s.len());
     let num_str = s[..num_end].trim();
-    // Trim HOCON whitespace between number and unit, then lowercase the unit.
-    let unit_str = trim_hocon_ws(&s[num_end..]).to_lowercase();
+    // Trim HOCON whitespace between number and unit. The unit match below is
+    // case-sensitive per HOCON.md L1304 (S19.8): only lowercase unit names are valid.
+    let unit_str = trim_hocon_ws(&s[num_end..]);
 
     if num_str.is_empty() {
         return None;
     }
 
-    let nanos_per_unit: f64 = match unit_str.as_str() {
+    let nanos_per_unit: f64 = match unit_str {
         // Default: milliseconds (HOCON.md L1301).
         "" | "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
         "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
