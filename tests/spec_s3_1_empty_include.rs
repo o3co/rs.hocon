@@ -1,11 +1,12 @@
-//! Lightbend-compat carve-out for go.hocon#105 — empty / whitespace-only /
-//! comment-only / BOM-only INCLUDED files contribute an empty config
-//! instead of erroring with S3.1.
-//!
-//! S3.1 (HOCON.md L130) "empty files are invalid documents" remains
-//! enforced for TOP-LEVEL parses — see `tests/spec_s3_1_empty_file.rs`.
-//! This file pins the narrower include-path carve-out and serves as a
-//! regression guard against the previous strict-reject behaviour returning.
+//! S3.1 — empty / whitespace-only / comment-only / BOM-only INCLUDED files
+//! contribute an empty config. Originally shipped as a narrow Lightbend-compat
+//! carve-out for go.hocon#105 while top-level parses still rejected; since the
+//! S3.1 correction (the prior reject-posture was revoked by xx.hocon E10 on
+//! 2026-07-23) this is simply the rule — an empty document parses to `{}`
+//! everywhere, top-level and include path alike (see
+//! `tests/spec_s3_1_empty_file.rs` for the top-level pins). This file pins the
+//! include path and serves as a regression guard against any strict-reject
+//! behaviour returning.
 
 use std::io::Write;
 use tempfile::Builder;

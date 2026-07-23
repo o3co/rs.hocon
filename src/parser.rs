@@ -1098,13 +1098,16 @@ mod tests {
 
     #[test]
     fn parses_empty_input() {
-        // S3.1: empty file is not a valid HOCON document (HOCON.md L130).
-        // The guard fires at the library entry point (`parse_with_env`) after
-        // tokenise, before `parse_tokens`. Verify via the public `hocon::parse`
-        // API so the full pipeline is exercised.
+        // S3.1 (corrected, xx.hocon E10): an empty document is valid HOCON and
+        // parses to the empty object per the HOCON.md L134-136 brace-omission
+        // relaxation. Verify via the public `hocon::parse` API so the full
+        // pipeline is exercised.
+        let cfg = crate::parse("").expect("S3.1: hocon::parse(\"\") must return an empty config");
+        let keys = cfg.keys();
         assert!(
-            crate::parse("").is_err(),
-            "S3.1: hocon::parse(\"\") must return Err (empty file is invalid)"
+            keys.is_empty(),
+            "S3.1: empty input must produce an empty config, got keys {:?}",
+            keys
         );
     }
 
