@@ -127,9 +127,11 @@ fn s3_5_include_of_array_root_names_included_file() {
                 "message must name the array-at-file-root condition, got: {}",
                 re.message
             );
+            // The included-source identity is carried in `path` (rendered by
+            // Display), not embedded in the message.
             assert!(
-                re.message.contains("arr.conf") || re.path.contains("arr.conf"),
-                "error must name the included file, got: {:?}",
+                re.path.contains("arr.conf"),
+                "path must name the included file, got: {:?}",
                 re
             );
         }
@@ -153,16 +155,15 @@ fn s3_5_nested_include_names_innermost_file() {
                 "message must name the array-at-file-root condition, got: {}",
                 re.message
             );
-            let all = format!("{} {}", re.message, re.path);
             assert!(
-                all.contains("arr.conf"),
-                "error must name the innermost file arr.conf, got: {:?}",
+                re.path.contains("arr.conf"),
+                "path must name the innermost file arr.conf, got: {:?}",
                 re
             );
             assert!(
-                !re.message.contains("mid.conf"),
-                "error must not accuse the intermediate file mid.conf, got: {}",
-                re.message
+                !re.path.contains("mid.conf") && !re.message.contains("mid.conf"),
+                "error must not accuse the intermediate file mid.conf, got: {:?}",
+                re
             );
         }
         other => panic!("expected HoconError::Resolve, got {:?}", other),
@@ -194,7 +195,8 @@ fn s3_5_package_include_of_array_root_is_error() {
 #[test]
 fn s3_5_non_root_arrays_unaffected() {
     let cfg = hocon::parse("a = [1,2]").expect("field-value array");
-    assert_eq!(cfg.get_i64("a.0").unwrap_or(1), 1);
+    let items = cfg.get_list("a").expect("a must be a list");
+    assert_eq!(items.len(), 2, "a must have 2 elements, got {:?}", items);
     assert!(
         hocon::parse("{ a = [1,2] }").is_ok(),
         "braced root with array field"

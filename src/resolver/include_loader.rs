@@ -149,11 +149,10 @@ fn load_single_include(
     // parse site means nested include chains name the innermost file that
     // actually has the array root.
     if let crate::parser::AstNode::Array { pos, .. } = &ast {
+        // The included-source identity lives in `path` (Display prints it);
+        // keeping it out of the message avoids the path rendering twice.
         return Err(ResolveError {
-            message: format!(
-                "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994): {}",
-                candidate.display()
-            ),
+            message: "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994)".to_string(),
             path: candidate.display().to_string(),
             line: pos.line,
             col: pos.col,
@@ -244,11 +243,9 @@ pub(crate) fn load_package_include(
     // constraint as file includes, naming the package source (checked at the
     // parse site so nested chains name the innermost source).
     if let crate::parser::AstNode::Array { pos, .. } = &ast {
+        // Same as the file-include variant: identity in `path` only.
         return Err(ResolveError {
-            message: format!(
-                "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994): package({:?}, {:?})",
-                identifier, file
-            ),
+            message: "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994)".to_string(),
             path: format!("package({:?}, {:?})", identifier, file),
             line: pos.line,
             col: pos.col,
