@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-23
+
+Cross-impl release coordinated to land at v1.9.0 across ts.hocon / go.hocon / rs.hocon / py.hocon. Covers the two same-day spec corrections from [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62) (S3.1 — empty document parses to `{}`) and [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64) (S3.5 — array-root document rejected with a type error), plus the S19.8 case-sensitive duration units breaking change already queued in Unreleased. MINOR (not PATCH): rs adds public API surface (the `HoconError::Config(ConfigError)` variant — additive, `HoconError` is `#[non_exhaustive]`), and the error-taxonomy / empty-document behavior changes are consumer-observable. `Cargo.toml` bumped to 1.9.0 in this release-prep (the publish workflow's `if TAG_VERSION != CURRENT` guard makes this idempotent).
+
 ### Fixed — array-root document rejected with a type error (S3.5, [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64))
 
 - **`parse("[1,2]")` now returns the new `HoconError::Config(ConfigError)` variant
