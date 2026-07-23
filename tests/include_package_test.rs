@@ -190,6 +190,38 @@ fn ipk08_empty_content_succeeds() {
     );
 }
 
+// ── ipk08 variants: whitespace-only / comment-only registered content ────────
+// Same S3.1 rule as zero-byte (an empty document parses to the empty object;
+// corrected 2026-07-23, xx.hocon E10). Cross-impl parity pin: the rs package
+// path never carried the reject guard, but ts/go did — pinning here keeps the
+// three impls' package-include behavior aligned.
+
+#[test]
+fn ipk08_whitespace_only_content_succeeds() {
+    let input = r#"
+        app = host
+        include package("github.com/example/lib", "empty.conf")
+    "#;
+    let cfg = Parser::new()
+        .register_package("github.com/example/lib", "empty.conf", "   \n\t\n")
+        .parse(input)
+        .expect("ipk08 variant: whitespace-only registered content should contribute {}");
+    assert_eq!(cfg.get_string("app").unwrap(), "host");
+}
+
+#[test]
+fn ipk08_comment_only_content_succeeds() {
+    let input = r#"
+        app = host
+        include package("github.com/example/lib", "empty.conf")
+    "#;
+    let cfg = Parser::new()
+        .register_package("github.com/example/lib", "empty.conf", "# nothing here\n")
+        .parse(input)
+        .expect("ipk08 variant: comment-only registered content should contribute {}");
+    assert_eq!(cfg.get_string("app").unwrap(), "host");
+}
+
 // ── ipk09: empty string file argument ────────────────────────────────────────
 
 #[test]

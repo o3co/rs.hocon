@@ -323,7 +323,9 @@ impl Parser {
     /// inlined at phase 1 so the registry is not needed after this call returns.
     pub fn parse_with_options(self, input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
         let tokens = lexer::tokenize(input)?;
-        assert_non_empty_document(&tokens)?;
+        // S3.1 (corrected, xx.hocon E10): an empty / whitespace-only /
+        // comment-only / BOM-only document parses to the empty object per the
+        // HOCON.md L134-136 brace-omission relaxation — no emptiness guard.
         let ast = parser::parse_tokens(&tokens)?;
 
         let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
@@ -406,7 +408,6 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
 /// use [`Parser::parse_with_options`] (feature `include-package`).
 pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
-    assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
 
     let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
@@ -477,7 +478,6 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
     let content = std::fs::read_to_string(path)
         .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
     let tokens = lexer::tokenize(&content)?;
-    assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
     let mut opts = resolver::InternalResolveOptions::new(env.clone());
     if let Some(dir) = path.parent() {
@@ -497,7 +497,6 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
 /// Parse a HOCON string with a custom environment variable map.
 pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
-    assert_non_empty_document(&tokens)?;
     let ast = parser::parse_tokens(&tokens)?;
     let opts = resolver::InternalResolveOptions::new(env.clone());
     let value = resolver::resolve(ast, &opts)?;
@@ -583,23 +582,3 @@ pub fn _render_json_for_test(config: &Config) -> String {
     out
 }
 
-/// Guard: reject token streams that carry no semantic content (HOCON.md L130).
-///
-/// An empty document is one whose token stream contains only `Newline` and `Eof`
-/// tokens after the lexer has already stripped whitespace, BOM, and comments.
-/// A document with at least one structural or value token (including `{`, `}`,
-/// unquoted/quoted text, substitutions, …) is not empty even if it resolves to
-/// an empty object.
-fn assert_non_empty_document(tokens: &[lexer::Token]) -> Result<(), HoconError> {
-    let has_content = tokens
-        .iter()
-        .any(|t| !matches!(t.kind, lexer::TokenKind::Newline | lexer::TokenKind::Eof));
-    if !has_content {
-        return Err(HoconError::Parse(ParseError {
-            message: "empty file is not a valid HOCON document (HOCON.md L130)".into(),
-            line: 1,
-            col: 1,
-        }));
-    }
-    Ok(())
-}

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — empty document parses to `{}` (S3.1 corrected, [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62))
+
+- **`parse("")` (and whitespace-only / comment-only / BOM-only input) returns an empty
+  `Config` instead of erroring.** The S3.1 checklist item "Empty file is invalid
+  (HOCON.md L130)" misread the L130-132 *JSON baseline* as HOCON-normative; the
+  L134-136 brace-omission relaxation parses any document not beginning with `[` or `{`
+  as if enclosed in `{}` — an empty document is therefore the empty object. Confirmed
+  by the reference implementation (Lightbend's `"Empty document"` error is
+  `ConfigSyntax.JSON`-only; `ConfigFactory.parseString("")` is a valid empty config in
+  its own test suite). The Phase 6 #3h `assert_non_empty_document` guard (a
+  regression) is removed from all four parse entry points (`parse_with_options`,
+  `parse_string_with_options`, `parse_file_with_env`, `parse_with_env`), and the
+  file-include #105 carve-out in `include_loader.rs` is gone — `parse_tokens` yields
+  an empty object AST naturally, so the rule is uniform across top-level, file
+  includes, and E11 package includes (which never carried the guard; whitespace/
+  comment-only registered content is now pinned for cross-impl parity). Pure
+  loosening — no previously-valid input changes meaning; previously-rejected empty
+  documents now succeed. Pinned by `tests/spec_s3_1_empty_file.rs`,
+  `tests/conformance_empty_file.rs` (ef01–ef06 `{}` sidecars now normative),
+  `tests/issue105_empty_include.rs`, and `tests/include_package_test.rs`.
+
 ### Changed — **BREAKING**: duration unit names are case-sensitive (S19.8, HOCON.md L1304)
 
 - **`get_duration` (and `get_duration_option`) now reject non-lowercase duration units** per HOCON.md L1304 ("The

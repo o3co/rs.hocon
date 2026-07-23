@@ -61,9 +61,9 @@ same item descriptions verbatim.
 
 ## S3. Omit root braces
 
-- **S3.1** Empty file is invalid — §Omit root braces (L130)
-  tests: tests/spec_s3_1_empty_file.rs (s3_1_1_empty_string, s3_1_2_whitespace_only, s3_1_3_newlines_only, s3_1_4_comment_only, s3_1_5_bom_only, s3_1_6_mixed_ws_comment); tests/conformance_empty_file.rs (ef01-ef06); src/parser.rs (parses_empty_input — updated to expect Err via hocon::parse)
-  status: ✅ (was ⚠️; guard added at parse_with_env/parse_file_with_env entry — Phase 6 #3h)
+- **S3.1** Empty document (empty / whitespace-only / comment-only / BOM-only file) parses to the empty object `{}` — §Omit root braces (L130-136)
+  tests: tests/spec_s3_1_empty_file.rs (s3_1_1–s3_1_6 + positives); tests/conformance_empty_file.rs (ef01-ef06, `{}` sidecars normative); tests/spec_s3_1_empty_include.rs; tests/issue105_empty_include.rs (issue105_top_level_empty_parses_to_empty_object); tests/include_package_test.rs (ipk08 + whitespace/comment variants); src/parser.rs (parses_empty_input)
+  status: ✅ — Corrected 2026-07-23 (xx.hocon E10). The item previously read "Empty file is invalid" — a misreading of the L130-132 JSON baseline as HOCON-normative; the L134 brace-omission relaxation makes an empty document the empty object. The Phase 6 #3h `assert_non_empty_document` guard (a regression) is removed from all four parse entry points, and the include-path carve-out is gone — empty documents parse to `{}` uniformly on every path.
 - **S3.2** Root non-object/non-array is invalid (when explicitly enclosed) — §Omit root braces (L131)
   tests: tests/integration_test.rs:651 (s3_2_root_bare_string_rejected)
   status: ✅

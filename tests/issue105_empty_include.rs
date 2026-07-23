@@ -1,9 +1,9 @@
 //! Cross-impl fix for go.hocon#105 — empty / whitespace-only / comment-only /
-//! BOM-only INCLUDED files contribute an empty config instead of erroring
-//! with S3.1's "empty file is not a valid HOCON document". Top-level parses
-//! (`parse` / `parse_with_env` / `parse_file_with_options` on a top-level
-//! empty file) continue to error
-//! per S3.1.
+//! BOM-only INCLUDED files contribute an empty config. Originally a narrow
+//! include-path carve-out while top-level parses still rejected; since the
+//! S3.1 correction (xx.hocon E10, 2026-07-23) the same rule applies
+//! everywhere — an empty document parses to `{}` at top level too
+//! (HOCON.md §Omit root braces L134-136).
 
 use tempfile::tempdir;
 
@@ -70,21 +70,25 @@ fn issue105_bom_only_include_is_noop() {
 }
 
 #[test]
-fn issue105_top_level_empty_still_rejected() {
-    // S3.1 enforcement for top-level parses must remain intact.
-    assert!(hocon::parse("").is_err(), "empty top-level must error");
-    assert!(
-        hocon::parse("   \n\t  ").is_err(),
-        "whitespace-only top-level must error",
-    );
-    assert!(
-        hocon::parse("# only a comment\n").is_err(),
-        "hash-comment-only top-level must error",
-    );
-    assert!(
-        hocon::parse("// only a comment\n").is_err(),
-        "slash-comment-only top-level must error",
-    );
+fn issue105_top_level_empty_parses_to_empty_object() {
+    // Corrected S3.1: top-level parity with the include path — an empty
+    // document parses to {} everywhere (xx.hocon E10).
+    for (input, label) in [
+        ("", "empty"),
+        ("   \n\t  ", "whitespace-only"),
+        ("# only a comment\n", "hash-comment-only"),
+        ("// only a comment\n", "slash-comment-only"),
+    ] {
+        let cfg = hocon::parse(input).unwrap_or_else(|e| {
+            panic!("{} top-level must parse to {{}} per corrected S3.1, got error: {}", label, e)
+        });
+        assert!(
+            cfg.keys().is_empty(),
+            "{} top-level must produce an empty config, got keys {:?}",
+            label,
+            cfg.keys()
+        );
+    }
 }
 
 #[test]

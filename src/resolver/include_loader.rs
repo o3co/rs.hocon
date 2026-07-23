@@ -132,23 +132,11 @@ fn load_single_include(
         col: e.col,
     })?;
 
-    // Lightbend-compat carve-out (#105 cross-impl): an empty / whitespace-only /
-    // comment-only included file contributes an empty config rather than
-    // erroring with S3.1. Top-level parses (`parse` / `parse_with_env` /
-    // `parse_string_with_options` / `parse_file_with_options` on a
-    // top-level empty document) continue to enforce S3.1 in `parse_with_env` /
-    // `parse_file_with_env` (src/lib.rs); the carve-out is scoped to the
-    // file-include path only. E11 package includes are unchanged.
-    let has_content = tokens.iter().any(|t| {
-        !matches!(
-            t.kind,
-            crate::lexer::TokenKind::Newline | crate::lexer::TokenKind::Eof
-        )
-    });
-    if !has_content {
-        return Ok(ResObj::new());
-    }
-
+    // S3.1 (corrected, xx.hocon E10): an empty / whitespace-only / comment-only
+    // included file is a valid empty document — `parse_tokens` yields an empty
+    // object AST contributing `{}`. The former #105 Lightbend-compat carve-out
+    // is now simply the rule, uniform with top-level parses (src/lib.rs) and
+    // E11 package includes.
     let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
         message: e.message,
         path: candidate.display().to_string(),
