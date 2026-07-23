@@ -84,7 +84,9 @@ impl std::error::Error for ResolveError {}
 pub struct ConfigError {
     /// Human-readable description of the error.
     pub message: String,
-    /// The dot-separated path that was looked up.
+    /// The dot-separated path that was looked up. Empty for file-root errors
+    /// (e.g. the S3.5 array-at-file-root rejection), where no access path
+    /// exists.
     pub path: String,
 }
 
@@ -146,9 +148,11 @@ impl std::error::Error for NotResolvedError {}
 
 /// Unified error type returned by top-level parse functions.
 ///
-/// Wraps the three possible failure modes: syntax errors ([`ParseError`]),
-/// substitution resolution failures ([`ResolveError`]), and file I/O
-/// errors ([`std::io::Error`]).
+/// Wraps the possible failure modes: syntax errors ([`ParseError`]),
+/// substitution resolution failures ([`ResolveError`]), file I/O errors
+/// ([`std::io::Error`]), unresolved-getter errors ([`NotResolvedError`]),
+/// and Config-boundary type errors ([`ConfigError`] — e.g. the S3.5
+/// array-at-file-root rejection).
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum HoconError {

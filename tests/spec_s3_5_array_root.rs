@@ -66,6 +66,32 @@ fn s3_5_error_carries_position() {
 }
 
 #[test]
+fn s3_5_origin_naming() {
+    // Custom origin_description is honored.
+    let opts = hocon::ParseOptions::defaults().with_origin_description("my-source".to_string());
+    let err = hocon::parse_string_with_options("[1,2]", opts).expect_err("custom origin");
+    let msg = assert_array_root_config_error(err, "custom origin");
+    assert!(
+        msg.contains("my-source"),
+        "message must carry the custom origin, got: {}",
+        msg
+    );
+
+    // File-based entry points name the file (not "input").
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("arr.conf");
+    std::fs::write(&f, "[1,2]\n").unwrap();
+    let err = hocon::parse_file_with_options(&f, hocon::ParseOptions::defaults())
+        .expect_err("file origin");
+    let msg = assert_array_root_config_error(err, "file origin");
+    assert!(
+        msg.contains("arr.conf") && !msg.starts_with("input:"),
+        "file parse must name the file in the origin, got: {}",
+        msg
+    );
+}
+
+#[test]
 fn s3_5_deferred_lifecycle() {
     let opts = hocon::ParseOptions::defaults().with_resolve_substitutions(false);
     let err = hocon::parse_string_with_options("[1,2]", opts).expect_err("deferred");

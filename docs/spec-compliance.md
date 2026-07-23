@@ -2,7 +2,7 @@
 
 This file extends the canonical checklist at
 [`xx.hocon/docs/spec-checklist.md`](https://github.com/o3co/xx.hocon/blob/main/docs/spec-checklist.md)
-with rs.hocon-specific status for all 209 items, in the same order and with the
+with rs.hocon-specific status for all 210 items, in the same order and with the
 same item descriptions verbatim.
 
 - **`tests:`** records the test path (or fixture) that exercises each item, or `—` if no test covers it.

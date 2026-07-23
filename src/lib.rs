@@ -375,7 +375,16 @@ impl Parser {
         let content = std::fs::read_to_string(path)
             .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
         let base_dir = path.parent().map(|p| p.to_path_buf());
-        let opts = ParseOptions { base_dir, ..opts };
+        // Default the origin to the file path so diagnostics (e.g. the S3.5
+        // array-at-file-root error) name the file, matching Lightbend origins.
+        let origin_description = opts
+            .origin_description
+            .or_else(|| Some(path.display().to_string()));
+        let opts = ParseOptions {
+            base_dir,
+            origin_description,
+            ..opts
+        };
         self.parse_with_options(&content, opts)
     }
 
@@ -462,7 +471,16 @@ pub fn parse_file_with_options<P: AsRef<Path>>(
     let content = std::fs::read_to_string(path)
         .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
     let base_dir = path.parent().map(|p| p.to_path_buf());
-    let opts = ParseOptions { base_dir, ..opts };
+    // Default the origin to the file path so diagnostics (e.g. the S3.5
+    // array-at-file-root error) name the file, matching Lightbend origins.
+    let origin_description = opts
+        .origin_description
+        .or_else(|| Some(path.display().to_string()));
+    let opts = ParseOptions {
+        base_dir,
+        origin_description,
+        ..opts
+    };
     parse_string_with_options(&content, opts)
 }
 
