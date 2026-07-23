@@ -14,8 +14,12 @@
 
 /// Assert that `input` parses successfully to an empty config.
 fn assert_parses_to_empty(input: &str, label: &str) {
-    let cfg = hocon::parse(input)
-        .unwrap_or_else(|e| panic!("S3.1: {} must parse to an empty config, got error: {}", label, e));
+    let cfg = hocon::parse(input).unwrap_or_else(|e| {
+        panic!(
+            "S3.1: {} must parse to an empty config, got error: {}",
+            label, e
+        )
+    });
     assert!(
         cfg.keys().is_empty(),
         "S3.1: {} must produce an empty config, got keys {:?}",
@@ -64,6 +68,17 @@ fn s3_1_6_mixed_ws_comment() {
 #[test]
 fn s3_1_pos1_explicit_empty_object() {
     assert_parses_to_empty("{}", "explicit empty object");
+}
+
+/// s3_1_neg1: a `/* block comment */`-only document is NOT an empty document —
+/// block comments are not HOCON syntax (`#` and `//` only), so the S3.1
+/// empty-parses-to-{} rule must not mask the syntax error.
+#[test]
+fn s3_1_neg1_block_comment_only_is_rejected() {
+    assert!(
+        hocon::parse("/* multi\nline\ncomment */\n").is_err(),
+        "S3.1 (negative): block-comment-only input must be a syntax error, not an empty document"
+    );
 }
 
 /// s3_1_pos2: single-field document must succeed.

@@ -581,4 +581,3 @@ pub fn _render_json_for_test(config: &Config) -> String {
     out.push('}');
     out
 }
-

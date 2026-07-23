@@ -80,7 +80,10 @@ fn issue105_top_level_empty_parses_to_empty_object() {
         ("// only a comment\n", "slash-comment-only"),
     ] {
         let cfg = hocon::parse(input).unwrap_or_else(|e| {
-            panic!("{} top-level must parse to {{}} per corrected S3.1, got error: {}", label, e)
+            panic!(
+                "{} top-level must parse to {{}} per corrected S3.1, got error: {}",
+                label, e
+            )
         });
         assert!(
             cfg.keys().is_empty(),

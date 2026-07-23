@@ -208,25 +208,15 @@ pub(crate) fn load_package_include(
         }
     };
 
-    // E11 decision 4 note: empty registered content => empty merge object, not an error.
-    // Do NOT call assert_non_empty_document here.
+    // S3.1 (corrected, xx.hocon E10): empty registered content parses to `{}`
+    // naturally via `parse_tokens` — same uniform rule as top-level parses and
+    // file includes (E11 decision 4 note: empty content is not an error).
     let tokens = crate::lexer::tokenize(content).map_err(|e| ResolveError {
         message: e.message,
         path: format!("package({:?}, {:?})", identifier, file),
         line: e.line,
         col: e.col,
     })?;
-
-    let has_content = tokens.iter().any(|t| {
-        !matches!(
-            t.kind,
-            crate::lexer::TokenKind::Newline | crate::lexer::TokenKind::Eof
-        )
-    });
-    if !has_content {
-        // Empty registered content → empty merge object (E11 decision 4 note)
-        return Ok(ResObj::new());
-    }
 
     let ast = crate::parser::parse_tokens(&tokens).map_err(|e| ResolveError {
         message: e.message,
