@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.9.0] - 2026-07-23
 
-Cross-impl release coordinated to land at v1.9.0 across ts.hocon / go.hocon / rs.hocon / py.hocon. Covers the two same-day spec corrections from [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62) (S3.1 — empty document parses to `{}`) and [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64) (S3.5 — array-root document rejected with a type error), plus the S19.8 case-sensitive duration units breaking change already queued in Unreleased. MINOR (not PATCH): rs adds public API surface (the `HoconError::Config(ConfigError)` variant — additive, `HoconError` is `#[non_exhaustive]`), and the error-taxonomy / empty-document behavior changes are consumer-observable. `Cargo.toml` bumped to 1.9.0 in this release-prep (the publish workflow's `if TAG_VERSION != CURRENT` guard makes this idempotent).
+Cross-impl release coordinated to land at v1.9.0 across ts.hocon / go.hocon / rs.hocon / py.hocon. Covers the two same-day spec corrections from [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62) (S3.1 — empty document parses to `{}`) and [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64) (S3.5 — array-root document rejected with a type error), plus the S19.8 case-sensitive duration units breaking change (queued since the previous cycle, shipped here). MINOR (not PATCH): rs adds public API surface (the `HoconError::Config(ConfigError)` variant — additive, `HoconError` is `#[non_exhaustive]`), and the error-taxonomy / empty-document behavior changes are consumer-observable. `Cargo.toml` bumped to 1.9.0 in this release-prep (the publish workflow's `if TAG_VERSION != CURRENT` guard makes this idempotent).
 
 ### Fixed — array-root document rejected with a type error (S3.5, [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64))
 
@@ -366,7 +366,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/o3co/rs.hocon/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/o3co/rs.hocon/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/o3co/rs.hocon/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/o3co/rs.hocon/compare/v1.6.1...v1.7.0
