@@ -84,12 +84,18 @@ impl std::error::Error for ResolveError {}
 pub struct ConfigError {
     /// Human-readable description of the error.
     pub message: String,
-    /// The dot-separated path that was looked up.
+    /// The dot-separated path that was looked up. Empty for file-root errors
+    /// (e.g. the S3.5 array-at-file-root rejection), where no access path
+    /// exists.
     pub path: String,
 }
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.path.is_empty() {
+            // File-root errors (S3.5 array-at-root) have no access path.
+            return write!(f, "ConfigError: {}", self.message);
+        }
         write!(f, "ConfigError: {} (path: {})", self.message, self.path)
     }
 }
@@ -142,9 +148,11 @@ impl std::error::Error for NotResolvedError {}
 
 /// Unified error type returned by top-level parse functions.
 ///
-/// Wraps the three possible failure modes: syntax errors ([`ParseError`]),
-/// substitution resolution failures ([`ResolveError`]), and file I/O
-/// errors ([`std::io::Error`]).
+/// Wraps the possible failure modes: syntax errors ([`ParseError`]),
+/// substitution resolution failures ([`ResolveError`]), file I/O errors
+/// ([`std::io::Error`]), unresolved-getter errors ([`NotResolvedError`]),
+/// and Config-boundary type errors ([`ConfigError`] — e.g. the S3.5
+/// array-at-file-root rejection).
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum HoconError {
@@ -157,6 +165,12 @@ pub enum HoconError {
     /// A getter was called on a path whose value contains an unresolved
     /// substitution placeholder. Per E12 decision 12.
     NotResolved(NotResolvedError),
+    /// Type-mismatch error at the Config boundary (the Lightbend
+    /// `ConfigException.WrongType` analog). Returned by the parse functions
+    /// for an array-root document (S3.5, HOCON.md L989-991): the document is
+    /// valid syntax, but the object-rooted Config API requires an object at
+    /// file root. `ConfigError.path` is empty for file-root errors.
+    Config(ConfigError),
 }
 
 impl fmt::Display for HoconError {
@@ -166,6 +180,7 @@ impl fmt::Display for HoconError {
             HoconError::Resolve(e) => write!(f, "{}", e),
             HoconError::Io(e) => write!(f, "I/O error: {}", e),
             HoconError::NotResolved(e) => write!(f, "{}", e),
+            HoconError::Config(e) => write!(f, "{}", e),
         }
     }
 }
@@ -177,6 +192,7 @@ impl std::error::Error for HoconError {
             HoconError::Resolve(e) => Some(e),
             HoconError::Io(e) => Some(e),
             HoconError::NotResolved(e) => Some(e),
+            HoconError::Config(e) => Some(e),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 This file extends the canonical checklist at
 [`xx.hocon/docs/spec-checklist.md`](https://github.com/o3co/xx.hocon/blob/main/docs/spec-checklist.md)
-with rs.hocon-specific status for all 209 items, in the same order and with the
+with rs.hocon-specific status for all 210 items, in the same order and with the
 same item descriptions verbatim.
 
 - **`tests:`** records the test path (or fixture) that exercises each item, or `—` if no test covers it.
@@ -73,6 +73,17 @@ same item descriptions verbatim.
 - **S3.4** Unbalanced trailing `}` without opening `{` is invalid — §Omit root braces (L138)
   tests: tests/integration_test.rs:277 (test_stray_brace_after_root)
   status: ✅
+- **S3.5** Array-root document is valid syntax; object-rooted parse API rejects with a type error — §Include semantics: merging (L989-991)
+  tests: tests/spec_s3_5_array_root.rs (top-level + position + deferred + malformed guards + include/package variants + nested-chain pins + ar01–ar03 conformance loop)
+  status: ✅ — Added 2026-07-23. `parse_tokens` parses the root array (anchored at the
+  opening `[`; malformed arrays / trailing content stay `ParseError`s); the four parse
+  entry points reject via the new `HoconError::Config(ConfigError)` variant ("document
+  has type array rather than object at file root", with origin + bracket position),
+  matching Lightbend's `Parseable.forceParsedToObject` (`WrongType`). Include paths
+  check the AST at the parse site, so nested chains name the innermost source.
+  Previously `ParseError` "expected key, got LBracket" — right net outcome, wrong kind
+  at the wrong layer. `HoconError` is `#[non_exhaustive]`, so the variant addition is
+  non-breaking.
 
 ## S4. Key-value separator
 
@@ -489,7 +500,10 @@ same item descriptions verbatim.
 
 - **S14b.1** Included root must be an object (array → error) — §Include semantics: merging (L993)
   tests: tests/integration_test.rs:1155 (s14b_1_array_root_include_is_error)
-  status: ✅
+  status: ✅ — Diagnostics improved with S3.5 (2026-07-23): the include loader raises
+  `ResolveError` "included file has array at file root … (HOCON.md L993-994)" naming
+  the included source (file path or `package(...)` descriptor) with the bracket
+  position, instead of the parser's generic syntax error.
 - **S14b.2** Included keys merge per duplicate-key rules — §Include semantics: merging (L997)
   tests: tests/include_test.rs:21 (include_merges_into_current)
   status: ✅
