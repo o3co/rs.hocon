@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — array-root document rejected with a type error (S3.5, [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64))
+
+- **`parse("[1,2]")` now returns the new `HoconError::Config(ConfigError)` variant
+  ("document has type array rather than object at file root", HOCON.md L989-991, with
+  origin + bracket position) instead of `HoconError::Parse` "expected key".** An
+  array-root document is syntactically valid HOCON; the reference implementation
+  parses it and rejects at the Config boundary (`Parseable.forceParsedToObject`,
+  `ConfigException.WrongType`). `parse_tokens` now parses the root array (malformed
+  arrays and trailing content remain `ParseError`s); all four parse entry points
+  reject via `reject_array_root`. Include paths (file + package) raise
+  `HoconError::Resolve` "included file has array at file root … (HOCON.md L993-994)"
+  naming the **innermost** included source (the AST is checked at each parse site, so
+  nested chains cannot accuse an intermediate file). `ConfigError`'s `Display` omits
+  the path clause when `path` is empty (file-root errors have no access path).
+  **API note**: `HoconError` gains a `Config(ConfigError)` variant — non-breaking
+  (`HoconError` is `#[non_exhaustive]`). Net behavior is unchanged (array-root
+  documents still error) — only the error class, layer, and message change. Pinned by
+  `tests/spec_s3_5_array_root.rs` (xx.hocon `array-root/ar01–ar03` `.error` sidecars).
+
 ### Fixed — empty document parses to `{}` (S3.1 corrected, [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62))
 
 - **`parse("")` (and whitespace-only / comment-only / BOM-only input) returns an empty

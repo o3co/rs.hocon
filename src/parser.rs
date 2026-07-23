@@ -127,6 +127,37 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
             fields: all_fields,
             pos: first_pos,
         })
+    } else if parser.peek_kind() == TokenKind::LBracket {
+        // S3.5 (HOCON.md L989-991): "both JSON and HOCON allow arrays as root
+        // values in a document" — an array-root document is valid syntax. The
+        // object-rooted Config API rejects it AFTER the parse, at the Config
+        // boundary (src/lib.rs) or include-load site (include_loader.rs),
+        // matching Lightbend's Parseable.forceParsedToObject (WrongType, not
+        // a syntax error). Malformed arrays and trailing content remain
+        // syntax errors. The node is anchored at the opening `[` so the type
+        // error can point at the bracket.
+        let bracket_pos = parser.current_pos();
+        parser.pos += 1;
+        let arr = parser.parse_array()?;
+        parser.skip(&[TokenKind::Newline]);
+        if parser.peek_kind() != TokenKind::Eof {
+            let pos = parser.current_pos();
+            return Err(ParseError {
+                message: format!(
+                    "unexpected token after root array: {:?}",
+                    parser.peek_kind()
+                ),
+                line: pos.line,
+                col: pos.col,
+            });
+        }
+        match arr {
+            AstNode::Array { items, .. } => Ok(AstNode::Array {
+                items,
+                pos: bracket_pos,
+            }),
+            _ => unreachable!("parse_array returns AstNode::Array"),
+        }
     } else {
         parser.parse_object(false)
     }

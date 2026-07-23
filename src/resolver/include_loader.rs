@@ -143,6 +143,22 @@ fn load_single_include(
         line: e.line,
         col: e.col,
     })?;
+    // S14b.1 (HOCON.md L993-994): an included file must contain an object, not
+    // an array. The document is valid syntax (S3.5) — surface the type
+    // constraint as a ResolveError naming THIS file. Checking the AST at the
+    // parse site means nested include chains name the innermost file that
+    // actually has the array root.
+    if let crate::parser::AstNode::Array { pos, .. } = &ast {
+        return Err(ResolveError {
+            message: format!(
+                "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994): {}",
+                candidate.display()
+            ),
+            path: candidate.display().to_string(),
+            line: pos.line,
+            col: pos.col,
+        });
+    }
 
     let mut child_opts = InternalResolveOptions::new(opts.env.clone());
     if let Some(parent) = candidate.parent() {
@@ -224,6 +240,20 @@ pub(crate) fn load_package_include(
         line: e.line,
         col: e.col,
     })?;
+    // S14b.1: registered package content with an array root — same type
+    // constraint as file includes, naming the package source (checked at the
+    // parse site so nested chains name the innermost source).
+    if let crate::parser::AstNode::Array { pos, .. } = &ast {
+        return Err(ResolveError {
+            message: format!(
+                "included file has array at file root — an included file must contain an object, not an array (HOCON.md L993-994): package({:?}, {:?})",
+                identifier, file
+            ),
+            path: format!("package({:?}, {:?})", identifier, file),
+            line: pos.line,
+            col: pos.col,
+        });
+    }
 
     // Build child ResolveOptions: inherit env + registry; push cycle key
     let mut child_opts = InternalResolveOptions::new(opts.env.clone());

@@ -327,6 +327,7 @@ impl Parser {
         // comment-only / BOM-only document parses to the empty object per the
         // HOCON.md L134-136 brace-omission relaxation — no emptiness guard.
         let ast = parser::parse_tokens(&tokens)?;
+        reject_array_root(&ast, opts.origin_description.as_deref().unwrap_or("input"))?;
 
         let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
             if opts.resolve_substitutions {
@@ -409,6 +410,7 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
 pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
     let ast = parser::parse_tokens(&tokens)?;
+    reject_array_root(&ast, opts.origin_description.as_deref().unwrap_or("input"))?;
 
     let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
         if opts.resolve_substitutions {
@@ -479,6 +481,7 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
         .map_err(|e| std::io::Error::new(e.kind(), format!("{}: {}", path.display(), e)))?;
     let tokens = lexer::tokenize(&content)?;
     let ast = parser::parse_tokens(&tokens)?;
+    reject_array_root(&ast, &path.display().to_string())?;
     let mut opts = resolver::InternalResolveOptions::new(env.clone());
     if let Some(dir) = path.parent() {
         opts = opts.with_base_dir(dir.to_path_buf());
@@ -494,10 +497,29 @@ pub fn parse_file_with_env<P: AsRef<Path>>(
     }
 }
 
+/// S3.5 (HOCON.md L989-991): an array-root document is valid syntax, but the
+/// object-rooted Config API rejects it at the Config boundary with a TYPE
+/// error, matching Lightbend's `Parseable.forceParsedToObject`
+/// (`ConfigException.WrongType` "has type LIST rather than object at file
+/// root"). The message carries the origin and the opening bracket's position.
+fn reject_array_root(ast: &parser::AstNode, origin: &str) -> Result<(), HoconError> {
+    if let parser::AstNode::Array { pos, .. } = ast {
+        return Err(HoconError::Config(ConfigError {
+            message: format!(
+                "{}: {}:{}: document has type array rather than object at file root (HOCON.md L989-991); the Config API requires an object at file root",
+                origin, pos.line, pos.col
+            ),
+            path: String::new(),
+        }));
+    }
+    Ok(())
+}
+
 /// Parse a HOCON string with a custom environment variable map.
 pub fn parse_with_env(input: &str, env: &HashMap<String, String>) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
     let ast = parser::parse_tokens(&tokens)?;
+    reject_array_root(&ast, "input")?;
     let opts = resolver::InternalResolveOptions::new(env.clone());
     let value = resolver::resolve(ast, &opts)?;
     match value {
