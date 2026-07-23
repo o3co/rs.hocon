@@ -23,11 +23,12 @@ fn run_empty_file_fixture(name: &str) {
             name, e
         )
     });
+    let keys = cfg.keys();
     assert!(
-        cfg.keys().is_empty(),
+        keys.is_empty(),
         "S3.1 conformance: {}.conf must produce an empty config, got keys {:?}",
         name,
-        cfg.keys()
+        keys
     );
 }
 

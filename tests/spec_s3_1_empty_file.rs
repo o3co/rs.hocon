@@ -20,11 +20,12 @@ fn assert_parses_to_empty(input: &str, label: &str) {
             label, e
         )
     });
+    let keys = cfg.keys();
     assert!(
-        cfg.keys().is_empty(),
+        keys.is_empty(),
         "S3.1: {} must produce an empty config, got keys {:?}",
         label,
-        cfg.keys()
+        keys
     );
 }
 

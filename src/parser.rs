@@ -1103,10 +1103,11 @@ mod tests {
         // relaxation. Verify via the public `hocon::parse` API so the full
         // pipeline is exercised.
         let cfg = crate::parse("").expect("S3.1: hocon::parse(\"\") must return an empty config");
+        let keys = cfg.keys();
         assert!(
-            cfg.keys().is_empty(),
+            keys.is_empty(),
             "S3.1: empty input must produce an empty config, got keys {:?}",
-            cfg.keys()
+            keys
         );
     }
 

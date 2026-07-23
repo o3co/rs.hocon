@@ -85,11 +85,12 @@ fn issue105_top_level_empty_parses_to_empty_object() {
                 label, e
             )
         });
+        let keys = cfg.keys();
         assert!(
-            cfg.keys().is_empty(),
+            keys.is_empty(),
             "{} top-level must produce an empty config, got keys {:?}",
             label,
-            cfg.keys()
+            keys
         );
     }
 }
