@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regardless of whether the included file existed. The parser now consumes
   only the closing-paren token(s) — spaced forms like
   `required( file( "x" ) )` lex as consecutive `)` tokens and are consumed
-  too. Behaviour note: non-paren junk after the closing `)` on the include
-  line was previously skipped silently; it now stays in the token stream and
-  surfaces as a parse error.
+  too, while a fused `)junk` token is not treated as a closing paren.
+  Behaviour note: junk after the include path (spaced or fused with the
+  paren) was previously skipped silently; it now surfaces as a parse error,
+  and a `file()` include with no closing `)` at all is now a parse error as
+  well.
   Found by the harvested ecosystem corpus
   ([xx.hocon#66](https://github.com/o3co/xx.hocon/pull/66),
   `mikai233-hocon-rs/demo.conf`). Pinned by

@@ -61,6 +61,33 @@ fn issue149_required_file_include_keeps_trailing_field() {
     assert_eq!(cfg.get_string("aa.b").unwrap(), "ww", "trailing field swallowed");
 }
 
+// Fused junk after the closing paren lexes into the same Unquoted token
+// (`)junk`); that token is not a pure closing paren and must surface as a
+// parse error rather than being silently swallowed (Copilot review).
+#[test]
+fn issue149_fused_junk_after_paren_is_parse_error() {
+    let (_d, dir) = setup();
+    let input = format!(
+        "aa = {{include file(\"{}/exists.conf\")junk, b = \"ww\"}}\n",
+        dir
+    );
+    assert!(
+        hocon::parse(&input).is_err(),
+        "fused junk after ')' must be a parse error, not silently swallowed"
+    );
+}
+
+// A file() include whose closing paren never appears is a parse error.
+#[test]
+fn issue149_missing_close_paren_is_parse_error() {
+    let (_d, dir) = setup();
+    let input = format!("aa = {{include file(\"{}/exists.conf\", b = \"ww\"}}\n", dir);
+    assert!(
+        hocon::parse(&input).is_err(),
+        "missing ')' after include file path must be a parse error"
+    );
+}
+
 // Guards: behaviours that already worked and must not regress.
 
 #[test]
