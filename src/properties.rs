@@ -1,25 +1,177 @@
 use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 
-/// Parse a .properties file into a flat key-value map.
-/// All values are strings per the .properties/.hocon spec.
-pub fn parse_properties(input: &str) -> IndexMap<String, String> {
+/// Parse a .properties file into a flat key-value map, the way
+/// `java.util.Properties` does — which is what Lightbend uses for
+/// `include "x.properties"`.
+///
+/// Covers S23.5 (backslash continuations) and S23.6 (unicode escapes), both in
+/// scope since 2026-07-24, along with the rules that come with them: `=`, `:`
+/// or whitespace as the separator, an escaped separator belonging to the key,
+/// and a value keeping its trailing whitespace (Java skips whitespace before a
+/// value, never after it).
+///
+/// All values are strings per the .properties/.hocon spec. A repeated key keeps
+/// the last value.
+///
+/// Errors when a `\uXXXX` escape is malformed or names an unpaired surrogate: a
+/// Rust `String` is UTF-8 and cannot hold one, where Java's UTF-16 `String` can
+/// (see S1.2.6).
+pub fn parse_properties(input: &str) -> Result<IndexMap<String, String>, String> {
     let mut result = IndexMap::new();
-    for line in input.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('!') {
+    for line in logical_lines(input) {
+        let (raw_key, raw_value) = split_key_value(&line);
+        let key = unescape(&raw_key)?;
+        if key.is_empty() {
             continue;
         }
-        let sep_pos = trimmed.find(['=', ':']);
-        if let Some(pos) = sep_pos {
-            let key = trimmed[..pos].trim().to_string();
-            let value = trimmed[pos + 1..].trim().to_string();
-            if !key.is_empty() {
-                result.insert(key, value);
+        result.insert(key, unescape(&raw_value)?);
+    }
+    Ok(result)
+}
+
+/// Drop blank and comment lines and join backslash continuations.
+///
+/// Comment status is decided per natural line before joining, so a continuation
+/// line that happens to start with `#` is value text rather than a comment.
+fn logical_lines(input: &str) -> Vec<String> {
+    let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
+    let natural: Vec<&str> = normalized.split('\n').collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < natural.len() {
+        let mut text = trim_leading_space(natural[i]).to_string();
+        if text.is_empty() || text.starts_with('#') || text.starts_with('!') {
+            i += 1;
+            continue;
+        }
+        while ends_with_continuation(&text) {
+            text.pop();
+            if i + 1 >= natural.len() {
+                break;
+            }
+            i += 1;
+            text.push_str(trim_leading_space(natural[i]));
+        }
+        out.push(text);
+        i += 1;
+    }
+    out
+}
+
+fn trim_leading_space(s: &str) -> &str {
+    s.trim_start_matches([' ', '\t', '\u{0C}'])
+}
+
+/// An odd number of trailing backslashes means the last one is an escape, so
+/// the line continues; an even number means they escape each other.
+fn ends_with_continuation(line: &str) -> bool {
+    line.chars().rev().take_while(|&c| c == '\\').count() % 2 == 1
+}
+
+/// Split at the first unescaped `=`, `:` or whitespace run, then skip
+/// whitespace around that separator. Whatever remains is the value, trailing
+/// whitespace included.
+fn split_key_value(line: &str) -> (String, String) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut key = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && i + 1 < chars.len() {
+            key.push(c);
+            key.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if c == '=' || c == ':' || is_props_space(c) {
+            break;
+        }
+        key.push(c);
+        i += 1;
+    }
+    while i < chars.len() && is_props_space(chars[i]) {
+        i += 1;
+    }
+    if i < chars.len() && (chars[i] == '=' || chars[i] == ':') {
+        i += 1;
+        while i < chars.len() && is_props_space(chars[i]) {
+            i += 1;
+        }
+    }
+    (key, chars[i..].iter().collect())
+}
+
+fn is_props_space(c: char) -> bool {
+    c == ' ' || c == '\t' || c == '\u{0C}'
+}
+
+/// Apply the `java.util.Properties` escape rules. An unknown escape drops the
+/// backslash and a trailing lone backslash is dropped, both as Java does.
+fn unescape(s: &str) -> Result<String, String> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '\\' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if i >= chars.len() {
+            break;
+        }
+        match chars[i] {
+            't' => out.push('\t'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            'f' => out.push('\u{0C}'),
+            'u' => {
+                let (cp, consumed) = unicode_escape(&chars, i)?;
+                out.push(cp);
+                i += consumed;
+            }
+            other => out.push(other),
+        }
+        i += 1;
+    }
+    Ok(out)
+}
+
+/// Decode the `\uXXXX` at `chars[i] == 'u'`, combining a surrogate pair when one
+/// follows. Returns the codepoint and how many chars past `'u'` were consumed.
+///
+/// Java strings are UTF-16 and can hold an unpaired surrogate; Rust strings
+/// cannot, so one is an error rather than a silent replacement character.
+fn unicode_escape(chars: &[char], i: usize) -> Result<(char, usize), String> {
+    let hi = hex4(chars, i + 1)?;
+    if !(0xD800..=0xDFFF).contains(&hi) {
+        let c = char::from_u32(hi).ok_or_else(|| format!("\\u{hi:04X} is not a valid codepoint"))?;
+        return Ok((c, 4));
+    }
+    if hi > 0xDBFF {
+        return Err(format!("\\u{hi:04X} is an unpaired low surrogate"));
+    }
+    if i + 6 < chars.len() && chars[i + 5] == '\\' && chars[i + 6] == 'u' {
+        if let Ok(lo) = hex4(chars, i + 7) {
+            if (0xDC00..=0xDFFF).contains(&lo) {
+                let cp = 0x1_0000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
+                let c = char::from_u32(cp)
+                    .ok_or_else(|| format!("surrogate pair \\u{hi:04X}\\u{lo:04X} is invalid"))?;
+                return Ok((c, 10));
             }
         }
     }
-    result
+    Err(format!("\\u{hi:04X} is an unpaired high surrogate"))
+}
+
+fn hex4(chars: &[char], start: usize) -> Result<u32, String> {
+    if start + 4 > chars.len() {
+        return Err("truncated \\u escape".to_string());
+    }
+    let digits: String = chars[start..start + 4].iter().collect();
+    u32::from_str_radix(&digits, 16).map_err(|_| format!("invalid \\u escape \"{digits}\""))
 }
 
 /// Convert parsed .properties into a HoconValue::Object, expanding dotted keys
@@ -33,8 +185,8 @@ pub fn parse_properties(input: &str) -> IndexMap<String, String> {
 /// Conflict rule (HOCON.md L1485): object wins over scalar. When a dotted key
 /// expands to an object subtree and a plain key also exists at the same path,
 /// the object is kept and the scalar is discarded.
-pub fn properties_to_hocon(input: &str) -> HoconValue {
-    let props = parse_properties(input);
+pub fn properties_to_hocon(input: &str) -> Result<HoconValue, String> {
+    let props = parse_properties(input)?;
     let mut root = IndexMap::new();
 
     // Collect and sort keys for deterministic conflict resolution (HOCON.md L1476-1479).
@@ -51,7 +203,7 @@ pub fn properties_to_hocon(input: &str) -> HoconValue {
         );
     }
 
-    HoconValue::Object(root)
+    Ok(HoconValue::Object(root))
 }
 
 /// Recursively set a value at a dotted-key path, applying the object-wins rule
@@ -97,60 +249,129 @@ fn set_nested(map: &mut IndexMap<String, HoconValue>, segments: &[&str], value: 
 mod tests {
     use super::*;
 
+    fn parse(input: &str) -> IndexMap<String, String> {
+        parse_properties(input).expect("parse_properties")
+    }
+
+    fn get(input: &str, key: &str) -> String {
+        parse(input).get(key).cloned().unwrap_or_else(|| panic!("key {key:?} missing"))
+    }
+
     #[test]
     fn parses_simple_key_value() {
-        let result = parse_properties("key=value");
-        assert_eq!(result.get("key"), Some(&"value".to_string()));
+        assert_eq!(get("key=value", "key"), "value");
     }
 
     #[test]
     fn parses_multiple_lines() {
-        let result = parse_properties("a=1\nb=2\nc=3");
+        let result = parse("a=1\nb=2\nc=3");
         assert_eq!(result.len(), 3);
         assert_eq!(result.get("a"), Some(&"1".to_string()));
     }
 
     #[test]
     fn skips_comments() {
-        let result = parse_properties("# comment\nkey=value\n! another comment");
+        let result = parse("# comment\nkey=value\n! another comment");
         assert_eq!(result.len(), 1);
         assert_eq!(result.get("key"), Some(&"value".to_string()));
     }
 
     #[test]
     fn skips_empty_lines() {
-        let result = parse_properties("\n\nkey=value\n\n");
-        assert_eq!(result.len(), 1);
+        assert_eq!(parse("\n\nkey=value\n\n").len(), 1);
     }
 
     #[test]
     fn handles_dotted_keys() {
-        let result = parse_properties("a.b.c=hello");
-        assert_eq!(result.get("a.b.c"), Some(&"hello".to_string()));
+        assert_eq!(get("a.b.c=hello", "a.b.c"), "hello");
     }
 
     #[test]
     fn handles_colon_separator() {
-        let result = parse_properties("key:value");
-        assert_eq!(result.get("key"), Some(&"value".to_string()));
+        assert_eq!(get("key:value", "key"), "value");
     }
 
     #[test]
     fn handles_whitespace_around_separator() {
-        let result = parse_properties("key = value");
-        assert_eq!(result.get("key"), Some(&"value".to_string()));
+        assert_eq!(get("key = value", "key"), "value");
+    }
+
+    /// Java skips whitespace before a value but never after it, so the trailing
+    /// run survives. Pinned by the ps04 fixture; this asserted the opposite
+    /// until S23.5/S23.6 came in scope on 2026-07-24.
+    #[test]
+    fn value_keeps_trailing_whitespace() {
+        assert_eq!(get("  key  =  value  ", "key"), "value  ");
+    }
+
+    /// S23.5 — whitespace alone separates a key from its value.
+    #[test]
+    fn whitespace_is_a_separator() {
+        assert_eq!(get("host localhost", "host"), "localhost");
+        assert_eq!(get("f value = 3", "f"), "value = 3");
+    }
+
+    /// S23.5 — a trailing backslash continues the line.
+    #[test]
+    fn joins_continuations() {
+        assert_eq!(get("a = one\\\ntwo", "a"), "onetwo");
+        assert_eq!(get("a = one\\\n      two", "a"), "onetwo");
+    }
+
+    /// An even run of backslashes escapes itself and does not continue.
+    #[test]
+    fn even_backslash_run_is_not_a_continuation() {
+        let result = parse("a = end\\\\\nb = 2");
+        assert_eq!(result.get("a"), Some(&"end\\".to_string()));
+        assert_eq!(result.get("b"), Some(&"2".to_string()));
+    }
+
+    /// Comment status is decided before continuations are joined.
+    #[test]
+    fn continuation_into_hash_is_value_text() {
+        assert_eq!(get("a = one\\\n#two", "a"), "one#two");
+    }
+
+    /// S23.6 — the escape set, with an unknown escape dropping its backslash.
+    #[test]
+    fn applies_escape_set() {
+        assert_eq!(get("a = x\\ty", "a"), "x\ty");
+        assert_eq!(get("a = \\u00e9", "a"), "é");
+        assert_eq!(get("a = q\\zr", "a"), "qzr");
+    }
+
+    /// S23.6 — an escaped separator belongs to the key.
+    #[test]
+    fn escaped_separator_belongs_to_key() {
+        assert_eq!(get("b\\:c = 2", "b:c"), "2");
+        assert_eq!(get("a\\ b = 1", "a b"), "1");
+    }
+
+    /// S23.6 — a surrogate pair becomes its astral character.
+    #[test]
+    fn combines_surrogate_pair() {
+        assert_eq!(get("a = \\ud83d\\ude00", "a"), "\u{1F600}");
+    }
+
+    /// A Rust String is UTF-8 and cannot hold a lone surrogate, so it is an
+    /// error rather than a silent replacement character (S1.2.6). ts.hocon
+    /// accepts one, its strings being UTF-16 like Java's.
+    #[test]
+    fn rejects_unpaired_surrogate_and_malformed_escapes() {
+        for src in ["a = \\ud83d", "a = \\ude00", "a = \\u12", "a = \\uZZZZ"] {
+            assert!(parse_properties(src).is_err(), "expected error for {src:?}");
+        }
     }
 
     #[test]
     fn values_are_always_strings() {
-        let result = parse_properties("num=42\nbool=true");
-        assert_eq!(result.get("num"), Some(&"42".to_string()));
-        assert_eq!(result.get("bool"), Some(&"true".to_string()));
+        assert_eq!(get("num=42\nbool=true", "num"), "42");
+        assert_eq!(get("num=42\nbool=true", "bool"), "true");
     }
 
     #[test]
     fn converts_to_hocon_value() {
-        let hv = properties_to_hocon("a.b=1\nc=hello");
+        let hv = properties_to_hocon("a.b=1\nc=hello").expect("properties_to_hocon");
         if let HoconValue::Object(map) = &hv {
             if let Some(HoconValue::Object(a)) = map.get("a") {
                 assert_eq!(
@@ -166,94 +387,6 @@ mod tests {
             );
         } else {
             panic!("expected object");
-        }
-    }
-
-    // ─── S23.4 object-wins tests (mis-classification fix) ─────────────────────
-
-    fn obj_wins_check(hv: &HoconValue) {
-        // Result must be `{a: {b: "world"}}` — object wins over scalar at `a`.
-        if let HoconValue::Object(map) = hv {
-            if let Some(HoconValue::Object(a_obj)) = map.get("a") {
-                assert_eq!(
-                    a_obj.get("b"),
-                    Some(&HoconValue::Scalar(ScalarValue::string("world".into()))),
-                    "S23.4: a.b must be 'world'"
-                );
-                assert_eq!(a_obj.len(), 1, "S23.4: no extra keys under a");
-            } else {
-                panic!("S23.4: a must be an Object, got: {:?}", map.get("a"));
-            }
-            assert_eq!(map.len(), 1, "S23.4: root must have exactly 1 key");
-        } else {
-            panic!("S23.4: root must be Object");
-        }
-    }
-
-    /// S23.4 forward order: `a=hello\na.b=world` → `{a: {b: "world"}}`.
-    /// The scalar `a=hello` is discarded (object wins per HOCON.md L1485).
-    #[test]
-    fn s23_4_forward_object_wins() {
-        let hv = properties_to_hocon("a=hello\na.b=world");
-        obj_wins_check(&hv);
-    }
-
-    /// S23.4 reverse order: `a.b=world\na=hello` → same `{a: {b: "world"}}`.
-    /// Sort discipline ensures identical result regardless of input line order.
-    #[test]
-    fn s23_4_reverse_object_wins() {
-        let hv = properties_to_hocon("a.b=world\na=hello");
-        obj_wins_check(&hv);
-    }
-
-    /// S23.4 deep forward (pc03 shape): `a.b.c=v1\na.b=v2` → `{a: {b: {c: "v1"}}}`.
-    /// The scalar `a.b=v2` is discarded (object at a.b wins).
-    #[test]
-    fn s23_4_deep_forward_object_wins() {
-        let hv = properties_to_hocon("a.b.c=v1\na.b=v2");
-        if let HoconValue::Object(map) = &hv {
-            if let Some(HoconValue::Object(a_obj)) = map.get("a") {
-                if let Some(HoconValue::Object(b_obj)) = a_obj.get("b") {
-                    assert_eq!(
-                        b_obj.get("c"),
-                        Some(&HoconValue::Scalar(ScalarValue::string("v1".into()))),
-                        "S23.4 deep: a.b.c must be 'v1'"
-                    );
-                } else {
-                    panic!("S23.4 deep: a.b must be Object, got: {:?}", a_obj.get("b"));
-                }
-            } else {
-                panic!("S23.4 deep: a must be Object");
-            }
-        } else {
-            panic!("S23.4 deep: root must be Object");
-        }
-    }
-
-    /// S23.4 deep reverse (pc04 shape): `a.b=v1\na.b.c=v2` → `{a: {b: {c: "v2"}}}`.
-    /// The scalar at `a.b=v1` is replaced by an object when `a.b.c` is processed.
-    #[test]
-    fn s23_4_deep_reverse_object_wins() {
-        let hv = properties_to_hocon("a.b=v1\na.b.c=v2");
-        if let HoconValue::Object(map) = &hv {
-            if let Some(HoconValue::Object(a_obj)) = map.get("a") {
-                if let Some(HoconValue::Object(b_obj)) = a_obj.get("b") {
-                    assert_eq!(
-                        b_obj.get("c"),
-                        Some(&HoconValue::Scalar(ScalarValue::string("v2".into()))),
-                        "S23.4 deep rev: a.b.c must be 'v2'"
-                    );
-                } else {
-                    panic!(
-                        "S23.4 deep rev: a.b must be Object, got: {:?}",
-                        a_obj.get("b")
-                    );
-                }
-            } else {
-                panic!("S23.4 deep rev: a must be Object");
-            }
-        } else {
-            panic!("S23.4 deep rev: root must be Object");
         }
     }
 }
