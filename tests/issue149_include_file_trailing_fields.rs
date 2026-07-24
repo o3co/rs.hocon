@@ -18,10 +18,17 @@ fn setup() -> (tempfile::TempDir, String) {
 #[test]
 fn issue149_existing_file_include_keeps_trailing_field() {
     let (_d, dir) = setup();
-    let input = format!("aa = {{include file(\"{}/exists.conf\"), b = \"ww\"}}\n", dir);
+    let input = format!(
+        "aa = {{include file(\"{}/exists.conf\"), b = \"ww\"}}\n",
+        dir
+    );
     let cfg = hocon::parse(&input).unwrap();
     assert_eq!(cfg.get_i64("aa.x").unwrap(), 1, "included content lost");
-    assert_eq!(cfg.get_string("aa.b").unwrap(), "ww", "trailing field swallowed");
+    assert_eq!(
+        cfg.get_string("aa.b").unwrap(),
+        "ww",
+        "trailing field swallowed"
+    );
 }
 
 #[test]
@@ -29,7 +36,11 @@ fn issue149_missing_file_include_keeps_trailing_field() {
     let (_d, dir) = setup();
     let input = format!("aa = {{include file(\"{}/nope.conf\"), b = \"ww\"}}\n", dir);
     let cfg = hocon::parse(&input).unwrap();
-    assert_eq!(cfg.get_string("aa.b").unwrap(), "ww", "trailing field swallowed");
+    assert_eq!(
+        cfg.get_string("aa.b").unwrap(),
+        "ww",
+        "trailing field swallowed"
+    );
 }
 
 // Spaced closing parens lex as separate ")" tokens (unlike fused `))`); the
@@ -43,7 +54,11 @@ fn issue149_spaced_parens_keep_trailing_field() {
     );
     let cfg = hocon::parse(&input).unwrap();
     assert_eq!(cfg.get_i64("aa.x").unwrap(), 1);
-    assert_eq!(cfg.get_string("aa.b").unwrap(), "ww", "trailing field swallowed");
+    assert_eq!(
+        cfg.get_string("aa.b").unwrap(),
+        "ww",
+        "trailing field swallowed"
+    );
 }
 
 // Guard (passed pre-fix too): fused `required(file("…"))` routes through the
@@ -58,7 +73,11 @@ fn issue149_required_file_include_keeps_trailing_field() {
     );
     let cfg = hocon::parse(&input).unwrap();
     assert_eq!(cfg.get_i64("aa.x").unwrap(), 1);
-    assert_eq!(cfg.get_string("aa.b").unwrap(), "ww", "trailing field swallowed");
+    assert_eq!(
+        cfg.get_string("aa.b").unwrap(),
+        "ww",
+        "trailing field swallowed"
+    );
 }
 
 // Fused junk after the closing paren lexes into the same Unquoted token
@@ -81,7 +100,10 @@ fn issue149_fused_junk_after_paren_is_parse_error() {
 #[test]
 fn issue149_missing_close_paren_is_parse_error() {
     let (_d, dir) = setup();
-    let input = format!("aa = {{include file(\"{}/exists.conf\", b = \"ww\"}}\n", dir);
+    let input = format!(
+        "aa = {{include file(\"{}/exists.conf\", b = \"ww\"}}\n",
+        dir
+    );
     assert!(
         hocon::parse(&input).is_err(),
         "missing ')' after include file path must be a parse error"
