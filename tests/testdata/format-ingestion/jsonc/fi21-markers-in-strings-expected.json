@@ -1,0 +1,1 @@
+{"block":"a /* not a comment */ b","sub":"${foo.bar}","url":"https://example.com/a//b"}

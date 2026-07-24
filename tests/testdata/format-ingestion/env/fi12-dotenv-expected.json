@@ -1,0 +1,1 @@
+{"db":{"host":"db.internal"},"foo":"bar","hash":"#fff","quoted":"a\nb","single":"raw ${x} #hash"}

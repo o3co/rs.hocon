@@ -1,0 +1,5 @@
+1: one
+true: yes-key
+sub: "${foo.bar}"
+quoted_octal: "010"
+quoted_norway: "no"

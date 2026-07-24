@@ -1,0 +1,12 @@
+name = "svc"
+port = 8080
+sub = "${foo.bar}"
+
+[db]
+host = "localhost"
+
+[[db.replicas]]
+id = 1
+
+[[db.replicas]]
+id = 2

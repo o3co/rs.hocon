@@ -1,0 +1,1 @@
+{"url": "https://example.com/a//b", "block": "a /* not a comment */ b", "sub": "${foo.bar}"}
