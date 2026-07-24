@@ -147,7 +147,8 @@ fn unescape(s: &str) -> Result<String, String> {
 fn unicode_escape(chars: &[char], i: usize) -> Result<(char, usize), String> {
     let hi = hex4(chars, i + 1)?;
     if !(0xD800..=0xDFFF).contains(&hi) {
-        let c = char::from_u32(hi).ok_or_else(|| format!("\\u{hi:04X} is not a valid codepoint"))?;
+        let c =
+            char::from_u32(hi).ok_or_else(|| format!("\\u{hi:04X} is not a valid codepoint"))?;
         return Ok((c, 4));
     }
     if hi > 0xDBFF {
@@ -254,7 +255,10 @@ mod tests {
     }
 
     fn get(input: &str, key: &str) -> String {
-        parse(input).get(key).cloned().unwrap_or_else(|| panic!("key {key:?} missing"))
+        parse(input)
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| panic!("key {key:?} missing"))
     }
 
     #[test]

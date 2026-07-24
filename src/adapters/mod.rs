@@ -43,9 +43,7 @@ pub mod yaml;
 /// Wrap an already-built object tree as a resolved `Config`.
 pub(crate) fn config_from_object(root: HoconValue, origin: Option<&str>) -> Config {
     match root {
-        HoconValue::Object(fields) => {
-            Config::new_with_meta(fields, origin.map(|s| s.to_owned()))
-        }
+        HoconValue::Object(fields) => Config::new_with_meta(fields, origin.map(|s| s.to_owned())),
         _ => unreachable!("callers pass an object"),
     }
 }

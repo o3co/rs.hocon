@@ -109,6 +109,14 @@
 //! For the full specification, see the
 //! [Lightbend HOCON spec](https://github.com/lightbend/config/blob/main/HOCON.md).
 
+#[cfg(any(
+    feature = "adapters-properties",
+    feature = "adapters-env",
+    feature = "adapters-jsonc",
+    feature = "adapters-toml",
+    feature = "adapters-yaml",
+))]
+pub mod adapters;
 pub mod config;
 pub mod error;
 /// Internal lexer module. Not part of the stable public API.
@@ -135,14 +143,6 @@ pub(crate) mod properties;
 #[doc(hidden)]
 pub mod resolver;
 pub mod value;
-#[cfg(any(
-    feature = "adapters-properties",
-    feature = "adapters-env",
-    feature = "adapters-jsonc",
-    feature = "adapters-toml",
-    feature = "adapters-yaml",
-))]
-pub mod adapters;
 mod value_factory;
 
 #[cfg(feature = "serde")]

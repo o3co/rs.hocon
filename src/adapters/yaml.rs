@@ -21,8 +21,8 @@ use crate::Config;
 
 /// Read YAML text with this module's default library.
 pub fn parse(input: &str, origin: Option<&str>) -> Result<Config, AdapterError> {
-    let docs = YamlLoader::load_from_str(input)
-        .map_err(|e| AdapterError::new(format!("yaml: {e}")))?;
+    let docs =
+        YamlLoader::load_from_str(input).map_err(|e| AdapterError::new(format!("yaml: {e}")))?;
     if docs.len() > 1 {
         return Err(AdapterError::new(
             "yaml: multi-document streams are not supported (spec F5.7); a config is one document",

@@ -19,7 +19,9 @@ fn root() -> PathBuf {
 fn hocon_to_json(v: &HoconValue) -> serde_json::Value {
     match v {
         HoconValue::Object(map) => serde_json::Value::Object(
-            map.iter().map(|(k, e)| (k.clone(), hocon_to_json(e))).collect(),
+            map.iter()
+                .map(|(k, e)| (k.clone(), hocon_to_json(e)))
+                .collect(),
         ),
         HoconValue::Array(items) => {
             serde_json::Value::Array(items.iter().map(hocon_to_json).collect())
