@@ -157,8 +157,8 @@ same item descriptions verbatim.
 ## S8. Unquoted strings
 
 - **S8.1** Forbidden characters rejected (``$ " { } [ ] : = , + # ` ^ ? ! @ * & \``) and whitespace — §Unquoted strings (L245)
-  tests: tests/integration_test.rs:441 (unquoted_forbids_spec_special_chars)
-  status: ✅
+  tests: tests/integration_test.rs:441 (unquoted_forbids_spec_special_chars); tests/issue68_path_empty_segment.rs (backtick, value/key/mid-token + quoted-string guard); tests/testdata/hocon/unquoted-forbidden/uf01–uf04 (fixtures)
+  status: ✅ (backtick was accepted until xx.hocon#68 — the ✅ predating that fix was unverified for this member of the forbidden set)
 - **S8.2** `//` inside an unquoted string starts a comment — §Unquoted strings (L248)
   tests: src/lexer.rs:735 (skips_slash_comments_keeps_newline)
   status: ✅
@@ -286,8 +286,8 @@ same item descriptions verbatim.
   tests: tests/lightbend_test.rs:200 (lightbend_test02_empty_keys_and_quoted_paths)
   status: ✅
 - **S11.7** `a..b` and paths starting/ending with `.` are errors — §Path expressions (L517)
-  tests: tests/testdata/hocon/subst-tokenize/st-err09-empty-segment-leading-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err10-empty-segment-trailing-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err11-empty-segment-double-dot.conf (fixture)
-  status: ✅
+  tests: tests/testdata/hocon/subst-tokenize/st-err09-empty-segment-leading-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err10-empty-segment-trailing-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err11-empty-segment-double-dot.conf (fixture); tests/issue68_path_empty_segment.rs (key position); tests/testdata/hocon/path-empty-segment/pe01–pe08 (fixtures)
+  status: ✅ (the st-err* fixtures only covered substitution position; key position was broken until xx.hocon#68)
 - **S11.8** Path expression always stringifies (single `true` → `"true"`) — §Path expressions (L504)
   tests: tests/integration_test.rs:884 (s11_8_path_expression_stringifies_boolean); tests/integration_test.rs:894 (s11_8_path_expression_stringifies_number)
   status: ✅

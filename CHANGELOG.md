@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — empty path segments in key position rejected (S11.7, [xx.hocon#68](https://github.com/o3co/xx.hocon/issues/68))
+
+- **`a..b: 3`, `.a: 3`, `a...c: 4` and `a...c."": 4` are now parse errors instead of
+  silently collapsing to `{"a":{"b":3}}` / `{"a":3}` / `{"a":{"c":4}}`.** HOCON.md
+  L515-519 is explicit: an empty path element must always be quoted, so `a."".b` is a
+  valid three-element path while `a..b` — and any path starting or ending with `.` —
+  "is invalid and should generate an error". `parse_key` (src/parser.rs) split the
+  unquoted key token on `.` and *filtered out* the empty pieces, so adjacent and
+  leading dots vanished without trace. It now rejects an empty piece unless it is a
+  legitimate leading separator continuing an existing path (`"b.c".d` lexes as `.d`;
+  E13's `a .b` / `a. .b` likewise) or the trailing piece already governed by the
+  existing `trailing_dot` guard. The substitution-path lexer (`parse_subst_body`)
+  already enforced this rule — the two sites stay separate because that one validates
+  a char stream while key paths arrive as tokens with the dots embedded in the text.
+  Quoted empty elements (`a."".b: 3` → `{"a":{"":{"b":3}}}`, S11.6), trailing-dot
+  rejection, and the E13 path-whitespace forms are all unchanged. Pinned by
+  `tests/issue68_path_empty_segment.rs` (xx.hocon `path-empty-segment/pe01–pe08`).
+
+### Fixed — backtick rejected in unquoted strings (S8.1, [xx.hocon#68](https://github.com/o3co/xx.hocon/issues/68))
+
+- **`` a = `t` ``, `` `k` = 1 `` and `` a = x`y `` are now parse errors instead of
+  parsing as an unquoted string / key.** HOCON.md L245-247 lists the forbidden
+  characters for unquoted strings as ``$ " { } [ ] : = , + # ` ^ ? ! @ * & \``;
+  backtick was the only member missing from `is_unquoted_start` and
+  `is_unquoted_continue` (src/lexer.rs), so it leaked into unquoted runs while every
+  other member was rejected. Backtick inside a quoted string remains ordinary content
+  (`a = "x\`y"` → `{"a":"x\`y"}`). `(` and `)` are deliberately NOT in the forbidden
+  set ([xx.hocon#34](https://github.com/o3co/xx.hocon/issues/34)) and are untouched.
+  Pinned by `tests/issue68_path_empty_segment.rs` (xx.hocon
+  `unquoted-forbidden/uf01–uf04`).
+
 ### Fixed — `include file()` no longer swallows same-line sibling fields ([#149](https://github.com/o3co/rs.hocon/issues/149))
 
 - **`aa = {include file("x.conf"), b = "ww"}` now keeps `b`.** After the quoted
