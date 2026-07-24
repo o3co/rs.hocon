@@ -1,0 +1,10 @@
+# An integer key and a boolean key are deliberately in separate mappings:
+# Python's bool is a subclass of int, so 1 and true collide as dict keys and
+# the document is not representable there. See the manifest note.
+ints:
+  1: one
+bools:
+  true: yes-key
+sub: "${foo.bar}"
+quoted_octal: "010"
+quoted_norway: "no"

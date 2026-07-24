@@ -1,0 +1,1 @@
+{"copy":{"host":"localhost","port":5432},"defaults":{"host":"localhost","port":5432},"primary":{"host":"localhost","port":6432}}

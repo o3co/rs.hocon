@@ -1,0 +1,8 @@
+{
+  // a line comment
+  "name": "svc", /* a block
+                    comment */
+  "port": 8080,
+  "list": [1, 2,],
+  "nested": { "flag": true, },
+}

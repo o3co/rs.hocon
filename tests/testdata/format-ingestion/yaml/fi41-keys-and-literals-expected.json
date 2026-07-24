@@ -1,0 +1,1 @@
+{"bools":{"true":"yes-key"},"ints":{"1":"one"},"quoted_norway":"no","quoted_octal":"010","sub":"${foo.bar}"}

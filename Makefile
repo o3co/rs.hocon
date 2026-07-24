@@ -37,6 +37,10 @@ testdata:
 	tar xzf "$$tmpdir/archive.tar.gz" -C "$$tmpdir" --strip-components=1; \
 	cp -R "$$tmpdir/testdata/hocon/." "$(TESTDATA_DIR)/"; \
 	cp -R "$$tmpdir/expected/hocon/." "$(EXPECTED_DIR)/"; \
+	if [ -d "$$tmpdir/testdata/format-ingestion" ]; then \
+	  rm -rf tests/testdata/format-ingestion; \
+	  cp -R "$$tmpdir/testdata/format-ingestion" tests/testdata/format-ingestion; \
+	fi; \
 	printf '%s\n' "$$sha" > .xx-hocon-version; \
 	echo "Done. Fetched $$sha"
 

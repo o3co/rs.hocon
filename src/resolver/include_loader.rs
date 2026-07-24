@@ -114,7 +114,12 @@ fn load_single_include(
 
     // Handle .properties files specially
     if candidate.extension().and_then(|e| e.to_str()) == Some("properties") {
-        let hv = crate::properties::properties_to_hocon(&content);
+        let hv = crate::properties::properties_to_hocon(&content).map_err(|e| ResolveError {
+            message: format!("failed to parse {}: {}", candidate.display(), e),
+            path: candidate.display().to_string(),
+            line: 0,
+            col: 0,
+        })?;
         if let HoconValue::Object(fields) = hv {
             let mut obj = ResObj::new();
             for (k, v) in fields {

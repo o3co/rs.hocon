@@ -18,10 +18,29 @@ default = []
 serde = ["dep:serde", "dep:serde_json"]
 include-package = []
 
+# Format adapters. Each is opt-in so the default build still depends on
+# indexmap alone; properties and env need nothing extra.
+adapters-properties = []
+adapters-env = []
+adapters-jsonc = ["dep:serde_json"]
+adapters-toml = ["dep:toml"]
+adapters-yaml = ["dep:yaml-rust2"]
+# The fixture harness in tests/format_ingestion_test.rs reads JSON manifests,
+# so the umbrella feature pulls serde_json in for tests as well.
+adapters = [
+    "adapters-properties",
+    "adapters-env",
+    "adapters-jsonc",
+    "adapters-toml",
+    "adapters-yaml",
+]
+
 [dependencies]
 indexmap = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+toml = { version = "1", optional = true }
+yaml-rust2 = { version = "0.11", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

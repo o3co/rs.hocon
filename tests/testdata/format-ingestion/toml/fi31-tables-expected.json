@@ -1,0 +1,1 @@
+{"db":{"host":"localhost","replicas":[{"id":1},{"id":2}]},"name":"svc","port":8080,"sub":"${foo.bar}"}

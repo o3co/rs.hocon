@@ -762,13 +762,11 @@ struct. ts and go remain ➖ (no period accessor).
   tests: src/properties.rs (s23_4_forward_object_wins, s23_4_reverse_object_wins, s23_4_deep_forward_object_wins, s23_4_deep_reverse_object_wins); tests/conformance_properties_conflict.rs (pc01-pc04)
   status: ✅ (was ✅ mis-classified; prior ✅ cited converts_to_hocon_value which exercised 'a.b=1\nc=hello' — no conflict; set_nested had two bugs causing silent data-loss on conflict; corrected with object-wins rule + sorted-key processing — Phase 6 #3h)
 - **S23.5** Multi-line values (backslash continuation) — §Note on Java properties similarity (L1587)
-  out-of-scope: declared in each implementation's README — the `.properties` reader supports only basic `key=value` syntax to avoid pulling a full Java properties parser into a non-JVM library.
-  tests: —
-  status: ➖
+  tests: src/properties.rs (joins_continuations, even_backslash_run_is_not_a_continuation, continuation_into_hash_is_value_text, whitespace_is_a_separator, value_keeps_trailing_whitespace); tests/conformance_properties_syntax.rs (ps01, ps03, ps04)
+  status: ✅ — In scope since 2026-07-24 (was ➖). `parse_properties` gained a logical-line pass and an escape pass; the out-of-scope rationale assumed a full Java properties reader was expensive, which it is not.
 - **S23.6** Unicode escapes in `.properties` — §Note on Java properties similarity (L1587)
-  out-of-scope: same rationale as S23.5.
-  tests: —
-  status: ➖
+  tests: src/properties.rs (applies_escape_set, escaped_separator_belongs_to_key, combines_surrogate_pair, rejects_unpaired_surrogate_and_malformed_escapes); tests/conformance_properties_syntax.rs (ps02, ps05)
+  status: ✅ — In scope since 2026-07-24 (was ➖). Surrogate pairs are combined; an unpaired surrogate is an error, since a Rust `String` is UTF-8 and cannot hold one. ts.hocon accepts one, its strings being UTF-16 like Java's (S1.2.6).
 
 ## S24. Conventional config files (JVM)
 
