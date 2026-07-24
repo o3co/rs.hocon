@@ -393,6 +393,46 @@ struct AppConfig {
 let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
 
+## Format adapters
+
+Config files that belong to *other* programs can be mounted as HOCON, so a
+`${...}` in your document can reach into them:
+
+```rust
+use hocon::adapters::env;
+
+// APP_DB__HOST=db.internal  ->  db.host
+let base = env::load(env::Options { prefix: "APP_".into(), ..Default::default() })?;
+
+let opts = hocon::ParseOptions::defaults().with_resolve_substitutions(false);
+let cfg = hocon::parse_string_with_options(src, opts)?;
+let merged = cfg.with_fallback(&base).resolve(hocon::ResolveOptions::defaults())?;
+```
+
+Deferring resolution matters: the plain `parse` resolves as it goes, so a
+`${...}` aimed at the fallback would fail before the fallback is attached.
+
+| Feature | Adapter | Extra dependency |
+| --- | --- | --- |
+| `adapters-properties` | `java.util.Properties`, sharing the `include` syntax layer | — |
+| `adapters-env` | Bulk-mounts a prefixed namespace; also reads `.env` | — |
+| `adapters-jsonc` | JSON with comments and trailing commas | `serde_json` |
+| `adapters-toml` | TOML documents | `toml` |
+| `adapters-yaml` | YAML documents | `yaml-rust2` |
+
+`adapters` enables all five. Every one is opt-in, so the default build still
+depends on `indexmap` alone. Plain JSON needs no adapter — HOCON is a JSON
+superset, so `hocon::parse` accepts it as it stands.
+
+Foreign data stays data: a `${a.b}` in a mounted value is literal text, never a
+reference, because the file belongs to a program that never agreed to HOCON's
+syntax.
+
+For YAML, scalar resolution belongs to the library, not to this crate: whether
+`010` is 8 or 10 is `yaml-rust2`'s answer. `adapters::yaml::from_value` takes an
+already-decoded tree, so a caller who needs a different library or schema
+decodes it themselves and hands the result over.
+
 ## Known Limitations
 
 - **`include url(...)`** is not supported. Fetching remote configuration is outside the scope of this parser. Use your application's HTTP client to fetch the content, then pass it to `parse()`.

@@ -135,6 +135,14 @@ pub(crate) mod properties;
 #[doc(hidden)]
 pub mod resolver;
 pub mod value;
+#[cfg(any(
+    feature = "adapters-properties",
+    feature = "adapters-env",
+    feature = "adapters-jsonc",
+    feature = "adapters-toml",
+    feature = "adapters-yaml",
+))]
+pub mod adapters;
 mod value_factory;
 
 #[cfg(feature = "serde")]
