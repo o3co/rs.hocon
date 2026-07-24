@@ -845,6 +845,11 @@ fn parse_subst_body(
     })
 }
 
+// S8.1 (HOCON.md L245-247) forbidden set for unquoted strings:
+//   $ " { } [ ] : = , + # ` ^ ? ! @ * & \
+// `(` and `)` are deliberately NOT members (xx.hocon#34) — see
+// tests/conformance_unquoted_parens.rs. Backtick IS a member; it was the last
+// one missing from both predicates (xx.hocon#68).
 fn is_unquoted_start(ch: char) -> bool {
     if is_hocon_whitespace(ch) {
         return false;
@@ -866,6 +871,7 @@ fn is_unquoted_start(ch: char) -> bool {
             | '@'
             | '*'
             | '&'
+            | '`'
             | '^'
             | '\\'
     )
@@ -891,6 +897,7 @@ fn is_unquoted_continue(ch: char, next_fn: impl Fn() -> char) -> bool {
             | '@'
             | '*'
             | '&'
+            | '`'
             | '^'
             | '\\'
     ) {

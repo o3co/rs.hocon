@@ -409,9 +409,56 @@ impl<'a> Parser<'a> {
                 let val_line = self.peek_line();
                 let val_col = self.peek_col();
                 self.advance();
-                // Split unquoted key at dots.
-                let new_segments: Vec<String> = val
-                    .split('.')
+                // S11.7 (HOCON.md L515-519): an empty path element must always
+                // be written as a quoted `""`. `a..b` / `.a` / `a...c` are
+                // invalid and must error — the same rule parse_subst_body
+                // already enforces for `${...}` paths ("empty segment in path",
+                // lexer.rs), which cannot be shared verbatim here because that
+                // check runs over a char stream while key paths arrive as
+                // already-lexed tokens with the dots embedded in the text.
+                //
+                // Two empty pieces are legitimate and are skipped:
+                //  - a LEADING empty piece when segments already exist — the dot
+                //    is a separator continuing the path, not a new element
+                //    (`"b.c".d` lexes as `.d`; E13's `a .b` / `a. .b` likewise);
+                //  - a TRAILING empty piece, left to the `trailing_dot`
+                //    machinery below, which lets a continuation token supply the
+                //    next element (`a."".b`) and otherwise errors after the loop.
+                let pieces: Vec<&str> = val.split('.').collect();
+                for (i, piece) in pieces.iter().enumerate() {
+                    if !piece.is_empty() {
+                        continue;
+                    }
+                    let leading = i == 0;
+                    let trailing = i == pieces.len() - 1;
+                    if (leading && !segments.is_empty()) || (trailing && !leading) {
+                        continue;
+                    }
+                    // Point at the offending dot: for a leading empty piece that
+                    // is the token's first char; for an interior one it is the
+                    // second of the adjacent pair, i.e. past the preceding
+                    // pieces and the `i` dots separating them.
+                    let dot_offset =
+                        pieces[..i].iter().map(|p| p.chars().count()).sum::<usize>() + i;
+                    return Err(ParseError {
+                        message: format!(
+                            "path has {} — empty key segment not allowed \
+                             (use a quoted \"\" for an empty element; HOCON.md path rules)",
+                            if leading {
+                                "a leading period '.'"
+                            } else {
+                                "two adjacent periods '.'"
+                            }
+                        ),
+                        line: val_line,
+                        col: val_col + dot_offset,
+                    });
+                }
+                // Split unquoted key at dots. Only the legitimate leading /
+                // trailing empties survive the check above, and both are
+                // handled by the branch logic below rather than as segments.
+                let new_segments: Vec<String> = pieces
+                    .iter()
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())
                     .collect();
