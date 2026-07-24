@@ -32,7 +32,16 @@ pub struct Options {
 
 /// Mount a prefixed slice of the process environment.
 pub fn load(opts: Options) -> Result<Config, AdapterError> {
-    let vars: HashMap<String, String> = std::env::vars().collect();
+    if opts.prefix.is_empty() {
+        return Err(AdapterError::new(
+            "env: a prefix is required when mounting the environment (spec F1.1)",
+        ));
+    }
+    // Filter while iterating rather than collecting the whole environment
+    // first: everything else is never used, and some of it is secret.
+    let vars: HashMap<String, String> = std::env::vars()
+        .filter(|(name, _)| name.starts_with(&opts.prefix))
+        .collect();
     load_from(&vars, opts)
 }
 
