@@ -15,56 +15,137 @@
     "test the library rather than the adapter. See F5 'Scope'."
   ],
   "cases": [
-    {"id": "fi10-bulk", "format": "env", "input": "env/fi10-bulk.env.json", "kind": "env-vars",
-     "expect": "ok", "expected": "env/fi10-bulk-expected.json",
-     "note": "F1.1/F1.2/F1.3 prefix filter, __ separator, lowercased segments"},
-    {"id": "fi11-collision", "format": "env", "input": "env/fi11-collision.env.json", "kind": "env-vars",
-     "expect": "error", "cites": "both map to",
-     "note": "F1.6 two names reach one path and the environment has no order to break the tie"},
-    {"id": "fi12-dotenv", "format": "env", "input": "env/fi12-dotenv.env", "kind": "dotenv",
-     "expect": "ok", "expected": "env/fi12-dotenv-expected.json",
-     "note": "F1.7 the small dialect; ${x} inside single quotes stays literal (F0.2)"},
-    {"id": "fi13-ambiguous-hash", "format": "env", "input": "env/fi13-ambiguous-hash.env", "kind": "dotenv",
-     "expect": "error", "cites": "quote the value",
-     "note": "F1.7 a trailing # is refused rather than guessed at"},
-
-    {"id": "fi20-comments", "format": "jsonc", "input": "jsonc/fi20-comments.jsonc",
-     "expect": "ok", "expected": "jsonc/fi20-comments-expected.json",
-     "note": "F3.2 line and block comments, trailing commas"},
-    {"id": "fi21-markers-in-strings", "format": "jsonc", "input": "jsonc/fi21-markers-in-strings.jsonc",
-     "expect": "ok", "expected": "jsonc/fi21-markers-in-strings-expected.json",
-     "note": "comment markers inside string literals are data; F0.2 ${...} stays literal"},
-    {"id": "fi22-array-root", "format": "jsonc", "input": "jsonc/fi22-array-root.jsonc",
-     "expect": "error", "cites": "F0.3",
-     "note": "F0.3 a config root must be an object"},
-
-    {"id": "fi30-datetimes", "format": "toml", "input": "toml/fi30-datetimes.toml",
-     "expect": "ok", "expected": "toml/fi30-datetimes-expected.json",
-     "note": "F4.2 HOCON has no datetime, so all four TOML date-time types are strings"},
-    {"id": "fi31-tables", "format": "toml", "input": "toml/fi31-tables.toml",
-     "expect": "ok", "expected": "toml/fi31-tables-expected.json",
-     "note": "F4.4 arrays of tables become arrays of objects; F0.2 ${...} stays literal"},
-    {"id": "fi32-infinity", "format": "toml", "input": "toml/fi32-infinity.toml",
-     "expect": "error", "cites": "F0.6",
-     "note": "F0.6 infinity is not representable in HOCON"},
-
-    {"id": "fi40-merge-and-alias", "format": "yaml", "input": "yaml/fi40-merge-and-alias.yaml",
-     "expect": "ok", "expected": "yaml/fi40-merge-and-alias-expected.json",
-     "note": "F5.2 aliases and merge keys resolve before mapping; an explicit key wins over a merged one, and no << may survive"},
-    {"id": "fi41-keys-and-literals", "format": "yaml", "input": "yaml/fi41-keys-and-literals.yaml",
-     "expect": "ok", "expected": "yaml/fi41-keys-and-literals-expected.json",
-     "note": "F5.3 non-string scalar keys stringify; the quoted 010 and no are deliberate — see 'about'"},
-    {"id": "fi42-multidoc", "format": "yaml", "input": "yaml/fi42-multidoc.yaml",
-     "expect": "error", "cites": "F5.7",
-     "note": "F5.7 decoding the first document and dropping the rest would be silent data loss"},
-    {"id": "fi43-empty", "format": "yaml", "input": "yaml/fi43-empty.yaml",
-     "expect": "ok", "expected": "yaml/fi43-empty-expected.json",
-     "note": "F5.9 an empty document is the empty object, as an empty HOCON document is (S3.1)"},
-    {"id": "fi44-binary", "format": "yaml", "input": "yaml/fi44-binary.yaml",
-     "expect": "ok", "expected": "yaml/fi44-binary-expected.json",
-     "note": "F5.5 HOCON has no binary type, so !!binary keeps its base64 text"},
-    {"id": "fi45-nan", "format": "yaml", "input": "yaml/fi45-nan.yaml",
-     "expect": "error", "cites": "F0.6",
-     "note": "F0.6 NaN is not representable in HOCON"}
+    {
+      "id": "fi10-bulk",
+      "format": "env",
+      "input": "env/fi10-bulk.env.json",
+      "kind": "env-vars",
+      "expect": "ok",
+      "expected": "env/fi10-bulk-expected.json",
+      "note": "F1.1/F1.2/F1.3 prefix filter, __ separator, lowercased segments"
+    },
+    {
+      "id": "fi11-collision",
+      "format": "env",
+      "input": "env/fi11-collision.env.json",
+      "kind": "env-vars",
+      "expect": "error",
+      "cites": "both map to",
+      "note": "F1.6 two names reach one path and the environment has no order to break the tie"
+    },
+    {
+      "id": "fi12-dotenv",
+      "format": "env",
+      "input": "env/fi12-dotenv.env",
+      "kind": "dotenv",
+      "expect": "ok",
+      "expected": "env/fi12-dotenv-expected.json",
+      "note": "F1.7 the small dialect; ${x} inside single quotes stays literal (F0.2)"
+    },
+    {
+      "id": "fi13-ambiguous-hash",
+      "format": "env",
+      "input": "env/fi13-ambiguous-hash.env",
+      "kind": "dotenv",
+      "expect": "error",
+      "cites": "quote the value",
+      "note": "F1.7 a trailing # is refused rather than guessed at"
+    },
+    {
+      "id": "fi20-comments",
+      "format": "jsonc",
+      "input": "jsonc/fi20-comments.jsonc",
+      "expect": "ok",
+      "expected": "jsonc/fi20-comments-expected.json",
+      "note": "F3.2 line and block comments, trailing commas"
+    },
+    {
+      "id": "fi21-markers-in-strings",
+      "format": "jsonc",
+      "input": "jsonc/fi21-markers-in-strings.jsonc",
+      "expect": "ok",
+      "expected": "jsonc/fi21-markers-in-strings-expected.json",
+      "note": "comment markers inside string literals are data; F0.2 ${...} stays literal"
+    },
+    {
+      "id": "fi22-array-root",
+      "format": "jsonc",
+      "input": "jsonc/fi22-array-root.jsonc",
+      "expect": "error",
+      "cites": "F0.3",
+      "note": "F0.3 a config root must be an object"
+    },
+    {
+      "id": "fi30-datetimes",
+      "format": "toml",
+      "input": "toml/fi30-datetimes.toml",
+      "expect": "ok",
+      "expected": "toml/fi30-datetimes-expected.json",
+      "note": "F4.2 HOCON has no datetime, so all four TOML date-time types are strings"
+    },
+    {
+      "id": "fi31-tables",
+      "format": "toml",
+      "input": "toml/fi31-tables.toml",
+      "expect": "ok",
+      "expected": "toml/fi31-tables-expected.json",
+      "note": "F4.4 arrays of tables become arrays of objects; F0.2 ${...} stays literal"
+    },
+    {
+      "id": "fi32-infinity",
+      "format": "toml",
+      "input": "toml/fi32-infinity.toml",
+      "expect": "error",
+      "cites": "F0.6",
+      "note": "F0.6 infinity is not representable in HOCON"
+    },
+    {
+      "id": "fi40-merge-and-alias",
+      "format": "yaml",
+      "input": "yaml/fi40-merge-and-alias.yaml",
+      "expect": "ok",
+      "expected": "yaml/fi40-merge-and-alias-expected.json",
+      "note": "F5.2 aliases and merge keys resolve before mapping; an explicit key wins over a merged one, and no << may survive"
+    },
+    {
+      "id": "fi41-keys-and-literals",
+      "format": "yaml",
+      "input": "yaml/fi41-keys-and-literals.yaml",
+      "expect": "ok",
+      "expected": "yaml/fi41-keys-and-literals-expected.json",
+      "note": "F5.3 non-string scalar keys stringify. The integer and boolean keys sit in separate mappings on purpose: Python's bool subclasses int, so 1 and true collide as dict keys and a document with both as siblings is not representable there — a language-natural divergence, like S1.2.6. The quoted 010 and no are deliberate; see 'about'."
+    },
+    {
+      "id": "fi42-multidoc",
+      "format": "yaml",
+      "input": "yaml/fi42-multidoc.yaml",
+      "expect": "error",
+      "cites": "F5.7",
+      "note": "F5.7 decoding the first document and dropping the rest would be silent data loss"
+    },
+    {
+      "id": "fi43-empty",
+      "format": "yaml",
+      "input": "yaml/fi43-empty.yaml",
+      "expect": "ok",
+      "expected": "yaml/fi43-empty-expected.json",
+      "note": "F5.9 an empty document is the empty object, as an empty HOCON document is (S3.1)"
+    },
+    {
+      "id": "fi44-binary",
+      "format": "yaml",
+      "input": "yaml/fi44-binary.yaml",
+      "expect": "ok",
+      "expected": "yaml/fi44-binary-expected.json",
+      "note": "F5.5 HOCON has no binary type, so !!binary keeps its base64 text"
+    },
+    {
+      "id": "fi45-nan",
+      "format": "yaml",
+      "input": "yaml/fi45-nan.yaml",
+      "expect": "error",
+      "cites": "F0.6",
+      "note": "F0.6 NaN is not representable in HOCON"
+    }
   ]
 }
