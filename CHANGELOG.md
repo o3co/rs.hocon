@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `include file()` no longer swallows same-line sibling fields ([#149](https://github.com/o3co/rs.hocon/issues/149))
+
+- **`aa = {include file("x.conf"), b = "ww"}` now keeps `b`.** After the quoted
+  path of a `file()` include, the parser skipped everything up to the end of
+  the line instead of consuming just the closing `)`, so any `, field = value`
+  following the include inside an object literal was silently dropped —
+  regardless of whether the included file existed. The parser now consumes
+  only the closing-paren token(s) — spaced forms like
+  `required( file( "x" ) )` lex as consecutive `)` tokens and are consumed
+  too, while a fused `)junk` token is not treated as a closing paren.
+  Behaviour note: junk after the include path (spaced or fused with the
+  paren) was previously skipped silently; it now surfaces as a parse error,
+  and a `file()` include with no closing `)` at all is now a parse error as
+  well.
+  Found by the harvested ecosystem corpus
+  ([xx.hocon#66](https://github.com/o3co/xx.hocon/pull/66),
+  `mikai233-hocon-rs/demo.conf`). Pinned by
+  `tests/issue149_include_file_trailing_fields.rs`.
+
 ## [1.9.0] - 2026-07-23
 
 Cross-impl release coordinated to land at v1.9.0 across ts.hocon / go.hocon / rs.hocon / py.hocon. Covers the two same-day spec corrections from [xx.hocon#62](https://github.com/o3co/xx.hocon/pull/62) (S3.1 — empty document parses to `{}`) and [xx.hocon#64](https://github.com/o3co/xx.hocon/pull/64) (S3.5 — array-root document rejected with a type error), plus the S19.8 case-sensitive duration units breaking change (queued since the previous cycle, shipped here). MINOR (not PATCH): rs adds public API surface (the `HoconError::Config(ConfigError)` variant — additive, `HoconError` is `#[non_exhaustive]`), and the error-taxonomy / empty-document behavior changes are consumer-observable. `Cargo.toml` bumped to 1.9.0 in this release-prep (the publish workflow's `if TAG_VERSION != CURRENT` guard makes this idempotent).
