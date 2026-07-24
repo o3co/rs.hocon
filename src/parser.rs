@@ -820,11 +820,14 @@ impl<'a> Parser<'a> {
             }
             path = self.peek_value().to_string();
             self.advance();
-            // Skip closing ) and anything else on this line
-            while self.peek_kind() != TokenKind::Newline
-                && self.peek_kind() != TokenKind::RBrace
-                && self.peek_kind() != TokenKind::Eof
-            {
+            // Consume the closing paren token(s): `))` lexes fused, but spaced
+            // forms like `required( file( "x" ) )` produce consecutive
+            // standalone ")" tokens, so loop while the next token is
+            // paren-initial. Anything else stays in the stream: an include
+            // inside an object literal may be followed by `, field = value`
+            // on the same line (issue #149 — the previous skip-to-end-of-line
+            // here swallowed those sibling fields).
+            while self.peek_kind() == TokenKind::Unquoted && self.peek_value().starts_with(')') {
                 self.advance();
             }
         } else {
