@@ -18,8 +18,8 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master branch, pinned 2026-07-25
         with:
           toolchain: ${{ matrix.rust }}
       # No cache: `make testdata` fetches the fixtures fresh each run (a small
@@ -49,29 +49,27 @@ jobs:
       # a release.
       - run: cargo test --all-features
         if: matrix.rust == 'stable'
-      # MSRV cannot run the line above: `adapters-toml` pulls toml 1.x, whose
-      # manifest is edition 2024 and therefore unparseable by 1.82 (it fails
-      # before compilation even starts). The other four adapters do build at
-      # MSRV, so compile-check them here; their tests run on the stable rows.
-      # Enabling `adapters` (the umbrella) is what gates the test suites, so
-      # this partial set is deliberately a `check`, not a `test`.
-      - name: Compile-check MSRV-supported adapters
+      # MSRV runs the adapter suites too, which is what keeps `rust-version`
+      # honest for EVERY feature combination rather than just the default
+      # build. It works because `toml` is capped to its 1.0 line (see
+      # Cargo.toml); if a dependency raises its MSRV past 1.82 this job fails,
+      # which is the drift detection a documentation-only note could not give.
+      - run: cargo test --all-features
         if: matrix.rust != 'stable'
-        run: cargo check --features adapters-properties,adapters-env,adapters-jsonc,adapters-yaml,serde
 
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       # No cache — see the test job above.
       - name: Fetch testdata fixtures
         run: make testdata
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@e62b3bdab54265ba809383c8707cb0600da93f19 # cargo-llvm-cov
       # --all-features so the adapter modules are measured too; under
       # --features serde they were reported as uncovered dead code.
       - run: cargo llvm-cov --all-features --lcov --output-path lcov.info
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}

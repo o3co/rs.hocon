@@ -59,9 +59,10 @@ All pull requests must pass `cargo test`, `cargo test --features serde` and
 
 - **Format**: Run `cargo fmt` before committing. CI enforces `cargo fmt --check`.
 - **Lint**: Run `cargo clippy -- -D warnings` and
-  `cargo clippy --all-features -- -D warnings` (the adapter modules are
-  feature-gated, so the first command never sees them). CI enforces zero
-  warnings for both.
+  `cargo clippy --all-features --all-targets -- -D warnings` (the adapter
+  modules are feature-gated, so the first command never sees them;
+  `--all-targets` also covers tests and examples). CI enforces zero warnings
+  for both.
 - **Error handling**: Use `Result` and `Option` patterns. Avoid `.unwrap()` in
   library code.
 - **Visibility**: Use `pub(crate)` for internal modules and helpers. Only expose
@@ -73,7 +74,9 @@ All pull requests must pass `cargo test`, `cargo test --features serde` and
 
 1. Fork the repository and branch from `develop`.
 2. Write your changes with tests.
-3. Run `cargo fmt`, `cargo clippy --all-features -- -D warnings`, and `make test`.
+3. Run `cargo fmt`, both clippy configurations (`cargo clippy -- -D warnings` and
+   `cargo clippy --all-features --all-targets -- -D warnings` — CI enforces
+   both), and `make test`.
 4. Open a PR against `develop` with a clear description of what changed and why.
 5. Link any related issues.
 
