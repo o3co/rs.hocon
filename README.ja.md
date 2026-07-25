@@ -261,6 +261,16 @@ crate が **1.85** を要求します。それ以外の feature (他の 4 つの
 - **ローカル開発で環境変数を必須にしない**: デフォルトだけで動くようにしましょう
 - **必須の環境変数を文書化**: プロジェクトの README や `.env.example` にリストしましょう
 
+**UTF-8 でないエントリは致命的エラーではなく、スキップされます。** 名前または値が
+妥当な UTF-8 でない環境変数エントリは、このクレートがプロセス環境を読むすべての箇所
+（`parse`、`parse_file`、`use_system_environment` 付きの `Config::resolve`、
+`adapters::env::load`）で無視されます。ここで保証されるのは次の挙動です:
+スキップされた変数を指す `${VAR}` は、その変数が **未設定** の場合とまったく同じに
+振る舞います — `${?VAR}` は未定義となり、`${VAR}` は通常の「未解決の置換」エラーに
+なります。ロス付き変換されたテキストに解決されることはないため、UTF-8 でないバイト列
+が壊れたデータとして設定に紛れ込むことはありません。UTF-8 でない **名前** は、そもそも
+UTF-8 の HOCON ソースからは参照できません。
+
 ### 開発 / 本番の分離
 
 ```text
@@ -293,6 +303,84 @@ struct AppConfig {
 // `serde` フィーチャーが必要
 let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
 ```
+
+## フォーマットアダプター
+
+*他の* プログラムが所有する設定ファイルを HOCON としてマウントできます。これにより、
+自分のドキュメント内の `${...}` からそれらの値を参照できます:
+
+```rust
+use hocon::adapters::env;
+
+// APP_DB__HOST=db.internal  ->  db.host
+let base = env::load(env::Options { prefix: "APP_".into(), ..Default::default() })?;
+
+let opts = hocon::ParseOptions::defaults().with_resolve_substitutions(false);
+let cfg = hocon::parse_string_with_options(src, opts)?;
+let merged = cfg.with_fallback(&base).resolve(hocon::ResolveOptions::defaults())?;
+```
+
+解決を遅延させることが重要です: 通常の `parse` は読みながら解決するため、フォール
+バックを指す `${...}` はフォールバックが接続される前に失敗してしまいます。
+
+| フィーチャー | アダプター | 追加依存 |
+| --- | --- | --- |
+| `adapters-properties` | `java.util.Properties`（`include` 構文レイヤーを共有） | — |
+| `adapters-env` | プレフィックス付き名前空間の一括マウント。`.env` も読めます | — |
+| `adapters-jsonc` | コメントと末尾カンマを許容する JSON | `serde_json` |
+| `adapters-toml` | TOML ドキュメント | `toml` |
+| `adapters-yaml` | YAML ドキュメント | `yaml-rust2` |
+
+`adapters` は 5 つすべてを有効にします。いずれもオプトインなので、デフォルトビルドの
+依存は `indexmap` だけのままです。プレーンな JSON にアダプターは不要です — HOCON は
+JSON のスーパーセットなので、`hocon::parse` がそのまま受け付けます。
+
+```sh
+cargo add hocon-parser --features adapters        # 5 つすべて
+cargo add hocon-parser --features adapters-env    # 必要なものだけでも可
+```
+
+外部データはデータのままです: マウントされた値の中の `${a.b}` はリテラルなテキストで
+あり、参照にはなりません。そのファイルは HOCON の構文に同意していないプログラムのもの
+だからです。
+
+### 環境変数名からパスへの変換
+
+**階層を作るのは `__` だけです。** 単一の `_` はセグメントの一部として残り、変数名の中の
+リテラルな `.` はセパレーターではなくキーの *文字* として扱われます:
+
+```text
+APP_DB__MAX_CONN=10   ->  db.max_conn      （ネスト: "db" が "max_conn" を含む）
+APP_FOO.BAR=flat      ->  "foo.bar"        （ドットを含む 1 つのトップレベルキー）
+```
+
+後者は単一のキーなので、クォート付きパス `cfg.get_string("\"foo.bar\"")` で読みます。
+一方 `APP_FOO__BAR` は `cfg.get_string("foo.bar")` で読みます。両者は別々のパスなので、
+同時に設定しても衝突しません。セグメントは変換後に小文字化されます。
+
+*実際に* 同じパスへ変換される 2 つの変数（`APP_A__B` と `APP_a__b`）は、暗黙の
+last-wins ではなくエラーになります。環境変数の列挙順は決定的ではないからです。`.env`
+ファイルには明確な行順があるため、そちらでは通常どおり後の行が優先されます。
+
+`adapters::env::load` は [環境変数](#環境変数) に記載したポリシーと同じく UTF-8 でない
+エントリをスキップします。スキップされたエントリは、マウントされたサブツリーに単に
+現れません。
+
+### JSONC のコメントはトークンを分離します
+
+コメントは削除されるのではなく空白に置き換えられるため、前後のトークンが連結されて
+しまうことはありません:
+
+```jsonc
+{"a": 1/*x*/2}   // 構文エラー — 数値 12 にはなりません
+```
+
+### YAML のスカラー解決はライブラリの答えです
+
+YAML については、スカラーの解決はこのクレートではなくライブラリの責務です:
+`010` が 8 なのか 10 なのかは `yaml-rust2` の答えです。`adapters::yaml::from_value` は
+デコード済みのツリーを受け取るので、別のライブラリやスキーマが必要な呼び出し側は
+自分でデコードして、その結果を渡せます。
 
 ## 既知の制約
 

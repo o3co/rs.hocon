@@ -293,11 +293,17 @@ impl Parser {
     }
 
     /// Parse a HOCON string using the registered package registry.
+    ///
+    /// Inherits the process environment, skipping entries whose name or value
+    /// is not valid UTF-8; such a variable resolves as if it were unset.
     pub fn parse(self, input: &str) -> Result<Config, HoconError> {
         self.parse_with_env(input, &system_env_vars().collect())
     }
 
     /// Parse a HOCON file using the registered package registry.
+    ///
+    /// Inherits the process environment, skipping entries whose name or value
+    /// is not valid UTF-8; such a variable resolves as if it were unset.
     pub fn parse_file(self, path: impl AsRef<Path>) -> Result<Config, HoconError> {
         self.parse_file_with_env(path, &system_env_vars().collect())
     }
@@ -431,6 +437,12 @@ pub(crate) fn system_env_vars() -> impl Iterator<Item = (String, String)> {
 }
 
 /// Parse a HOCON string into a Config.
+///
+/// Inherits the process environment for `${VAR}` resolution. Entries whose
+/// name or value is not valid UTF-8 are skipped rather than converted
+/// lossily, so such a variable resolves as if it were unset: `${?VAR}` is
+/// undefined and `${VAR}` is the usual unresolved-substitution error. A
+/// non-UTF-8 name is unreachable from UTF-8 HOCON source anyway.
 pub fn parse(input: &str) -> Result<Config, HoconError> {
     parse_with_env(input, &system_env_vars().collect())
 }
@@ -512,6 +524,12 @@ pub fn parse_file_with_options<P: AsRef<Path>>(
 }
 
 /// Parse a HOCON file into a Config.
+///
+/// Inherits the process environment for `${VAR}` resolution. Entries whose
+/// name or value is not valid UTF-8 are skipped rather than converted
+/// lossily, so such a variable resolves as if it were unset: `${?VAR}` is
+/// undefined and `${VAR}` is the usual unresolved-substitution error. A
+/// non-UTF-8 name is unreachable from UTF-8 HOCON source anyway.
 pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Config, HoconError> {
     parse_file_with_env(path, &system_env_vars().collect())
 }

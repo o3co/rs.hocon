@@ -362,6 +362,16 @@ The four parser implementations ([ts.hocon](https://github.com/o3co/ts.hocon), [
 - **Never require env vars for local development**: Defaults should work out of the box
 - **Document required env vars**: List them in your project's README or a `.env.example`
 
+**Non-UTF-8 entries are skipped, not fatal.** An environment entry whose name or
+value is not valid UTF-8 is ignored wherever this crate reads the process
+environment (`parse`, `parse_file`, `Config::resolve` with
+`use_system_environment`, and `adapters::env::load`). The consequence you can
+rely on: a `${VAR}` naming a skipped variable behaves exactly as if the variable
+were **unset** — `${?VAR}` is undefined and `${VAR}` is the usual
+"unresolved substitution" error. It never resolves to lossily-converted text, so
+a byte sequence that is not UTF-8 cannot reach your config as mangled data.
+A non-UTF-8 *name* is unreachable from UTF-8 HOCON source in the first place.
+
 ### Dev / Prod Separation
 
 ```text
@@ -426,9 +436,50 @@ Deferring resolution matters: the plain `parse` resolves as it goes, so a
 depends on `indexmap` alone. Plain JSON needs no adapter — HOCON is a JSON
 superset, so `hocon::parse` accepts it as it stands.
 
+```sh
+cargo add hocon-parser --features adapters        # all five
+cargo add hocon-parser --features adapters-env    # or just the one you need
+```
+
 Foreign data stays data: a `${a.b}` in a mounted value is literal text, never a
 reference, because the file belongs to a program that never agreed to HOCON's
 syntax.
+
+### How env variable names become paths
+
+**`__` is the only thing that creates hierarchy.** A single `_` stays part of
+the segment, and a literal `.` in a variable name is key *text* — not a
+separator:
+
+```text
+APP_DB__MAX_CONN=10   ->  db.max_conn      (nested: "db" contains "max_conn")
+APP_FOO.BAR=flat      ->  "foo.bar"        (one top-level key that contains a dot)
+```
+
+The second form is a single key, so it is read with a quoted path —
+`cfg.get_string("\"foo.bar\"")` — while `APP_FOO__BAR` is read as
+`cfg.get_string("foo.bar")`. They are distinct paths and can be set at the same
+time without conflicting. Segments are lowercased after mapping.
+
+Two variables that *do* map to the same path (`APP_A__B` and `APP_a__b`) are an
+error rather than a silent last-wins, because environment iteration order is not
+deterministic. A `.env` file has a definite line order, so there the later line
+wins as usual.
+
+`adapters::env::load` skips non-UTF-8 entries under the same policy described in
+[Environment Variables](#environment-variables): a skipped entry is simply
+absent from the mounted subtree.
+
+### JSONC comments separate tokens
+
+A comment is replaced by whitespace, never removed outright, so it can never
+splice its neighbors together:
+
+```jsonc
+{"a": 1/*x*/2}   // syntax error — NOT the number 12
+```
+
+### YAML scalar resolution is the library's answer
 
 For YAML, scalar resolution belongs to the library, not to this crate: whether
 `010` is 8 or 10 is `yaml-rust2`'s answer. `adapters::yaml::from_value` takes an

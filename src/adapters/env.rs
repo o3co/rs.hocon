@@ -3,6 +3,34 @@
 //! This is the bulk-mount case: a whole prefixed namespace becomes a config
 //! subtree. Reading one variable needs nothing from here — HOCON's own
 //! `${?VAR}` already does that.
+//!
+//! # How names become paths
+//!
+//! `__` is the only thing that creates hierarchy. A single `_` stays part of
+//! the segment, and a literal `.` is key *text*, not a separator (spec F1.2):
+//!
+//! ```text
+//! APP_DB__MAX_CONN=10   ->  db.max_conn    (nested)
+//! APP_FOO.BAR=flat      ->  "foo.bar"      (one key that contains a dot)
+//! ```
+//!
+//! The two spellings are distinct paths, so they coexist: the first is read as
+//! `cfg.get_string("foo.bar")`, the second needs the quoted path
+//! `cfg.get_string("\"foo.bar\"")`. Segments are lowercased after mapping
+//! (F1.3).
+//!
+//! Two names that really do map to one path (`APP_A__B` and `APP_a__b`) are an
+//! error, not a last-wins, because environment iteration order is not
+//! deterministic (F1.6). A `.env` file has a definite line order, so there the
+//! later line wins (F0.7).
+//!
+//! # Non-UTF-8 entries
+//!
+//! [`load`] skips any entry whose name or value is not valid UTF-8, matching
+//! the policy the rest of the crate applies to the process environment: a
+//! non-UTF-8 name cannot be spelled in UTF-8 HOCON source, and skipping a
+//! value is deterministic where lossy conversion would silently mangle it. A
+//! skipped entry is simply absent from the mounted subtree.
 
 use std::collections::HashMap;
 

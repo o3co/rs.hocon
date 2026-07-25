@@ -4,6 +4,10 @@
 //! Plain JSON needs no adapter: HOCON is a JSON superset, so `hocon::parse`
 //! already accepts a `.json` file. This exists for the two things HOCON does
 //! not accept, block comments and trailing commas.
+//!
+//! Comments are **token-separating** (spec F3.2): a comment is replaced by
+//! whitespace, never deleted, so it can never splice its neighbors into one
+//! token. `{"a": 1/*x*/2}` is a syntax error rather than the number `12`.
 
 use indexmap::IndexMap;
 use serde_json::Value as JsonValue;
