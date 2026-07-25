@@ -61,7 +61,74 @@ fn env_refuses_a_collision() {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
     let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
-    assert!(err.message.contains("both map to"), "{}", err.message);
+    assert_eq!(err.message, "env: APP_A__B and APP_a__b both map to a.b");
+}
+
+/// The collision message renders the path as a HOCON path expression: a
+/// segment that is not safely bare is quoted, and quoted exactly once. The
+/// earlier version wrapped `display_path`'s own output in a second pair of
+/// quotes, producing the unparseable `a."foo.bar""`.
+#[test]
+fn env_collision_message_quotes_a_dotted_segment_exactly_once() {
+    let vars: HashMap<String, String> = [("APP_A__FOO.BAR", "1"), ("APP_a__FOO.BAR", "2")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
+    assert_eq!(
+        err.message,
+        "env: APP_A__FOO.BAR and APP_a__FOO.BAR both map to a.\"foo.bar\""
+    );
+}
+
+/// Two distinct paths must never render identically, or a collision report
+/// cannot be acted on. A segment holding a literal `"` is escaped.
+#[test]
+fn env_collision_message_escapes_quotes_in_a_segment() {
+    let vars: HashMap<String, String> = [("APP_A\"B", "1"), ("APP_a\"b", "2")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
+    assert!(
+        err.message.ends_with(r#"both map to "a\"b""#),
+        "{}",
+        err.message
+    );
+}
+
+/// F1.3 — ASCII-only folding. Rust's full Unicode `to_lowercase` maps `İ`
+/// (U+0130) to `i` + U+0307, which would make `APP_İ` collide with `APP_I`;
+/// Go's simple mapping would not. Pinning to ASCII keeps the four
+/// implementations in agreement.
+#[test]
+fn env_lowercases_ascii_only() {
+    let vars: HashMap<String, String> = [("APP_\u{130}", "dotted"), ("APP_I", "plain")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let cfg = env::load_from(&vars, env_opts("APP_")).expect("must not collide");
+    assert_eq!(cfg.get_string("\"\u{130}\"").unwrap(), "dotted");
+    assert_eq!(cfg.get_string("i").unwrap(), "plain");
+}
+
+/// A deep path must be refused, not built. `set_nested` recurses per segment
+/// and the resulting tree drops recursively, so an unbounded depth overflows
+/// the stack — an abort, which no `catch_unwind` can contain.
+#[test]
+fn env_refuses_an_absurdly_deep_path() {
+    let name = format!("APP_{}", vec!["a"; 5000].join("__"));
+    let vars: HashMap<String, String> = [(name, "v".to_string())].into_iter().collect();
+    let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
+    assert!(err.message.contains("segments deep"), "{}", err.message);
+}
+
+/// The same cap protects `parse_dotenv`, which takes arbitrary file text.
+#[test]
+fn dotenv_refuses_an_absurdly_deep_path() {
+    let src = format!("{}=v\n", vec!["a"; 5000].join("__"));
+    let err = env::parse_dotenv(&src, env::Options::default()).unwrap_err();
+    assert!(err.message.contains("segments deep"), "{}", err.message);
 }
 
 /// F1.2 — a literal `.` in the variable name is key text, not a boundary;
@@ -151,6 +218,15 @@ fn jsonc_block_comment_in_normal_positions_still_parses() {
     assert!(cfg.get_bool("b").unwrap());
 }
 
+/// F3.2 — a lone CR terminates a `//` comment. Otherwise the first `//` in a
+/// CR-delimited file swallows the whole rest of the document.
+#[test]
+fn jsonc_line_comment_ends_at_a_lone_cr() {
+    let cfg = jsonc::parse("{\"a\":1 //c\r,\"b\":2}", None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
+}
+
 #[test]
 fn jsonc_leaves_comment_markers_inside_strings() {
     let cfg = jsonc::parse(r#"{"url": "https://example.com/a//b"}"#, None).unwrap();
@@ -162,6 +238,29 @@ fn jsonc_leaves_comment_markers_inside_strings() {
 fn jsonc_refuses_a_non_object_root() {
     let err = jsonc::parse("[1, 2]", None).unwrap_err();
     assert!(err.message.contains("F0.3"), "{}", err.message);
+}
+
+/// F0.9 — a leading BOM must never end up inside the first key. Windows
+/// editors emit one, and `"\u{feff}a"` makes a lookup of `a` miss while the
+/// document still parses: plausible-but-wrong, the worst outcome available.
+#[test]
+fn adapters_strip_a_leading_bom() {
+    const BOM: &str = "\u{feff}";
+
+    let cfg = jsonc::parse(&format!("{BOM}{{\"a\": 1}}"), None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+
+    let cfg = toml::parse(&format!("{BOM}a = 1"), None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+
+    let cfg = yaml::parse(&format!("{BOM}a: 1"), None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+
+    let cfg = properties::parse(&format!("{BOM}a = 1"), None).unwrap();
+    assert_eq!(cfg.get_string("a").unwrap(), "1");
+
+    let cfg = env::parse_dotenv(&format!("{BOM}A=1"), env::Options::default()).unwrap();
+    assert_eq!(cfg.get_string("a").unwrap(), "1");
 }
 
 #[test]

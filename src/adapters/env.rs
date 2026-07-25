@@ -26,11 +26,19 @@
 //!
 //! # Non-UTF-8 entries
 //!
-//! [`load`] skips any entry whose name or value is not valid UTF-8, matching
-//! the policy the rest of the crate applies to the process environment: a
-//! non-UTF-8 name cannot be spelled in UTF-8 HOCON source, and skipping a
-//! value is deterministic where lossy conversion would silently mangle it. A
-//! skipped entry is simply absent from the mounted subtree.
+//! [`load`] **errors** when an entry matching the mount prefix has a name or
+//! value that is not valid UTF-8 (spec F1.9b). A bulk mount is a request for a
+//! whole namespace, so omitting one key would produce a subtree that looks
+//! complete while the operator's setting is missing, and a stale config
+//! default would then win invisibly. It would also defeat F1.6: if the
+//! undecodable entry were dropped, a colliding name would silently win, making
+//! the surviving value depend on an encoding property of the *other* value —
+//! precisely the nondeterminism F1.6 exists to forbid.
+//!
+//! Entries that do not match the prefix are ignored regardless, so an
+//! undecodable variable elsewhere in the environment never fails a mount. That
+//! is the opposite of the `${VAR}` path, where an undecodable entry is simply
+//! absent (F1.9a) because `${?VAR}` explicitly means "optional".
 
 use std::collections::HashMap;
 
@@ -44,6 +52,11 @@ use crate::Config;
 /// of the segment, so `APP_DB__MAX_CONN` is `db.max_conn` (spec F1.2). Fixed
 /// rather than configurable so every language's adapter nests identically.
 const SEPARATOR: &str = "__";
+
+/// Ceiling on mapped path depth. `set_nested` and the resulting tree's `Drop`
+/// are both recursive, so an unbounded depth overflows the stack and aborts
+/// the process. Nothing legitimate nests this far.
+const MAX_DEPTH: usize = 64;
 
 /// How variable names become config paths.
 #[derive(Debug, Clone, Default)]
@@ -60,11 +73,14 @@ pub struct Options {
 
 /// Mount a prefixed slice of the process environment.
 ///
-/// Entries whose name or value is not valid UTF-8 are **skipped** (the crate's
-/// policy for the whole process environment): a non-UTF-8 name could never be
-/// spelled in UTF-8 HOCON source anyway, and skipping a value is deterministic
-/// where lossy conversion would silently mangle it. A skipped entry simply
-/// does not appear in the mounted subtree.
+/// An entry that matches the prefix but whose name or value is not valid UTF-8
+/// is an **error** (spec F1.9b). A bulk mount is the caller asking for a whole
+/// namespace, so dropping one key would hand back a subtree that looks
+/// complete while the operator's setting is missing — and a stale config
+/// default would then win with no signal anywhere. Entries that do *not* match
+/// the prefix are ignored whether they decode or not, which bounds this to
+/// variables the caller named: an unrelated undecodable entry elsewhere in the
+/// environment can never fail the mount.
 pub fn load(opts: Options) -> Result<Config, AdapterError> {
     if opts.prefix.is_empty() {
         return Err(AdapterError::new(
@@ -72,10 +88,30 @@ pub fn load(opts: Options) -> Result<Config, AdapterError> {
         ));
     }
     // Filter while iterating rather than collecting the whole environment
-    // first: everything else is never used, and some of it is secret.
-    let vars: HashMap<String, String> = crate::system_env_vars()
-        .filter(|(name, _)| name.starts_with(&opts.prefix))
-        .collect();
+    // first: everything else is never used, and some of it is secret. The
+    // prefix test runs on the raw bytes so an undecodable *name* can still be
+    // matched against the (ASCII) prefix — ASCII bytes survive
+    // `as_encoded_bytes` unchanged on every platform.
+    let mut vars: HashMap<String, String> = HashMap::new();
+    for e in crate::sysenv::entries() {
+        if !e.name_bytes.starts_with(opts.prefix.as_bytes()) {
+            continue;
+        }
+        let undecodable = match (&e.name, &e.value) {
+            (None, _) => "name",
+            (Some(_), None) => "value",
+            (Some(name), Some(value)) => {
+                vars.insert(name.clone(), value.clone());
+                continue;
+            }
+        };
+        return Err(AdapterError::new(format!(
+            "env: {} matches the mount prefix {:?} but its {undecodable} is not valid UTF-8; \
+             a bulk mount cannot silently omit it (spec F1.9)",
+            e.display_name(),
+            opts.prefix,
+        )));
+    }
     load_from(&vars, opts)
 }
 
@@ -105,7 +141,7 @@ pub fn load_from(vars: &HashMap<String, String>, opts: Options) -> Result<Config
             // F1.6: two names can reach one path and the environment has no
             // meaningful order to break the tie with, so neither wins.
             return Err(AdapterError::new(format!(
-                "env: {prev} and {name} both map to \"{}\"",
+                "env: {prev} and {name} both map to {}",
                 display_path(&path)
             )));
         }
@@ -128,7 +164,9 @@ pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> 
     let origin = opts.origin.clone().unwrap_or_else(|| ".env".to_string());
     let mut pairs: Vec<(Vec<String>, String)> = Vec::new();
 
-    let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
+    let normalized = super::strip_bom(input)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
     for (i, raw) in normalized.split('\n').enumerate() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -168,25 +206,52 @@ pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> 
 /// `APP_FOO.BAR` is the single top-level key `"foo.bar"`, distinct from
 /// `APP_FOO__BAR`'s `foo` → `bar`.
 fn to_path(rest: &str, name: &str) -> Result<Vec<String>, AdapterError> {
-    let segs: Vec<String> = rest.split(SEPARATOR).map(|s| s.to_lowercase()).collect();
+    // ASCII-only folding (F1.3). Rust's `to_lowercase` applies the full
+    // Unicode mapping, which turns `İ` (U+0130) into `i` + U+0307 while Go's
+    // simple mapping yields plain `i` — that difference decides whether
+    // `APP_İ` collides with `APP_I`, so the mapping is pinned here rather than
+    // inherited from the stdlib. Environment names are ASCII in practice.
+    let segs: Vec<String> = rest
+        .split(SEPARATOR)
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
     if segs.iter().any(|s| s.is_empty()) {
         return Err(AdapterError::new(format!(
             "env: \"{name}\" produces an empty path segment"
         )));
     }
+    // Depth cap. `set_nested` recurses once per segment and the resulting tree
+    // drops recursively, so an unbounded segment count overflows the stack —
+    // which aborts the process rather than raising a catchable panic. Linux
+    // allows a 128 KiB environment entry and `parse_dotenv` takes arbitrary
+    // file text, so this is reachable from input. A path this deep is a
+    // mistake in every real config, and an error says so.
+    if segs.len() > MAX_DEPTH {
+        return Err(AdapterError::new(format!(
+            "env: \"{name}\" maps to a path {} segments deep, over the limit of {MAX_DEPTH}",
+            segs.len()
+        )));
+    }
     Ok(segs)
 }
 
-/// Render a segment list for an error message. A segment containing a literal
-/// `.` is quoted, the way the resulting key would have to be addressed.
+/// Render a segment list as a HOCON path expression for an error message.
+///
+/// A segment is written bare when it is safely unquoted (`[a-z0-9_-]`, the
+/// shape F1.3 lowercasing produces) and double-quoted otherwise, with `\` and
+/// `"` escaped so two different paths can never render identically. Matches
+/// py.hocon's format so the four implementations report collisions alike.
 fn display_path(segments: &[String]) -> String {
     segments
         .iter()
         .map(|s| {
-            if s.contains('.') {
-                format!("\"{s}\"")
-            } else {
+            let bare = !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+            if bare {
                 s.clone()
+            } else {
+                format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
             }
         })
         .collect::<Vec<_>>()
