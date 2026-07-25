@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-25
+
+### Added — format adapters for config owned by other programs
+
+- **Properties, env, JSONC, TOML and YAML can now be mounted under a HOCON
+  document**, so a `${...}` can reach into a file another program maintains
+  (`hocon::adapters::{properties,env,jsonc,toml,yaml}`). Each is behind a cargo
+  feature (`adapters-properties`, `adapters-env`, `adapters-jsonc`,
+  `adapters-toml`, `adapters-yaml`; `adapters` enables all five), so the default
+  build still resolves to `indexmap` alone. `properties` and `env` add no
+  dependency; `jsonc` uses `serde_json`, `toml` the `toml` crate, `yaml`
+  `yaml-rust2`. Plain JSON needs no adapter, HOCON being a JSON superset.
+- Ingestion is AST-level — a document is decoded and built into a value tree,
+  never rendered to HOCON text. A `${a.b}` in a mounted value stays literal.
+  Parse the host document with `resolve_substitutions = false` before attaching
+  the fallback.
+- **YAML scalar resolution is the library's answer, not a guarantee here**, so
+  `yaml::from_value` takes an already-decoded tree for a caller who needs a
+  different library or schema. `yaml-rust2` is the packaged default; because it
+  leaves merge keys unresolved, `<<` merging is implemented in the adapter — a
+  `<<` surviving as a field is a structural difference, which the spec does own
+  (F5.2), unlike scalar resolution.
+
+### Fixed — `.properties` now accepts the whole java.util.Properties syntax (S23.5, S23.6)
+
+- **Backslash continuations, escapes, and whitespace separators in a
+  `.properties` file were mishandled**, and a continued line was dropped
+  silently. `parse_properties` had implemented roughly the
+  `key=value`-with-comments subset; `b\:c = 2` produced the key `b\` with value
+  `c = 2`, and `a = one\` continued by `two` lost the second line. S23.5/S23.6
+  were out-of-scope until [xx.hocon#73](https://github.com/o3co/xx.hocon/pull/73)
+  brought them in.
+- **Behavior change**: a `.properties` value keeps its trailing whitespace (Java
+  skips whitespace before a value, never after it). Internally `parse_properties`
+  and `properties_to_hocon` now return `Result` so a malformed escape is
+  reportable — the module is `pub(crate)`, so this is **not** a public-API break.
+  A Rust `String` cannot hold an unpaired surrogate, so that is an error rather
+  than a silent replacement character; ts.hocon accepts one, its strings being
+  UTF-16 like Java's (S1.2.6). The syntax layer is shared with
+  `adapters::properties`.
+
 ### Fixed — empty path segments in key position rejected (S11.7, [xx.hocon#68](https://github.com/o3co/xx.hocon/issues/68))
 
 - **`a..b: 3`, `.a: 3`, `a...c: 4` and `a...c."": 4` are now parse errors instead of
@@ -416,7 +457,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/o3co/rs.hocon/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/o3co/rs.hocon/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/o3co/rs.hocon/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/o3co/rs.hocon/compare/v1.7.0...v1.7.1
