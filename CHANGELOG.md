@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A single-line `/* */` comment in a JSONC document no longer splices its
+  neighbors into one token** (`adapters::jsonc`). The comment stripper replaced
+  a block comment with only the newlines it contained, so a comment without any
+  became the empty string: `{"a": 1/*x*/2}` quietly parsed as `12` and
+  `tr/*x*/ue` as `true`. A comment now leaves at least one space behind (spec
+  F3.2), so both are the syntax errors they always should have been.
+
 ## [1.10.0] - 2026-07-25
 
 ### Added — format adapters for config owned by other programs

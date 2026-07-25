@@ -79,8 +79,12 @@ fn convert(v: &JsonValue, at: &str) -> Result<HoconValue, AdapterError> {
 }
 
 /// Remove `//` line comments and block comments, leaving string literals
-/// alone. Newlines inside removed spans are kept so the JSON parser still
-/// reports useful positions.
+/// alone. A comment becomes whitespace, never the empty string: erasing it
+/// outright would splice its neighbors into one token (`1/*x*/2` → `12`,
+/// which is valid JSON), so each block comment leaves at least one space
+/// behind (spec F3.2). Newlines inside removed spans are kept so the JSON
+/// parser still reports useful positions; a `//` comment keeps its
+/// terminating newline the same way, which already separates tokens.
 fn strip_comments(src: &str) -> Result<String, AdapterError> {
     let b: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
@@ -111,6 +115,7 @@ fn strip_comments(src: &str) -> Result<String, AdapterError> {
                     }
                     j += 1;
                 }
+                out.push(' ');
                 i = j + 2;
             }
             c => {

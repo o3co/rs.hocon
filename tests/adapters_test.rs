@@ -98,6 +98,25 @@ fn jsonc_accepts_comments_and_trailing_commas() {
     assert!(cfg.get_bool("c.d").unwrap());
 }
 
+/// F3.2 — a comment is replaced by whitespace, never the empty string, so it
+/// can never splice its neighbors into one token.
+#[test]
+fn jsonc_block_comment_between_tokens_does_not_join_them() {
+    let err = jsonc::parse(r#"{"a": 1/*x*/2}"#, None).unwrap_err();
+    assert!(err.message.contains("jsonc"), "{}", err.message);
+    let err = jsonc::parse(r#"{"a": tr/*x*/ue}"#, None).unwrap_err();
+    assert!(err.message.contains("jsonc"), "{}", err.message);
+}
+
+/// The replacement whitespace must stay invisible to JSON itself: a comment
+/// in every legal position still parses, including tight against a comma.
+#[test]
+fn jsonc_block_comment_in_normal_positions_still_parses() {
+    let cfg = jsonc::parse("{\"a\":/*x*/1/*y*/,\"b\":/* multi\nline */true}", None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert!(cfg.get_bool("b").unwrap());
+}
+
 #[test]
 fn jsonc_leaves_comment_markers_inside_strings() {
     let cfg = jsonc::parse(r#"{"url": "https://example.com/a//b"}"#, None).unwrap();
