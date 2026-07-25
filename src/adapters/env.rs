@@ -58,8 +58,10 @@ pub fn load_from(vars: &HashMap<String, String>, opts: Options) -> Result<Config
     let mut names: Vec<&String> = vars.keys().collect();
     names.sort();
 
-    let mut seen: HashMap<String, &str> = HashMap::new();
-    let mut pairs: Vec<(String, String)> = Vec::new();
+    // Keyed by the segment list itself, so only identical segment lists can
+    // collide — never two distinct paths that happen to share a rendering.
+    let mut seen: HashMap<Vec<String>, &str> = HashMap::new();
+    let mut pairs: Vec<(Vec<String>, String)> = Vec::new();
     for name in names {
         let Some(rest) = name.strip_prefix(&opts.prefix) else {
             continue;
@@ -69,7 +71,8 @@ pub fn load_from(vars: &HashMap<String, String>, opts: Options) -> Result<Config
             // F1.6: two names can reach one path and the environment has no
             // meaningful order to break the tie with, so neither wins.
             return Err(AdapterError::new(format!(
-                "env: {prev} and {name} both map to \"{path}\""
+                "env: {prev} and {name} both map to \"{}\"",
+                display_path(&path)
             )));
         }
         seen.insert(path.clone(), name);
@@ -89,7 +92,7 @@ pub fn load_from(vars: &HashMap<String, String>, opts: Options) -> Result<Config
 /// rather than a guess. No `${...}` expansion.
 pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> {
     let origin = opts.origin.clone().unwrap_or_else(|| ".env".to_string());
-    let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut pairs: Vec<(Vec<String>, String)> = Vec::new();
 
     let normalized = input.replace("\r\n", "\n").replace('\r', "\n");
     for (i, raw) in normalized.split('\n').enumerate() {
@@ -124,44 +127,67 @@ pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> 
 }
 
 /// Strip the prefix, split on `__`, lowercase each segment (F1.2, F1.3).
-fn to_path(rest: &str, name: &str) -> Result<String, AdapterError> {
+///
+/// The path stays a **segment list** from here to the built tree: joining on
+/// `.` and re-splitting later would turn a literal `.` inside a variable name
+/// into a manufactured boundary, when F1.2 says only `__` creates hierarchy.
+/// `APP_FOO.BAR` is the single top-level key `"foo.bar"`, distinct from
+/// `APP_FOO__BAR`'s `foo` → `bar`.
+fn to_path(rest: &str, name: &str) -> Result<Vec<String>, AdapterError> {
     let segs: Vec<String> = rest.split(SEPARATOR).map(|s| s.to_lowercase()).collect();
     if segs.iter().any(|s| s.is_empty()) {
         return Err(AdapterError::new(format!(
             "env: \"{name}\" produces an empty path segment"
         )));
     }
-    Ok(segs.join("."))
+    Ok(segs)
 }
 
-/// Nest dotted paths, applying the objects-win rule over the whole set so the
-/// outcome does not depend on input order (spec F1.8, mirroring F2.5).
-fn nest(mut pairs: Vec<(String, String)>) -> HoconValue {
+/// Render a segment list for an error message. A segment containing a literal
+/// `.` is quoted, the way the resulting key would have to be addressed.
+fn display_path(segments: &[String]) -> String {
+    segments
+        .iter()
+        .map(|s| {
+            if s.contains('.') {
+                format!("\"{s}\"")
+            } else {
+                s.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Nest segment-list paths, applying the objects-win rule over the whole set
+/// so the outcome does not depend on input order (spec F1.8, mirroring F2.5).
+/// The sort is stable, so equal paths keep their line order and F0.7
+/// last-wins still holds for `.env` files.
+fn nest(mut pairs: Vec<(Vec<String>, String)>) -> HoconValue {
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
     let mut root: IndexMap<String, HoconValue> = IndexMap::new();
     for (path, value) in pairs {
-        let segments: Vec<&str> = path.split('.').collect();
         set_nested(
             &mut root,
-            &segments,
+            &path,
             HoconValue::Scalar(ScalarValue::string(value)),
         );
     }
     HoconValue::Object(root)
 }
 
-fn set_nested(map: &mut IndexMap<String, HoconValue>, segments: &[&str], value: HoconValue) {
+fn set_nested(map: &mut IndexMap<String, HoconValue>, segments: &[String], value: HoconValue) {
     if segments.is_empty() {
         return;
     }
     if segments.len() == 1 {
-        if !matches!(map.get(segments[0]), Some(HoconValue::Object(_))) {
-            map.insert(segments[0].to_string(), value);
+        if !matches!(map.get(&segments[0]), Some(HoconValue::Object(_))) {
+            map.insert(segments[0].clone(), value);
         }
         return;
     }
     let entry = map
-        .entry(segments[0].to_string())
+        .entry(segments[0].clone())
         .or_insert_with(|| HoconValue::Object(IndexMap::new()));
     if !matches!(entry, HoconValue::Object(_)) {
         *entry = HoconValue::Object(IndexMap::new());

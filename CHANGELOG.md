@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   became the empty string: `{"a": 1/*x*/2}` quietly parsed as `12` and
   `tr/*x*/ue` as `true`. A comment now leaves at least one space behind (spec
   F3.2), so both are the syntax errors they always should have been.
+- **A literal `.` in an environment variable name no longer becomes a path
+  boundary** (`adapters::env`). The mapped path was joined on `.` and re-split,
+  so `APP_FOO.BAR=v` nested into `foo` → `bar` and falsely collided with
+  `APP_FOO__BAR` under F1.6. Paths are now carried as segment lists end-to-end
+  (amended spec F1.2): `APP_FOO.BAR` yields the single quoted-addressable
+  top-level key `"foo.bar"` and coexists with `APP_FOO__BAR`; only `__` creates
+  hierarchy. Applies to `load`, `load_from` and `parse_dotenv` alike; a genuine
+  post-mapping collision is still an error.
 
 ## [1.10.0] - 2026-07-25
 

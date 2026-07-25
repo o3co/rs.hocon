@@ -64,6 +64,32 @@ fn env_refuses_a_collision() {
     assert!(err.message.contains("both map to"), "{}", err.message);
 }
 
+/// F1.2 — a literal `.` in the variable name is key text, not a boundary;
+/// only `__` creates hierarchy.
+#[test]
+fn env_keeps_a_literal_dot_as_key_text() {
+    let vars: HashMap<String, String> = [("APP_FOO.BAR", "flat")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let cfg = env::load_from(&vars, env_opts("APP_")).unwrap();
+    assert_eq!(cfg.get_string("\"foo.bar\"").unwrap(), "flat");
+    assert!(cfg.get("foo").is_none(), "the dot must not nest");
+}
+
+/// F1.2/F1.6 — `APP_FOO.BAR` and `APP_FOO__BAR` are distinct paths, so they
+/// coexist rather than colliding.
+#[test]
+fn env_literal_dot_does_not_collide_with_the_separator() {
+    let vars: HashMap<String, String> = [("APP_FOO.BAR", "flat"), ("APP_FOO__BAR", "nested")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let cfg = env::load_from(&vars, env_opts("APP_")).unwrap();
+    assert_eq!(cfg.get_string("\"foo.bar\"").unwrap(), "flat");
+    assert_eq!(cfg.get_string("foo.bar").unwrap(), "nested");
+}
+
 /// F1.7 — a deliberately small dialect.
 #[test]
 fn dotenv_reads_the_small_dialect() {
@@ -74,6 +100,14 @@ fn dotenv_reads_the_small_dialect() {
     assert_eq!(cfg.get_string("quoted").unwrap(), "a\nb");
     assert_eq!(cfg.get_string("single").unwrap(), "raw ${x} #hash");
     assert_eq!(cfg.get_string("hash").unwrap(), "#fff");
+}
+
+/// F1.2 applies to `.env` files the same way: the dot stays in the key.
+#[test]
+fn dotenv_keeps_a_literal_dot_as_key_text() {
+    let cfg = env::parse_dotenv("A.B=v\n", env::Options::default()).unwrap();
+    assert_eq!(cfg.get_string("\"a.b\"").unwrap(), "v");
+    assert!(cfg.get("a").is_none(), "the dot must not nest");
 }
 
 #[test]
