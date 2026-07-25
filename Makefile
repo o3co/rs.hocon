@@ -44,5 +44,10 @@ testdata:
 	printf '%s\n' "$$sha" > .xx-hocon-version; \
 	echo "Done. Fetched $$sha"
 
+# `cargo test` alone leaves the adapters untested: their suites are
+# `#![cfg(feature = "adapters")]`, so a featureless run compiles them to empty
+# binaries that pass. --all-features is what actually exercises them.
 test:
 	cargo test
+	cargo test --features serde
+	cargo test --all-features

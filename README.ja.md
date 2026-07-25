@@ -233,7 +233,9 @@ defaults { size = 20 }  # マージ: color は保持、size は更新
 
 ## Minimum Supported Rust Version
 
-MSRV は **1.82** です。
+MSRV は **1.82** です。ただし `adapters-toml` feature のみ例外で、依存する `toml`
+crate が **1.85** を要求します。それ以外の feature (他の 4 つの adapter を含む) は
+1.82 でビルドできます。
 
 ## 関連プロジェクト
 

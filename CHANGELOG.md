@@ -33,6 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never be referenced from UTF-8 HOCON source, and a skipped value makes
   `${?VAR}` resolve as undefined instead of handing over silently mangled
   text.
+- **CI now runs the adapter test suites.** `tests/adapters_test.rs` and
+  `tests/format_ingestion_test.rs` are `#![cfg(feature = "adapters")]`, and
+  every CI command ran only the default and `serde` feature sets — so both
+  compiled to *empty* test binaries and reported success without asserting
+  anything. That is how the two adapter defects above reached a release.
+  `--all-features` runs were added to the test, publish and lint workflows and
+  to `make test` (27 adapter assertions that previously never executed), and
+  the coverage job now measures the adapter modules instead of reporting them
+  as uncovered.
+
+### Changed
+
+- **Documented MSRV exception**: the `adapters-toml` feature requires Rust
+  **1.85** because the `toml` crate's manifest is edition 2024. The crate's
+  MSRV is otherwise unchanged at **1.82**, and the other four adapters build
+  there — the MSRV CI job compile-checks them.
 
 ## [1.10.0] - 2026-07-25
 

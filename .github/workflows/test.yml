@@ -42,6 +42,22 @@ jobs:
         if: matrix.rust != 'stable'
       - run: cargo test --features serde
         if: matrix.rust == 'stable'
+      # The adapter and format-ingestion suites are `#![cfg(feature =
+      # "adapters")]`, so every run above compiles them to EMPTY test binaries
+      # that pass without asserting anything. Without this step the adapters
+      # ship untested — which is exactly how the F1.2 and F3.2 defects reached
+      # a release.
+      - run: cargo test --all-features
+        if: matrix.rust == 'stable'
+      # MSRV cannot run the line above: `adapters-toml` pulls toml 1.x, whose
+      # manifest is edition 2024 and therefore unparseable by 1.82 (it fails
+      # before compilation even starts). The other four adapters do build at
+      # MSRV, so compile-check them here; their tests run on the stable rows.
+      # Enabling `adapters` (the umbrella) is what gates the test suites, so
+      # this partial set is deliberately a `check`, not a `test`.
+      - name: Compile-check MSRV-supported adapters
+        if: matrix.rust != 'stable'
+        run: cargo check --features adapters-properties,adapters-env,adapters-jsonc,adapters-yaml,serde
 
   coverage:
     runs-on: ubuntu-latest
@@ -52,7 +68,9 @@ jobs:
       - name: Fetch testdata fixtures
         run: make testdata
       - uses: taiki-e/install-action@cargo-llvm-cov
-      - run: cargo llvm-cov --features serde --lcov --output-path lcov.info
+      # --all-features so the adapter modules are measured too; under
+      # --features serde they were reported as uncovered dead code.
+      - run: cargo llvm-cov --all-features --lcov --output-path lcov.info
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info

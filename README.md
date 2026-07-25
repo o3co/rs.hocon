@@ -333,7 +333,9 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 
 ## Minimum Supported Rust Version
 
-The MSRV is **1.82**.
+The MSRV is **1.82**, with one exception: the `adapters-toml` feature depends on
+the `toml` crate, which requires **1.85**. Every other feature — including the
+other four adapters — builds at 1.82.
 
 ## Related Projects
 

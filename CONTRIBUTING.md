@@ -25,6 +25,7 @@ git clone https://github.com/o3co/rs.hocon.git
 cd rs.hocon
 cargo test
 cargo test --features serde
+cargo test --all-features
 ```
 
 ## Testing
@@ -41,16 +42,26 @@ cargo test --test serde_test
 # Run with serde feature enabled
 cargo test --features serde
 
+# Run the format-adapter suites. They are `#![cfg(feature = "adapters")]`, so a
+# plain `cargo test` compiles them to EMPTY binaries that pass without
+# asserting anything — this is the only run that exercises them.
+cargo test --all-features
+cargo test --all-features --test adapters_test --test format_ingestion_test
+
 # Run Lightbend equivalence / compliance tests
 cargo test --test lightbend_test
 ```
 
-All pull requests must pass `cargo test` and `cargo test --features serde`.
+All pull requests must pass `cargo test`, `cargo test --features serde` and
+`cargo test --all-features`.
 
 ## Code Style
 
 - **Format**: Run `cargo fmt` before committing. CI enforces `cargo fmt --check`.
-- **Lint**: Run `cargo clippy -- -D warnings`. CI enforces zero warnings.
+- **Lint**: Run `cargo clippy -- -D warnings` and
+  `cargo clippy --all-features -- -D warnings` (the adapter modules are
+  feature-gated, so the first command never sees them). CI enforces zero
+  warnings for both.
 - **Error handling**: Use `Result` and `Option` patterns. Avoid `.unwrap()` in
   library code.
 - **Visibility**: Use `pub(crate)` for internal modules and helpers. Only expose
@@ -62,7 +73,7 @@ All pull requests must pass `cargo test` and `cargo test --features serde`.
 
 1. Fork the repository and branch from `develop`.
 2. Write your changes with tests.
-3. Run `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test --features serde`.
+3. Run `cargo fmt`, `cargo clippy --all-features -- -D warnings`, and `make test`.
 4. Open a PR against `develop` with a clear description of what changed and why.
 5. Link any related issues.
 

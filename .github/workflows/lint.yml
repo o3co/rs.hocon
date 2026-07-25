@@ -15,6 +15,15 @@ jobs:
           components: clippy
       - run: cargo clippy -- -D warnings
       - run: cargo clippy --features serde -- -D warnings
+      # The adapter modules are behind cargo features, so neither run above
+      # lints a single line of them.
+      #
+      # Deliberately not --all-targets: that additionally lints examples and
+      # test targets, where two pre-existing warnings live
+      # (manual_pattern_char_comparison in examples/hocon-json.rs and
+      # items_after_test_module in the resolver). Cleaning those up is its own
+      # change; this gate is here to cover the adapter sources.
+      - run: cargo clippy --all-features -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest
