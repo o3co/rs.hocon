@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tr/*x*/ue` as `true`. A comment now leaves at least one space behind (spec
   F3.2), so both are the syntax errors they always should have been. A lone
   `\r` now also terminates a `//` comment, so the first `//` in a CR-delimited
-  file no longer swallows the rest of the document.
+  file no longer swallows the rest of the document, and every line terminator
+  inside a stripped block comment survives verbatim — previously a `\r\n` pair
+  collapsed to `\n` and a lone `\r` was dropped, drifting the line numbers a
+  decoder reports for anything after the comment.
 - **A literal `.` in an environment variable name no longer becomes a path
   boundary** (`adapters::env`). The mapped path was joined on `.` and re-split,
   so `APP_FOO.BAR=v` nested into `foo` → `bar` and falsely collided with

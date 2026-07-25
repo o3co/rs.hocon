@@ -227,6 +227,40 @@ fn jsonc_line_comment_ends_at_a_lone_cr() {
     assert_eq!(cfg.get_i64("b").unwrap(), 2);
 }
 
+/// F3.2 — a decoder's reported line must point at the right source line, so
+/// every line terminator inside a stripped comment has to survive. The block
+/// stripper kept only `\n`, which collapsed a `\r\n` pair and dropped a lone
+/// `\r` outright.
+#[test]
+fn jsonc_error_line_survives_a_multiline_block_comment() {
+    // The error sits on source line 4 in both encodings.
+    for src in [
+        "{\n  /* c1\n     c2 */\n  \"a\": bad\n}",
+        "{\r\n  /* c1\r\n     c2 */\r\n  \"a\": bad\r\n}",
+    ] {
+        let err = jsonc::parse(src, None).unwrap_err();
+        assert!(
+            err.message.contains("line 4"),
+            "expected line 4, got {:?} for {src:?}",
+            err.message
+        );
+    }
+}
+
+/// A lone `\r` is a line break to an editor but not to `serde_json`, which
+/// counts `\n` only. What this crate owes is that the terminator reaches the
+/// decoder intact rather than being deleted during stripping — so the document
+/// still parses and the comment still separates its neighbours.
+#[test]
+fn jsonc_handles_a_cr_delimited_document() {
+    let cfg = jsonc::parse("{\"a\": 1,\r/* c */\r\"b\": 2}", None).unwrap();
+    assert_eq!(cfg.get_i64("a").unwrap(), 1);
+    assert_eq!(cfg.get_i64("b").unwrap(), 2);
+
+    // The comment is still token-separating even when it holds only a CR.
+    assert!(jsonc::parse("{\"a\": 1/*\r*/2}", None).is_err());
+}
+
 #[test]
 fn jsonc_leaves_comment_markers_inside_strings() {
     let cfg = jsonc::parse(r#"{"url": "https://example.com/a//b"}"#, None).unwrap();
