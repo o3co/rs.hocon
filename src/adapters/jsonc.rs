@@ -18,7 +18,7 @@ use crate::Config;
 
 /// Read JSONC text.
 pub fn parse(input: &str, origin: Option<&str>) -> Result<Config, AdapterError> {
-    let cleaned = strip_trailing_commas(&strip_comments(input)?);
+    let cleaned = strip_trailing_commas(&strip_comments(super::strip_bom(input))?);
     let doc: JsonValue =
         serde_json::from_str(&cleaned).map_err(|e| AdapterError::new(format!("jsonc: {e}")))?;
     if !doc.is_object() {
@@ -101,7 +101,12 @@ fn strip_comments(src: &str) -> Result<String, AdapterError> {
                 i = end;
             }
             '/' if i + 1 < b.len() && b[i + 1] == '/' => {
-                while i < b.len() && b[i] != '\n' {
+                // A lone CR ends the comment too: a classic-Mac or otherwise
+                // CR-delimited file would otherwise have the rest of the
+                // document swallowed by the first `//` (spec F3.2). The
+                // terminator itself is left in place, so it still separates
+                // tokens.
+                while i < b.len() && b[i] != '\n' && b[i] != '\r' {
                     i += 1;
                 }
             }

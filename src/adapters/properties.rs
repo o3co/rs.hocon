@@ -10,7 +10,7 @@ use crate::Config;
 /// drift apart. Values are all strings, and a `${a.b}` among them stays that
 /// literal text (spec F0.2, F2.2).
 pub fn parse(input: &str, origin: Option<&str>) -> Result<Config, AdapterError> {
-    let value = properties_to_hocon(input).map_err(AdapterError::new)?;
+    let value = properties_to_hocon(super::strip_bom(input)).map_err(AdapterError::new)?;
     Ok(config_from_object(value, origin))
 }
 
