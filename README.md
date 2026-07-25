@@ -333,9 +333,9 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 
 ## Minimum Supported Rust Version
 
-The MSRV is **1.82**, with one exception: the `adapters-toml` feature depends on
-the `toml` crate, which requires **1.85**. Every other feature — including the
-other four adapters — builds at 1.82.
+The MSRV is **1.82**, for every feature combination including all five
+adapters. CI runs the full test suite at 1.82 with `--all-features`, so this is
+verified rather than asserted.
 
 ## Related Projects
 
@@ -362,15 +362,22 @@ The four parser implementations ([ts.hocon](https://github.com/o3co/ts.hocon), [
 - **Never require env vars for local development**: Defaults should work out of the box
 - **Document required env vars**: List them in your project's README or a `.env.example`
 
-**Non-UTF-8 entries are skipped, not fatal.** An environment entry whose name or
-value is not valid UTF-8 is ignored wherever this crate reads the process
-environment (`parse`, `parse_file`, `Config::resolve` with
-`use_system_environment`, and `adapters::env::load`). The consequence you can
-rely on: a `${VAR}` naming a skipped variable behaves exactly as if the variable
-were **unset** — `${?VAR}` is undefined and `${VAR}` is the usual
+**Non-UTF-8 entries never abort a parse.** An environment entry whose name or
+value is not valid UTF-8 is treated as absent everywhere this crate resolves
+`${...}` — `parse`, `parse_file`, `Parser::parse`, `Parser::parse_file`,
+`Config::resolve` and `Config::resolve_with` (the latter two with
+`use_system_environment`). A `${VAR}` naming such an entry behaves exactly as if
+the variable were **unset**: `${?VAR}` is undefined and `${VAR}` is the usual
 "unresolved substitution" error. It never resolves to lossily-converted text, so
-a byte sequence that is not UTF-8 cannot reach your config as mangled data.
-A non-UTF-8 *name* is unreachable from UTF-8 HOCON source in the first place.
+a non-UTF-8 byte sequence cannot reach your config as mangled data.
+
+This cannot change the meaning of a config that used to work: `std::env::vars()`
+panicked on the first undecodable entry regardless of which variables the
+document named, so the previous behaviour for anyone affected was a crash, not a
+successful parse.
+
+**A bulk mount is the exception, and errors instead** — see
+[Format adapters](#format-adapters).
 
 ### Dev / Prod Separation
 
@@ -466,9 +473,13 @@ error rather than a silent last-wins, because environment iteration order is not
 deterministic. A `.env` file has a definite line order, so there the later line
 wins as usual.
 
-`adapters::env::load` skips non-UTF-8 entries under the same policy described in
-[Environment Variables](#environment-variables): a skipped entry is simply
-absent from the mounted subtree.
+Unlike `${VAR}`, `adapters::env::load` **errors** if an entry matching the mount
+prefix has a name or value that is not valid UTF-8. A bulk mount is a request
+for a whole namespace, so silently omitting one key would hand back a subtree
+that looks complete while an operator's setting is missing — and a stale config
+default would then win with no signal. Entries outside the prefix are ignored
+whether they decode or not, so an unrelated undecodable variable can never fail
+a mount.
 
 ### JSONC comments separate tokens
 

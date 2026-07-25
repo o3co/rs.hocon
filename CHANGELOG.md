@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a block comment with only the newlines it contained, so a comment without any
   became the empty string: `{"a": 1/*x*/2}` quietly parsed as `12` and
   `tr/*x*/ue` as `true`. A comment now leaves at least one space behind (spec
-  F3.2), so both are the syntax errors they always should have been.
+  F3.2), so both are the syntax errors they always should have been. A lone
+  `\r` now also terminates a `//` comment, so the first `//` in a CR-delimited
+  file no longer swallows the rest of the document.
 - **A literal `.` in an environment variable name no longer becomes a path
   boundary** (`adapters::env`). The mapped path was joined on `.` and re-split,
   so `APP_FOO.BAR=v` nested into `foo` → `bar` and falsely collided with
@@ -23,32 +25,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level key `"foo.bar"` and coexists with `APP_FOO__BAR`; only `__` creates
   hierarchy. Applies to `load`, `load_from` and `parse_dotenv` alike; a genuine
   post-mapping collision is still an error.
-- **A non-UTF-8 environment entry no longer panics `parse` and friends.**
+
+  **Migration**: if you used a `.` in a variable name to build hierarchy, that
+  now produces a single flat key rather than a nested one, and does so *without
+  an error*. `APP_FOO.BAR=v` was reachable as `foo.bar` and is now reachable
+  only as `"foo.bar"`. Use `__` for hierarchy: `APP_FOO__BAR=v`.
+- **A non-UTF-8 environment entry no longer aborts the program.**
   `std::env::vars()` panics while iterating if *any* entry's name or value is
   not valid UTF-8, so every entry point that inherits the process environment
-  — `parse`, `parse_file`, `Config::resolve` / `resolve_with` with
-  `use_system_environment`, `Parser::parse`, and `adapters::env::load` —
-  panicked on an entry the config never mentions. The environment is now read
-  once through `vars_os`, skipping non-UTF-8 entries: a non-UTF-8 name can
-  never be referenced from UTF-8 HOCON source, and a skipped value makes
-  `${?VAR}` resolve as undefined instead of handing over silently mangled
-  text.
+  — `parse`, `parse_file`, `Parser::parse`, `Parser::parse_file`,
+  `Config::resolve` / `resolve_with` with `use_system_environment`, and
+  `adapters::env::load` — panicked on an entry the config never mentions. The
+  environment is now read through `vars_os` in one place (spec F1.9), and what
+  happens to an undecodable entry depends on whether the caller asked for it:
+
+  - **Substitution** (`${VAR}` / `${?VAR}`) treats it as absent — `${?VAR}`
+    falls through to its default, `${VAR}` raises the ordinary unresolved
+    error, and neither ever yields lossily-converted text (F1.9a).
+  - **`adapters::env::load`** *errors* if an entry matching the mount prefix is
+    undecodable (F1.9b). A bulk mount asks for a whole namespace, so omitting a
+    key would return a subtree that looks complete while an operator's setting
+    is missing and a stale default silently wins. Entries outside the prefix
+    are ignored regardless, so an unrelated undecodable variable can never fail
+    a mount.
+
+  No working configuration changes meaning: the previous behaviour for anyone
+  affected was a crash, not a successful parse.
+- **A very long environment variable name or `.env` line no longer aborts the
+  process** (`adapters::env`). Path nesting recurses per segment, and the
+  resulting tree drops recursively, so a name with enough `__` separators
+  overflowed the stack — an abort, which no `catch_unwind` can contain. Linux
+  permits a 128 KiB environment entry and `parse_dotenv` accepts arbitrary file
+  text, so this was reachable from input. Paths deeper than 64 segments are now
+  an error.
+- **A leading UTF-8 BOM is stripped by every adapter** (spec F0.9). The YAML,
+  `.properties` and `.env` adapters admitted it into the first key, so a
+  BOM-prefixed file written by a Windows editor parsed successfully while a
+  lookup of `a` missed the key `"\u{feff}a"` — the value was silently
+  unreachable. JSONC previously failed outright and now parses. The core HOCON
+  parser already ignored it.
+- **Environment key lowercasing is ASCII-only** (spec F1.3). Rust's full
+  Unicode `to_lowercase` maps `İ` (U+0130) to `i` + U+0307 while Go's simple
+  mapping yields plain `i`, which decides whether `APP_İ` collides with `APP_I`
+  under F1.6. The mapping is now pinned rather than inherited from the stdlib,
+  so the four implementations agree.
+- **The F1.6 collision message is a valid path expression.** It wrapped an
+  already-quoted rendering in a second pair of quotes, producing the
+  unparseable `both map to "a."foo.bar""`. Segments are now quoted once, only
+  when needed, with `\` and `"` escaped — `both map to a."foo.bar"` — matching
+  py.hocon so the implementations report collisions identically.
 - **CI now runs the adapter test suites.** `tests/adapters_test.rs` and
   `tests/format_ingestion_test.rs` are `#![cfg(feature = "adapters")]`, and
   every CI command ran only the default and `serde` feature sets — so both
   compiled to *empty* test binaries and reported success without asserting
-  anything. That is how the two adapter defects above reached a release.
+  anything. That is how the adapter defects above reached a release.
   `--all-features` runs were added to the test, publish and lint workflows and
-  to `make test` (27 adapter assertions that previously never executed), and
-  the coverage job now measures the adapter modules instead of reporting them
-  as uncovered.
+  to `make test`, and the coverage job now measures the adapter modules instead
+  of reporting them as uncovered.
 
 ### Changed
 
-- **Documented MSRV exception**: the `adapters-toml` feature requires Rust
-  **1.85** because the `toml` crate's manifest is edition 2024. The crate's
-  MSRV is otherwise unchanged at **1.82**, and the other four adapters build
-  there — the MSRV CI job compile-checks them.
+- **`toml` is capped to its 1.0 line** so the declared MSRV of **1.82** holds
+  for every feature combination. toml 1.1 raised its MSRV to 1.85, which would
+  have made `rust-version` untrue for `adapters-toml` alone — a split Cargo
+  cannot express, leaving a 1.82 user with an `edition2024` manifest error
+  instead of a rust-version diagnostic. The MSRV CI job now runs
+  `cargo test --all-features`, so this is verified on every push rather than
+  documented and hoped for.
+- **docs.rs now renders the adapter modules.** Without
+  `[package.metadata.docs.rs] all-features = true` the feature-gated `adapters`
+  module documented as empty, hiding all of its API documentation.
 
 ## [1.10.0] - 2026-07-25
 
