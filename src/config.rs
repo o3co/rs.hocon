@@ -159,7 +159,7 @@ impl Config {
         };
 
         let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
-            std::env::vars().collect()
+            crate::system_env_vars().collect()
         } else {
             std::collections::HashMap::new()
         };
@@ -251,7 +251,7 @@ impl Config {
         let merged = crate::resolver::merge_unresolved(recv_obj, src_obj);
 
         let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
-            std::env::vars().collect()
+            crate::system_env_vars().collect()
         } else {
             std::collections::HashMap::new()
         };

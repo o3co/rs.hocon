@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level key `"foo.bar"` and coexists with `APP_FOO__BAR`; only `__` creates
   hierarchy. Applies to `load`, `load_from` and `parse_dotenv` alike; a genuine
   post-mapping collision is still an error.
+- **A non-UTF-8 environment entry no longer panics `parse` and friends.**
+  `std::env::vars()` panics while iterating if *any* entry's name or value is
+  not valid UTF-8, so every entry point that inherits the process environment
+  — `parse`, `parse_file`, `Config::resolve` / `resolve_with` with
+  `use_system_environment`, `Parser::parse`, and `adapters::env::load` —
+  panicked on an entry the config never mentions. The environment is now read
+  once through `vars_os`, skipping non-UTF-8 entries: a non-UTF-8 name can
+  never be referenced from UTF-8 HOCON source, and a skipped value makes
+  `${?VAR}` resolve as undefined instead of handing over silently mangled
+  text.
 
 ## [1.10.0] - 2026-07-25
 

@@ -31,6 +31,12 @@ pub struct Options {
 }
 
 /// Mount a prefixed slice of the process environment.
+///
+/// Entries whose name or value is not valid UTF-8 are **skipped** (the crate's
+/// policy for the whole process environment): a non-UTF-8 name could never be
+/// spelled in UTF-8 HOCON source anyway, and skipping a value is deterministic
+/// where lossy conversion would silently mangle it. A skipped entry simply
+/// does not appear in the mounted subtree.
 pub fn load(opts: Options) -> Result<Config, AdapterError> {
     if opts.prefix.is_empty() {
         return Err(AdapterError::new(
@@ -39,7 +45,7 @@ pub fn load(opts: Options) -> Result<Config, AdapterError> {
     }
     // Filter while iterating rather than collecting the whole environment
     // first: everything else is never used, and some of it is secret.
-    let vars: HashMap<String, String> = std::env::vars()
+    let vars: HashMap<String, String> = crate::system_env_vars()
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
     load_from(&vars, opts)
