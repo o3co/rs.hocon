@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — documentation that had drifted away from the code
+
+Nothing was checking the README's factual claims, so they aged with each
+release. The ones that can be recomputed from a source of truth in this
+repository are now pinned by `tests/docs.rs`, which runs in the publish
+workflow — a stale README fails the cut.
+
+- **"Stricter than Lightbend — S8.6 leading-hyphen rejection" described behavior
+  retracted in v1.3.0.** `a = -foo`, `a = -`, and (since v1.9.0) `a.-foo = 1`
+  all parse; the section told readers to quote values that need no quoting. The
+  E8 amendment and its retraction are already recorded in the [1.3.0] and
+  [1.9.0] sections, so the section is removed rather than rewritten.
+- **The compliance rates were a 2026-05-13 snapshot** (75.6% / 84.0%) against
+  the current 92.9% / 100.0%. They are now recomputed from the status glyphs in
+  `docs/spec-compliance.md` and compared against the table, so the two cannot
+  diverge again. The MSRV the README states is likewise checked against
+  `Cargo.toml`.
+
 ## [1.11.0] - 2026-07-26
 
 ### Fixed
