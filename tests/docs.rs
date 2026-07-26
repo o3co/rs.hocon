@@ -95,35 +95,61 @@ fn count_compliance() -> ComplianceCounts {
     counts
 }
 
-/// Returns the text between `prefix` and `suffix` on the first line that has
-/// both, panicking when no line does — a README rewrite that drops the claim
-/// must fail loudly rather than silently stop checking it.
-fn find_between(text: &str, prefix: &str, suffix: &str, what: &str) -> String {
-    text.lines()
-        .find_map(|line| {
-            let after = line.split_once(prefix)?.1;
-            Some(after.split_once(suffix)?.0.trim().to_string())
-        })
-        .unwrap_or_else(|| {
-            panic!("{what} not found (looked for {prefix:?} … {suffix:?}); update the pattern if the doc was restructured")
-        })
+/// Returns the one value `extract` finds across `text`'s lines, panicking when
+/// there is no match — a rewrite that drops the claim must fail loudly rather
+/// than silently stop checking it — and equally when there is more than one,
+/// since that would mean the doc states the claim twice and only the first is
+/// pinned, letting the pair drift apart while this stays green. `source` names
+/// the file, as these read `Cargo.toml` as well as the README.
+fn find_one(
+    source: &str,
+    text: &str,
+    what: &str,
+    looked_for: &str,
+    extract: impl Fn(&str) -> Option<String>,
+) -> String {
+    let found: Vec<String> = text.lines().filter_map(extract).collect();
+    match found.len() {
+        0 => panic!(
+            "{what} not found in {source} ({looked_for}); update the pattern if {source} was restructured"
+        ),
+        1 => found.into_iter().next().expect("length checked above"),
+        n => panic!(
+            "{what} matched {n} times in {source} ({looked_for}); \
+             the claim must appear once so there is one thing to pin: {found:?}"
+        ),
+    }
 }
 
-/// Returns the value cell of the Markdown table row whose label cell is
-/// `label`, panicking when there is no such row — same reasoning as
-/// [`find_between`].
-fn table_value(text: &str, label: &str, what: &str) -> String {
-    text.lines()
-        .find_map(|line| {
+/// The text between `prefix` and `suffix` on a line that has both.
+fn find_between(source: &str, text: &str, prefix: &str, suffix: &str, what: &str) -> String {
+    find_one(
+        source,
+        text,
+        what,
+        &format!("looked for {prefix:?} … {suffix:?}"),
+        |line| {
+            let after = line.split_once(prefix)?.1;
+            Some(after.split_once(suffix)?.0.trim().to_string())
+        },
+    )
+}
+
+/// The value cell of the Markdown table row whose label cell is `label`.
+fn table_value(source: &str, text: &str, label: &str, what: &str) -> String {
+    find_one(
+        source,
+        text,
+        what,
+        &format!("no table row labelled {label:?}"),
+        |line| {
             let mut cells = line.trim().strip_prefix('|')?.split('|');
             if cells.next()?.trim() != label {
                 return None;
             }
             Some(cells.next()?.trim().to_string())
-        })
-        .unwrap_or_else(|| {
-            panic!("{what} not found (no table row labelled {label:?}); update the label if the doc was restructured")
-        })
+        },
+    )
 }
 
 #[test]
@@ -146,11 +172,17 @@ fn readme_compliance_rates_match_the_per_item_doc() {
     let readme = read("README.md");
 
     let spec_total = table_value(
+        "README.md",
         &readme,
         "Spec total (incl. out-of-scope)",
         "spec-total compliance rate",
     );
-    let in_scope = table_value(&readme, "In-scope only", "in-scope compliance rate");
+    let in_scope = table_value(
+        "README.md",
+        &readme,
+        "In-scope only",
+        "in-scope compliance rate",
+    );
 
     assert_eq!(
         spec_total,
@@ -170,15 +202,24 @@ fn readme_compliance_rates_match_the_per_item_doc() {
 #[test]
 fn readme_msrv_matches_cargo_toml() {
     let declared = find_between(
+        "Cargo.toml",
         &read("Cargo.toml"),
         "rust-version = \"",
         "\"",
         "rust-version",
     );
-    let claimed = find_between(&read("README.md"), "The MSRV is **", "**", "README MSRV");
+    let claimed = find_between(
+        "README.md",
+        &read("README.md"),
+        "The MSRV is **",
+        "**",
+        "README MSRV",
+    );
     assert_eq!(
         claimed, declared,
-        "README MSRV vs Cargo.toml rust-version — a user on the version the README names cannot build this crate"
+        "README MSRV vs Cargo.toml rust-version — one of the two is wrong, and which way it hurts \
+         depends on the direction: a README claiming a lower MSRV sends users to a toolchain cargo \
+         will refuse, and one claiming a higher MSRV turns away users who could build fine"
     );
 }
 
