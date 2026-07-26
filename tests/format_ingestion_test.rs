@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use hocon::adapters::{env, jsonc, toml, yaml, AdapterError};
+use hocon::adapters::{env, jsonc, properties, toml, yaml, AdapterError};
 use hocon::{Config, HoconValue};
 
 fn root() -> PathBuf {
@@ -61,6 +61,7 @@ struct EnvFixture {
 fn ingest(format: &str, kind: Option<&str>, text: &str, id: &str) -> Result<Config, AdapterError> {
     match format {
         "jsonc" => jsonc::parse(text, Some(id)),
+        "properties" => properties::parse(text, Some(id)),
         "toml" => toml::parse(text, Some(id)),
         "yaml" => yaml::parse(text, Some(id)),
         "env" => {
