@@ -40,6 +40,17 @@ pub mod toml;
 #[cfg(feature = "adapters-yaml")]
 pub mod yaml;
 
+/// Drop a leading UTF-8 BOM (spec F0.9).
+///
+/// Windows editors emit one, and a BOM left in place becomes part of the first
+/// key: `a: 1` yields the key `"\u{feff}a"`, so a lookup of `a` misses and the
+/// value is silently unreachable. That plausible-but-wrong output is the
+/// failure mode this spec most wants to avoid. The core HOCON parser already
+/// ignores U+FEFF, so this only brings the adapters into line.
+pub(crate) fn strip_bom(input: &str) -> &str {
+    input.strip_prefix('\u{feff}').unwrap_or(input)
+}
+
 /// Wrap an already-built object tree as a resolved `Config`.
 pub(crate) fn config_from_object(root: HoconValue, origin: Option<&str>) -> Config {
     match root {

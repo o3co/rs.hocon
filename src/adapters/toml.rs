@@ -16,7 +16,7 @@ pub fn parse(input: &str, origin: Option<&str>) -> Result<Config, AdapterError> 
     // A TOML document is a table; `Value: FromStr` parses a single value, so
     // parse the table type to get document semantics (F0.3 comes for free —
     // TOML has no other root shape).
-    let table: toml::Table = input
+    let table: toml::Table = super::strip_bom(input)
         .parse()
         .map_err(|e| AdapterError::new(format!("toml: {e}")))?;
     let doc = TomlValue::Table(table);

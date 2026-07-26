@@ -138,6 +138,11 @@ impl Config {
     /// Idempotent on already-resolved Configs. On unresolved Configs, runs
     /// `resolver::resolve_tree` (phase 2) on the stored `unresolved_tree`
     /// (priors preserved for S13a self-ref) or reconstructed ResObj.
+    ///
+    /// With `opts.use_system_environment` (the default), the process
+    /// environment is consulted for `${VAR}`. Entries whose name or value is
+    /// not valid UTF-8 are skipped rather than converted lossily, so such a
+    /// variable resolves as if it were unset.
     pub fn resolve(
         &self,
         opts: crate::options::ResolveOptions,
@@ -159,7 +164,7 @@ impl Config {
         };
 
         let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
-            std::env::vars().collect()
+            crate::sysenv::vars().collect()
         } else {
             std::collections::HashMap::new()
         };
@@ -218,6 +223,11 @@ impl Config {
     /// returns `Err(HoconError::NotResolved(...))` immediately (E12 decision 10).
     ///
     /// The filter is RECURSIVE: only paths in receiver's pre-merge shape are kept.
+    ///
+    /// With `opts.use_system_environment` (the default), the process
+    /// environment is consulted for `${VAR}`. Entries whose name or value is
+    /// not valid UTF-8 are skipped rather than converted lossily, so such a
+    /// variable resolves as if it were unset.
     pub fn resolve_with(
         &self,
         source: &Config,
@@ -251,7 +261,7 @@ impl Config {
         let merged = crate::resolver::merge_unresolved(recv_obj, src_obj);
 
         let env: std::collections::HashMap<String, String> = if opts.use_system_environment {
-            std::env::vars().collect()
+            crate::sysenv::vars().collect()
         } else {
             std::collections::HashMap::new()
         };

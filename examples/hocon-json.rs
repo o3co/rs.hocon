@@ -34,7 +34,7 @@ fn main() {
             // the driver mainly distinguishes success-vs-error.
             let dbg = format!("{e:?}");
             let ty = dbg
-                .split(|c| c == '(' || c == '{' || c == ' ')
+                .split(['(', '{', ' '])
                 .next()
                 .filter(|s| !s.is_empty())
                 .unwrap_or("HoconError");

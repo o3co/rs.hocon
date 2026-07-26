@@ -10,6 +10,12 @@ keywords = ["hocon", "config", "configuration", "parser", "rust"]
 categories = ["config", "parser-implementations"]
 readme = "README.md"
 
+# docs.rs renders with default features unless told otherwise, and every
+# adapter is feature-gated — without this the `adapters` module documents as
+# empty and none of its rustdoc is visible to users.
+[package.metadata.docs.rs]
+all-features = true
+
 [lib]
 name = "hocon"
 
@@ -39,7 +45,12 @@ adapters = [
 indexmap = "2"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-toml = { version = "1", optional = true }
+# Capped to the 1.0 line deliberately: toml 1.1 raised its MSRV to 1.85,
+# which would make `rust-version` above untrue for this one feature. The
+# 1.0 line needs 1.76 and is still maintained. Raising this cap is an MSRV
+# decision, so make it one — the MSRV CI job runs --all-features and will
+# fail the moment this stops holding.
+toml = { version = "~1.0", optional = true }
 yaml-rust2 = { version = "0.11", optional = true }
 
 [dev-dependencies]

@@ -246,6 +246,65 @@ pub(crate) fn subst_full_key(sp: &SubstPlaceholder) -> String {
     segments_to_key(&sp.segments)
 }
 
+/// Recursively folds nested self-references inside a value tree using each
+/// enclosing `ResObj`'s `prior_values` as the substitution target. This remains
+/// necessary when an object assignment overwrites existing child keys, but sr13
+/// avoids using it for pure additions so an already-folded prior is not saved
+/// and folded again on a later field.
+pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -> ResolverValue {
+    if let ResolverValue::Obj(o) = v {
+        let mut new_fields = indexmap::IndexMap::new();
+        for (k, field_val) in &o.fields {
+            let mut child_path = path_prefix.to_vec();
+            child_path.push(k.clone());
+            let full_key =
+                super::utils::string_segments_to_key(child_path.iter().map(String::as_str));
+            let folded_field = fold_nested_self_refs(field_val, &child_path);
+            let final_val = if contains_self_ref(&folded_field, &full_key) {
+                if let Some(leaf_prior) = o.prior_values.get(k) {
+                    let leaf_prior_folded = fold_nested_self_refs(leaf_prior, &child_path);
+                    fold_self_ref(&folded_field, &full_key, &leaf_prior_folded)
+                } else {
+                    folded_field
+                }
+            } else {
+                folded_field
+            };
+            new_fields.insert(k.clone(), final_val);
+        }
+        ResolverValue::Obj(ResObj {
+            fields: new_fields,
+            prior_values: o.prior_values.clone(),
+            reset_keys: o.reset_keys.clone(),
+        })
+    } else {
+        v.clone()
+    }
+}
+
+/// Path-equality walk: returns true if `v` contains a `Subst` whose segments
+/// text-equal `target`. Used by `resolve_subst`'s self-ref detection where a
+/// lookup returns a value containing the same placeholder being currently
+/// resolved.
+///
+/// rs.hocon's pre-#120 check used path equality already (in contrast to
+/// go.hocon's pointer identity); this helper preserves that criterion and
+/// just widens the search scope through `Concat` / `UnresolvedArray` /
+/// `Obj`.
+pub(crate) fn contains_subst_by_path(v: &ResolverValue, target: &[Segment]) -> bool {
+    match v {
+        ResolverValue::Subst(sp) => {
+            !sp.known_absent && super::utils::segments_text_equal(&sp.segments, target)
+        }
+        ResolverValue::Concat(c) => c.nodes.iter().any(|n| contains_subst_by_path(n, target)),
+        ResolverValue::UnresolvedArray(elems) => {
+            elems.iter().any(|e| contains_subst_by_path(e, target))
+        }
+        ResolverValue::Obj(o) => o.fields.values().any(|f| contains_subst_by_path(f, target)),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Unit tests for `fold_optional_self_ref_absent` branch coverage.
@@ -521,64 +580,5 @@ mod tests {
             }
             other => panic!("expected UnresolvedArray, got {:?}", other),
         }
-    }
-}
-
-/// Recursively folds nested self-references inside a value tree using each
-/// enclosing `ResObj`'s `prior_values` as the substitution target. This remains
-/// necessary when an object assignment overwrites existing child keys, but sr13
-/// avoids using it for pure additions so an already-folded prior is not saved
-/// and folded again on a later field.
-pub(crate) fn fold_nested_self_refs(v: &ResolverValue, path_prefix: &[String]) -> ResolverValue {
-    if let ResolverValue::Obj(o) = v {
-        let mut new_fields = indexmap::IndexMap::new();
-        for (k, field_val) in &o.fields {
-            let mut child_path = path_prefix.to_vec();
-            child_path.push(k.clone());
-            let full_key =
-                super::utils::string_segments_to_key(child_path.iter().map(String::as_str));
-            let folded_field = fold_nested_self_refs(field_val, &child_path);
-            let final_val = if contains_self_ref(&folded_field, &full_key) {
-                if let Some(leaf_prior) = o.prior_values.get(k) {
-                    let leaf_prior_folded = fold_nested_self_refs(leaf_prior, &child_path);
-                    fold_self_ref(&folded_field, &full_key, &leaf_prior_folded)
-                } else {
-                    folded_field
-                }
-            } else {
-                folded_field
-            };
-            new_fields.insert(k.clone(), final_val);
-        }
-        ResolverValue::Obj(ResObj {
-            fields: new_fields,
-            prior_values: o.prior_values.clone(),
-            reset_keys: o.reset_keys.clone(),
-        })
-    } else {
-        v.clone()
-    }
-}
-
-/// Path-equality walk: returns true if `v` contains a `Subst` whose segments
-/// text-equal `target`. Used by `resolve_subst`'s self-ref detection where a
-/// lookup returns a value containing the same placeholder being currently
-/// resolved.
-///
-/// rs.hocon's pre-#120 check used path equality already (in contrast to
-/// go.hocon's pointer identity); this helper preserves that criterion and
-/// just widens the search scope through `Concat` / `UnresolvedArray` /
-/// `Obj`.
-pub(crate) fn contains_subst_by_path(v: &ResolverValue, target: &[Segment]) -> bool {
-    match v {
-        ResolverValue::Subst(sp) => {
-            !sp.known_absent && super::utils::segments_text_equal(&sp.segments, target)
-        }
-        ResolverValue::Concat(c) => c.nodes.iter().any(|n| contains_subst_by_path(n, target)),
-        ResolverValue::UnresolvedArray(elems) => {
-            elems.iter().any(|e| contains_subst_by_path(e, target))
-        }
-        ResolverValue::Obj(o) => o.fields.values().any(|f| contains_subst_by_path(f, target)),
-        _ => false,
     }
 }

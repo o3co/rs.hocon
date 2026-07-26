@@ -333,7 +333,9 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 
 ## Minimum Supported Rust Version
 
-The MSRV is **1.82**.
+The MSRV is **1.82**, for every feature combination including all five
+adapters. CI runs the full test suite at 1.82 with `--all-features`, so this is
+verified rather than asserted.
 
 ## Related Projects
 
@@ -359,6 +361,23 @@ The four parser implementations ([ts.hocon](https://github.com/o3co/ts.hocon), [
 - **Minimize `${ENV}` usage**: Prefer `${?ENV}` (optional) with sensible defaults defined in the config itself
 - **Never require env vars for local development**: Defaults should work out of the box
 - **Document required env vars**: List them in your project's README or a `.env.example`
+
+**Non-UTF-8 entries never abort a parse.** An environment entry whose name or
+value is not valid UTF-8 is treated as absent everywhere this crate resolves
+`${...}` — `parse`, `parse_file`, `Parser::parse`, `Parser::parse_file`,
+`Config::resolve` and `Config::resolve_with` (the latter two with
+`use_system_environment`). A `${VAR}` naming such an entry behaves exactly as if
+the variable were **unset**: `${?VAR}` is undefined and `${VAR}` is the usual
+"unresolved substitution" error. It never resolves to lossily-converted text, so
+a non-UTF-8 byte sequence cannot reach your config as mangled data.
+
+This cannot change the meaning of a config that used to work: `std::env::vars()`
+panicked on the first undecodable entry regardless of which variables the
+document named, so the previous behaviour for anyone affected was a crash, not a
+successful parse.
+
+**A bulk mount is the exception, and errors instead** — see
+[Format adapters](#format-adapters).
 
 ### Dev / Prod Separation
 
@@ -424,9 +443,54 @@ Deferring resolution matters: the plain `parse` resolves as it goes, so a
 depends on `indexmap` alone. Plain JSON needs no adapter — HOCON is a JSON
 superset, so `hocon::parse` accepts it as it stands.
 
+```sh
+cargo add hocon-parser --features adapters        # all five
+cargo add hocon-parser --features adapters-env    # or just the one you need
+```
+
 Foreign data stays data: a `${a.b}` in a mounted value is literal text, never a
 reference, because the file belongs to a program that never agreed to HOCON's
 syntax.
+
+### How env variable names become paths
+
+**`__` is the only thing that creates hierarchy.** A single `_` stays part of
+the segment, and a literal `.` in a variable name is key *text* — not a
+separator:
+
+```text
+APP_DB__MAX_CONN=10   ->  db.max_conn      (nested: "db" contains "max_conn")
+APP_FOO.BAR=flat      ->  "foo.bar"        (one top-level key that contains a dot)
+```
+
+The second form is a single key, so it is read with a quoted path —
+`cfg.get_string("\"foo.bar\"")` — while `APP_FOO__BAR` is read as
+`cfg.get_string("foo.bar")`. They are distinct paths and can be set at the same
+time without conflicting. Segments are lowercased after mapping.
+
+Two variables that *do* map to the same path (`APP_A__B` and `APP_a__b`) are an
+error rather than a silent last-wins, because environment iteration order is not
+deterministic. A `.env` file has a definite line order, so there the later line
+wins as usual.
+
+Unlike `${VAR}`, `adapters::env::load` **errors** if an entry matching the mount
+prefix has a name or value that is not valid UTF-8. A bulk mount is a request
+for a whole namespace, so silently omitting one key would hand back a subtree
+that looks complete while an operator's setting is missing — and a stale config
+default would then win with no signal. Entries outside the prefix are ignored
+whether they decode or not, so an unrelated undecodable variable can never fail
+a mount.
+
+### JSONC comments separate tokens
+
+A comment is replaced by whitespace, never removed outright, so it can never
+splice its neighbors together:
+
+```jsonc
+{"a": 1/*x*/2}   // syntax error — NOT the number 12
+```
+
+### YAML scalar resolution is the library's answer
 
 For YAML, scalar resolution belongs to the library, not to this crate: whether
 `010` is 8 or 10 is `yaml-rust2`'s answer. `adapters::yaml::from_value` takes an

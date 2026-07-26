@@ -142,6 +142,7 @@ pub(crate) mod properties;
 /// All items are subject to change without notice across minor versions.
 #[doc(hidden)]
 pub mod resolver;
+pub(crate) mod sysenv;
 pub mod value;
 mod value_factory;
 
@@ -293,13 +294,19 @@ impl Parser {
     }
 
     /// Parse a HOCON string using the registered package registry.
+    ///
+    /// Inherits the process environment, skipping entries whose name or value
+    /// is not valid UTF-8; such a variable resolves as if it were unset.
     pub fn parse(self, input: &str) -> Result<Config, HoconError> {
-        self.parse_with_env(input, &std::env::vars().collect())
+        self.parse_with_env(input, &sysenv::vars().collect())
     }
 
     /// Parse a HOCON file using the registered package registry.
+    ///
+    /// Inherits the process environment, skipping entries whose name or value
+    /// is not valid UTF-8; such a variable resolves as if it were unset.
     pub fn parse_file(self, path: impl AsRef<Path>) -> Result<Config, HoconError> {
-        self.parse_file_with_env(path, &std::env::vars().collect())
+        self.parse_file_with_env(path, &sysenv::vars().collect())
     }
 
     /// Parse a HOCON string with a custom environment map and the registered registry.
@@ -339,7 +346,7 @@ impl Parser {
 
         let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
             if opts.resolve_substitutions {
-                std::env::vars().collect()
+                sysenv::vars().collect()
             } else {
                 HashMap::new()
             }
@@ -412,8 +419,14 @@ impl Parser {
 }
 
 /// Parse a HOCON string into a Config.
+///
+/// Inherits the process environment for `${VAR}` resolution. Entries whose
+/// name or value is not valid UTF-8 are skipped rather than converted
+/// lossily, so such a variable resolves as if it were unset: `${?VAR}` is
+/// undefined and `${VAR}` is the usual unresolved-substitution error. A
+/// non-UTF-8 name is unreachable from UTF-8 HOCON source anyway.
 pub fn parse(input: &str) -> Result<Config, HoconError> {
-    parse_with_env(input, &std::env::vars().collect())
+    parse_with_env(input, &sysenv::vars().collect())
 }
 
 /// Parse a HOCON string with explicit [`ParseOptions`].
@@ -431,7 +444,7 @@ pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Conf
 
     let env: HashMap<String, String> = opts.env.clone().unwrap_or_else(|| {
         if opts.resolve_substitutions {
-            std::env::vars().collect()
+            sysenv::vars().collect()
         } else {
             HashMap::new()
         }
@@ -493,8 +506,14 @@ pub fn parse_file_with_options<P: AsRef<Path>>(
 }
 
 /// Parse a HOCON file into a Config.
+///
+/// Inherits the process environment for `${VAR}` resolution. Entries whose
+/// name or value is not valid UTF-8 are skipped rather than converted
+/// lossily, so such a variable resolves as if it were unset: `${?VAR}` is
+/// undefined and `${VAR}` is the usual unresolved-substitution error. A
+/// non-UTF-8 name is unreachable from UTF-8 HOCON source anyway.
 pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Config, HoconError> {
-    parse_file_with_env(path, &std::env::vars().collect())
+    parse_file_with_env(path, &sysenv::vars().collect())
 }
 
 /// Parse a HOCON file with a custom environment variable map.
