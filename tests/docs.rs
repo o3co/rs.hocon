@@ -111,7 +111,7 @@ fn find_one(
     let found: Vec<String> = text.lines().filter_map(extract).collect();
     match found.len() {
         0 => panic!(
-            "{what} not found in {source} ({looked_for}); update the pattern if {source} was restructured"
+            "{what} not found in {source} ({looked_for}); update the lookup if {source} was restructured"
         ),
         1 => found.into_iter().next().expect("length checked above"),
         n => panic!(
