@@ -29,8 +29,11 @@
 
 use std::ffi::OsString;
 
-/// The process environment as UTF-8 pairs, skipping entries that are not
-/// (F1.9a). This is what substitution resolution consumes.
+/// The process environment as UTF-8 pairs, skipping any entry whose name or
+/// value is not valid UTF-8 (F1.9a). This is what substitution resolution
+/// consumes, so a skipped entry is simply absent: `${?VAR}` falls through to
+/// its default and `${VAR}` raises the ordinary unresolved error, rather than
+/// resolving to lossy or replacement-character text.
 ///
 /// Deliberately not written in terms of [`entries`]: that type carries the raw
 /// name bytes a bulk mount needs for prefix matching, and only the adapter
