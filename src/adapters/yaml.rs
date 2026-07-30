@@ -186,9 +186,10 @@ fn collision(at: &str, ks: &str, a: &Yaml, b: &Yaml) -> AdapterError {
         format!("{:?} at {at}", ks)
     };
     AdapterError::new(format!(
-        "yaml: sibling mapping keys {} and {} both give the key {where_}; quote the one \
-         you mean to keep distinct, because one of the two values would otherwise be \
-         lost (spec F5.3)",
+        "yaml: sibling mapping keys {} and {} both give the key {where_}; rename one of \
+         them, because one of the two values would otherwise be lost. Quoting a \
+         non-string key helps only where that changes the key text, as 0x10 does and 1 \
+         does not (spec F5.3)",
         key_form(a),
         key_form(b)
     ))

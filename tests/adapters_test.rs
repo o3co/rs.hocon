@@ -385,6 +385,18 @@ fn yaml_refuses_sibling_keys_that_coincide() {
     }
 }
 
+/// Quoting `1` gives `'1'`, which is the same key again — so the message must
+/// not offer it as the fix. Renaming is what always works.
+#[test]
+fn yaml_collision_does_not_advise_quoting_when_that_cannot_help() {
+    let err = yaml::parse("1: a\n'1': b\n", None).unwrap_err();
+    assert!(
+        err.message.contains("rename one of them"),
+        "{}",
+        err.message
+    );
+}
+
 /// The collision message names where it happened, not just what.
 #[test]
 fn yaml_collision_names_the_path() {
