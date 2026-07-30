@@ -85,12 +85,24 @@ fn convert(v: &Yaml, at: &str) -> Result<HoconValue, AdapterError> {
             // be a structural difference, which this spec does own (F5.2).
             // Explicit keys win over merged ones.
             let mut merged: IndexMap<String, HoconValue> = IndexMap::new();
+            // The source key behind each written key, so a second one landing
+            // on it can name what it collided with (F5.3).
+            let mut seen: IndexMap<String, &Yaml> = IndexMap::new();
             for (k, e) in h {
                 if matches!(k, Yaml::String(s) if s == "<<") {
                     collect_merge(e, at, &mut merged)?;
                     continue;
                 }
                 let ks = key_string(k, at)?;
+                if let Some(prev) = seen.get(&ks) {
+                    // Two source keys, one object key: the integer 1 and the
+                    // string "1", `~` and "null", 0x10 and "16". `yaml-rust2`
+                    // keys its Hash by `Yaml`, so both are still here — writing
+                    // the second would drop the first's value with nothing left
+                    // to notice, so neither wins (spec F5.3).
+                    return Err(collision(at, &ks, prev, k));
+                }
+                seen.insert(ks.clone(), k);
                 let path = if at.is_empty() {
                     ks.clone()
                 } else {
@@ -163,6 +175,36 @@ fn collect_merge(
         _ => Err(AdapterError::new(format!(
             "yaml: at {at}: a merge key must reference a mapping (spec F5.2)"
         ))),
+    }
+}
+
+/// The F5.3 error for two sibling keys that give one object key.
+fn collision(at: &str, ks: &str, a: &Yaml, b: &Yaml) -> AdapterError {
+    let where_ = if at.is_empty() {
+        format!("{ks:?}")
+    } else {
+        format!("{:?} at {at}", ks)
+    };
+    AdapterError::new(format!(
+        "yaml: sibling mapping keys {} and {} both give the key {where_}; quote the one \
+         you mean to keep distinct, because one of the two values would otherwise be \
+         lost (spec F5.3)",
+        key_form(a),
+        key_form(b)
+    ))
+}
+
+/// Render a source key for the F5.3 collision error: a string is quoted, every
+/// other scalar names its kind, so the integer `1` and the string `"1"` stay
+/// apart in the message the way they failed to in the mapping.
+fn key_form(k: &Yaml) -> String {
+    match k {
+        Yaml::String(s) => format!("{s:?}"),
+        Yaml::Integer(i) => format!("{i} (integer)"),
+        Yaml::Real(r) => format!("{r} (float)"),
+        Yaml::Boolean(b) => format!("{b} (boolean)"),
+        Yaml::Null => "~ (null)".to_string(),
+        _ => "a collection".to_string(),
     }
 }
 
