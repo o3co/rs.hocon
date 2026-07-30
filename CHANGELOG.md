@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `adapters::yaml`: coinciding sibling keys were last-wins, not an error
+
+**BREAKING** (input previously accepted is now refused; quote the key you mean
+to keep distinct).
+
+`yaml::parse("1: a\n'1': b\n")` produced a config holding only `"1" = "b"`. The
+integer key and the string key are distinct in the decoded `Yaml::Hash` but
+`key_string` maps both to `"1"`, so writing the second dropped the first's value
+with nothing to show for it — the silent loss F5.3 exists to prevent. The same
+held for `1.0`/`"1.0"`, `~`/`"null"`, `true`/`"true"` and `0x10`/`"16"`, at any
+nesting depth ([#160](https://github.com/o3co/rs.hocon/issues/160)).
+
+The collision is now an error naming both source keys and the path. Merge keys
+stay exempt: `<<: *defaults` bringing in a key the mapping then overrides is
+YAML's own semantics.
+
+Which forms coincide follows from `yaml-rust2`'s scalar resolution and is not
+aligned across implementations (F5.1) — `1.0` gives `"1.0"` here and in
+py.hocon, `"1"` in go.hocon and ts.hocon. What is common is that a coincidence
+errors.
+
 ### Fixed — documentation that had drifted away from the code
 
 Nothing was checking the README's factual claims, so they aged with each

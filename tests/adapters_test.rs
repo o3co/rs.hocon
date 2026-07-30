@@ -359,6 +359,48 @@ fn yaml_stringifies_non_string_keys() {
     assert_eq!(cfg.get_string("\"true\"").unwrap(), "t");
 }
 
+/// F5.3 — two source keys with one string form used to be last-wins, and the
+/// loser's value was gone with nothing left to notice. Which forms coincide
+/// follows from `yaml-rust2`'s scalar resolution (F5.1) and is not aligned
+/// across implementations; what is pinned here is that a coincidence errors.
+#[test]
+fn yaml_refuses_sibling_keys_that_coincide() {
+    for (src, key) in [
+        ("1: a\n'1': b\n", "\"1\""),
+        ("'1': b\n1: a\n", "\"1\""),
+        ("1.0: a\n'1.0': b\n", "\"1.0\""),
+        ("~: a\n'null': b\n", "\"null\""),
+        ("true: a\n'true': b\n", "\"true\""),
+        ("0x10: a\n'16': b\n", "\"16\""),
+    ] {
+        let Err(err) = yaml::parse(src, None) else {
+            panic!("{src:?} was accepted, want an F5.3 error");
+        };
+        assert!(err.message.contains("F5.3"), "{}", err.message);
+        assert!(
+            err.message.contains(&format!("both give the key {key}")),
+            "{}",
+            err.message
+        );
+    }
+}
+
+/// The collision message names where it happened, not just what.
+#[test]
+fn yaml_collision_names_the_path() {
+    let err = yaml::parse("outer:\n  1: a\n  '1': b\n", None).unwrap_err();
+    assert!(err.message.contains("at outer"), "{}", err.message);
+}
+
+/// A merge key legitimately brings in a key the mapping then overrides, which
+/// is YAML's own semantics rather than a collision — the check must not fire.
+#[test]
+fn yaml_merge_key_override_is_not_a_collision() {
+    let cfg = yaml::parse("base: &b\n  x: 1\nchild:\n  <<: *b\n  x: 2\n  y: 3\n", None).unwrap();
+    assert_eq!(cfg.get_i64("child.x").unwrap(), 2);
+    assert_eq!(cfg.get_i64("child.y").unwrap(), 3);
+}
+
 /// F5.7 — decoding one document and dropping the rest would be silent loss.
 #[test]
 fn yaml_refuses_a_multi_document_stream() {
