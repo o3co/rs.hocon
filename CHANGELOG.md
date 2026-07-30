@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — `adapters::yaml`: coinciding sibling keys were last-wins, not an error
 
-**BREAKING** (input previously accepted is now refused; quote the key you mean
-to keep distinct).
+**BREAKING** (input previously accepted is now refused; rename one of the two
+keys — quoting only helps where it changes the key text, as `0x10` → `"0x10"`
+does and `1` → `"1"` does not).
 
 `yaml::parse("1: a\n'1': b\n")` produced a config holding only `"1" = "b"`. The
 integer key and the string key are distinct in the decoded `Yaml::Hash` but
