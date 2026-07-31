@@ -613,11 +613,14 @@ fn a_rendered_path_segment_is_a_json_string_literal() {
         vars.insert(format!("APP_{seg}"), "1".to_string());
         vars.insert(format!("APP_{}", seg.to_uppercase()), "2".to_string());
         let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
-        err.message
-            .rsplit("both map to ")
-            .next()
-            .expect("the collision message names the path")
-            .to_string()
+        // rsplit_once, not rsplit().next(): the latter yields the whole string
+        // when the delimiter is absent, so the test would pass on a message
+        // that never named a path at all.
+        let (_, path) = err
+            .message
+            .rsplit_once("both map to ")
+            .expect("the collision message names the path");
+        path.to_string()
     };
 
     assert_eq!(render("a b"), "\"a b\"");
@@ -649,11 +652,11 @@ fn distinct_paths_render_distinctly() {
         vars.insert(format!("APP_{name}"), "1".to_string());
         vars.insert(format!("APP_{}", name.to_uppercase()), "2".to_string());
         let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
-        err.message
-            .rsplit("both map to ")
-            .next()
-            .unwrap()
-            .to_string()
+        let (_, path) = err
+            .message
+            .rsplit_once("both map to ")
+            .expect("the collision message names the path");
+        path.to_string()
     };
     // A literal dot in one segment must not read as the two-segment path.
     assert_ne!(render_one("foo.bar"), render_one("foo__bar"));

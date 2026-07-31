@@ -233,10 +233,11 @@ fn to_path(rest: &str, name: &str) -> Result<Vec<String>, AdapterError> {
 
 /// Render a segment list as a HOCON path expression for an error message.
 ///
-/// A segment is written bare when it is safely unquoted (`[a-z0-9_-]`, the
-/// shape F1.3 lowercasing produces) and double-quoted otherwise, with `\` and
-/// `"` escaped so two different paths can never render identically. Matches
-/// py.hocon's format so the four implementations report collisions alike.
+/// Segments are joined with `.`, each rendered by [`render_segment`] — bare
+/// where it can be, otherwise as a JSON string literal (spec F0.10). What the
+/// join has to preserve is that two different paths never render identically:
+/// `APP_FOO.BAR` is one segment and must read `"foo.bar"`, while
+/// `APP_FOO__BAR` is two and must read `foo.bar`.
 fn display_path(segments: &[String]) -> String {
     segments
         .iter()
