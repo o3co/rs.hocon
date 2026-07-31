@@ -1,0 +1,1 @@
+{"db":{"host":"db.internal","max_conn":"10"},"escaped:key":"v","name":"svc","sub":"${a.b}"}

@@ -508,6 +508,16 @@ When parsing untrusted HOCON input, be aware of:
 
 - **Path traversal in includes:** `include "../../../etc/passwd"` will resolve relative to `base_dir`. Validate include paths if parsing untrusted input.
 - **Input size:** The parser has no built-in input size limit. For untrusted input, validate size before calling `parse()`.
+- **Document nesting depth:** limited to 128 levels of objects and arrays,
+  enforced by `parse` and by `from_map`. Unlike the sibling implementations,
+  which catch their runtime's own recursion error, exhausting the stack in Rust
+  is `SIGABRT` — it takes the caller's process with it and no `catch_unwind`
+  contains it, so the limit has to come before the overflow rather than after.
+  128 is `serde_json`'s limit, which the `jsonc` adapter has always enforced,
+  and it holds on the 2 MiB stack a spawned thread gets.
+- **Mapped path depth:** an environment variable's `__` segments and a
+  `.properties` dotted key are limited to 64 segments, matching ts.hocon and
+  py.hocon.
 
 ## License
 

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — deeply nested input aborted the process instead of returning an error
+
+**BREAKING** (a document nested deeper than 128 levels is now refused).
+
+`hocon::parse` on a document nested past what the stack holds overflowed and the
+**process aborted** — not a `Result::Err` a caller can handle, and not a panic
+`catch_unwind` sees ([#162](https://github.com/o3co/rs.hocon/issues/162)). On a
+release build it took 15 kB of input on the main thread, and less on a spawned
+one: Rust gives a spawned thread 2 MiB, where this parser survived ~600 levels
+and aborted by 1000. A library called from a request handler gets that stack,
+not the main thread's 8 MiB.
+
+Object and array nesting is now capped at **128 levels**, in `parse` and in
+`from_map` (which takes a tree the caller built, and recursed past the stack for
+the same reason). Over the limit is a `ParseError` / `ConfigError`.
+
+The sibling implementations do not cap this — they catch their runtime's own
+recursion error and rethrow it as their own type, which needs no number. Rust
+has no equivalent, so the limit has to come *before* the overflow. The number is
+measured rather than picked: `serde_json` refuses at 128, so this crate's own
+`adapters::jsonc` has been rejecting documents deeper than 127 since it shipped,
+and JSON is a subset of HOCON — a document the core accepted but the crate's own
+JSONC adapter refused would mean one crate enforcing two limits. Every fixture
+in the shared xx.hocon corpus is at most 8 levels deep apart from one
+adversarial file harvested to probe exactly this.
+
+Capping the parse also bounds the tree, which matters twice over: the resolver's
+walk and `HoconValue`'s own `Drop` are both recursive, so an uncapped depth could
+abort during teardown even after a successful parse.
+
+Not covered, because it is not this crate's to reach: a `serde_json::Value` the
+caller builds thousands of levels deep overflows in *serde_json's* recursive
+`Drop` when it goes out of scope, whatever `from_map` returns.
+
 ### Fixed — `adapters::yaml`: coinciding sibling keys were last-wins, not an error
 
 **BREAKING** (input previously accepted is now refused; rename one of the two
