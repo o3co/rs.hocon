@@ -23,10 +23,12 @@ four implementations behaving identically by accident
   `OTHER__=x` was never checked at all. `load`'s contract already said which
   way this goes ("entries outside the prefix are never inspected", the F1.1
   principle); the two functions disagreeing was the actual inconsistency.
-- **`export` may be followed by any whitespace.** Matching the literal
+- **`export` may be followed by spaces or tabs.** Matching the literal
   `export ` missed a tab, so `export<TAB>FOO=bar` became the variable
-  `export<TAB>foo` — a key nothing would ever look up, produced silently. A
-  name that merely begins with `export` is still a name.
+  `export<TAB>foo` — a key nothing would ever look up, produced silently. Space
+  and tab specifically, matching what this dialect already trims on the value
+  side; anything else leaves `export` part of the name, where the rule below
+  refuses it. A name that merely begins with `export` is still a name.
 - **A name containing whitespace or `#` is an error.** F1.7's rule for values —
   an error naming the fix rather than a guess about the author's intent —
   applies to names too; both characters mean the line was mis-parsed.

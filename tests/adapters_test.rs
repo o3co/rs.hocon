@@ -687,8 +687,12 @@ fn dotenv_filters_before_it_validates() {
 
 /// Stripping the literal `"export "` missed a tab, so `export\tFOO=bar` became
 /// the variable `export\tfoo` — a key nothing would look up, produced silently.
+///
+/// Spaces and tabs, matching what the dialect trims on the value side. Anything
+/// else after `export` leaves it part of the name, where the F1.7 name rule
+/// refuses it — an error rather than a silently odd key.
 #[test]
-fn dotenv_export_takes_any_whitespace() {
+fn dotenv_export_takes_spaces_and_tabs() {
     for src in ["export FOO=bar\n", "export\tFOO=bar\n", "export  FOO=bar\n"] {
         let cfg = env::parse_dotenv(src, env::Options::default()).unwrap();
         assert_eq!(cfg.get_string("foo").unwrap(), "bar", "{src:?}");
@@ -696,6 +700,11 @@ fn dotenv_export_takes_any_whitespace() {
     // …and a name that merely begins with "export" is still a name.
     let cfg = env::parse_dotenv("exportFOO=bar\n", env::Options::default()).unwrap();
     assert_eq!(cfg.get_string("exportfoo").unwrap(), "bar");
+
+    // A form feed is not one of the two, so "export" stays part of the name and
+    // the name rule rejects it. That is the intended outcome, not a gap.
+    let err = env::parse_dotenv("export\u{c}FOO=bar\n", env::Options::default()).unwrap_err();
+    assert!(err.message.contains("F1.7"), "{}", err.message);
 }
 
 /// F1.7's rule for values — an error naming the fix rather than a guess about
