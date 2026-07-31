@@ -1,3 +1,4 @@
+use crate::depth::MAX_PATH_SEGMENTS;
 use crate::value::{HoconValue, ScalarValue};
 use indexmap::IndexMap;
 
@@ -197,6 +198,15 @@ pub fn properties_to_hocon(input: &str) -> Result<HoconValue, String> {
     for key in keys {
         let value = &props[key];
         let segments: Vec<&str> = key.split('.').collect();
+        if segments.len() > MAX_PATH_SEGMENTS {
+            // One dotted key produces one arbitrarily deep chain, and set_nested
+            // recurses per segment — the same reason the env adapter caps this,
+            // at the same number (crate::depth).
+            return Err(format!(
+                "key {key:?} maps to a path {} segments deep, over the limit of {MAX_PATH_SEGMENTS}",
+                segments.len()
+            ));
+        }
         set_nested(
             &mut root,
             &segments,

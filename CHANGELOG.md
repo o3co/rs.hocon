@@ -23,10 +23,16 @@ Object and array nesting is now capped at **128 levels**, in `parse` and in
 `from_map` (which takes a tree the caller built, and recursed past the stack for
 the same reason). Over the limit is a `ParseError` / `ConfigError`.
 
+A `.properties` dotted key is capped at **64 segments**, the limit the env
+adapter already had and the one ts.hocon, py.hocon and go.hocon use: one key
+builds the same unbounded chain one variable name does, through a `set_nested`
+that recurses per segment.
+
 The sibling implementations do not cap this — they catch their runtime's own
 recursion error and rethrow it as their own type, which needs no number. Rust
 has no equivalent, so the limit has to come *before* the overflow. The number is
-measured rather than picked: `serde_json` refuses at 128, so this crate's own
+measured rather than picked: `serde_json` refuses at 128 (admitting 127, one
+level fewer than the core, which counts the levels it enters), so this crate's own
 `adapters::jsonc` has been rejecting documents deeper than 127 since it shipped,
 and JSON is a subset of HOCON — a document the core accepted but the crate's own
 JSONC adapter refused would mean one crate enforcing two limits. Every fixture
