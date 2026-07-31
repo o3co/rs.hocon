@@ -151,6 +151,36 @@ nothing. The spec is now published at
 there ([xx.hocon#81](https://github.com/o3co/xx.hocon/issues/81)). Error text is
 unchanged; only the pointers move.
 
+### Changed — `adapters/jsonc`: the strip passes no longer allocate a `Vec<char>` ([#155](https://github.com/o3co/rs.hocon/issues/155))
+
+`strip_comments` and `strip_trailing_commas` each collected the whole document
+into a `Vec<char>` — four bytes per character on top of the text it came from —
+so a large `.jsonc` peaked at several times its own size. Both now walk the
+`&str` with `char_indices()` and slice it directly.
+
+Measured on a 1 MiB document, peak allocation above the input:
+
+| | peak |
+|---|---|
+| `Vec<char>` | 5.6x |
+| `char_indices` | 3.45x |
+
+The remainder is `serde_json`'s `Value` and the `Config` tree, which this does
+not touch.
+
+**The safety property is preserved by the same argument, not weakened.** The
+`Vec<char>` was there because indexing chars makes a non-char-boundary slice
+structurally impossible, and a byte-level rewrite would have given that up.
+Offsets from `char_indices()` are char boundaries *by provenance* — each is
+either an index the iterator yielded or that index plus the exact `len_utf8` of
+the character there, never computed arithmetic — so `&src[i..j]` still cannot
+panic.
+
+The adversarial corpus that established the original property is now committed
+(52 inputs across the eight categories the issue names) and runs on every build,
+along with a peak-allocation guard that fails if a `Vec<char>` reappears. No
+behaviour change: `parse` accepts and refuses exactly what it did.
+
 ## [1.11.0] - 2026-07-26
 
 ### Fixed
