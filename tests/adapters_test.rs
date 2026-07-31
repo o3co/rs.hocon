@@ -661,3 +661,54 @@ fn distinct_paths_render_distinctly() {
     // A literal dot in one segment must not read as the two-segment path.
     assert_ne!(render_one("foo.bar"), render_one("foo__bar"));
 }
+
+// --- F1.7: the filter runs first, and names are validated -------------------
+
+/// A `.env` shared with tools that support trailing comments has to stay
+/// loadable when the caller wants one namespace out of it. `load` already
+/// worked that way ("entries outside the prefix are never inspected", F1.1);
+/// `parse_dotenv` disagreeing with its sibling was the actual inconsistency,
+/// and all four implementations had the same accidental split.
+#[test]
+fn dotenv_filters_before_it_validates() {
+    for src in [
+        "BAD=x # y\n",  // an ambiguous value, discarded by the prefix
+        "BAD NAME=x\n", // a name the rule below refuses, likewise discarded
+        "OTHER__=x\n",  // an empty path segment, likewise
+    ] {
+        let cfg = env::parse_dotenv(src, env_opts("APP_"))
+            .unwrap_or_else(|e| panic!("{src:?} discarded by the prefix, but: {e}"));
+        assert!(cfg.keys().is_empty(), "{src:?} mounted something");
+    }
+    // Kept by the prefix, so validated as strictly as ever.
+    assert!(env::parse_dotenv("APP_BAD=x # y\n", env_opts("APP_")).is_err());
+    assert!(env::parse_dotenv("APP___=x\n", env_opts("APP_")).is_err());
+}
+
+/// Stripping the literal `"export "` missed a tab, so `export\tFOO=bar` became
+/// the variable `export\tfoo` — a key nothing would look up, produced silently.
+#[test]
+fn dotenv_export_takes_any_whitespace() {
+    for src in ["export FOO=bar\n", "export\tFOO=bar\n", "export  FOO=bar\n"] {
+        let cfg = env::parse_dotenv(src, env::Options::default()).unwrap();
+        assert_eq!(cfg.get_string("foo").unwrap(), "bar", "{src:?}");
+    }
+    // …and a name that merely begins with "export" is still a name.
+    let cfg = env::parse_dotenv("exportFOO=bar\n", env::Options::default()).unwrap();
+    assert_eq!(cfg.get_string("exportfoo").unwrap(), "bar");
+}
+
+/// F1.7's rule for values — an error naming the fix rather than a guess about
+/// the author's intent — applies to names too. These used to become the keys
+/// `foo bar` and `foo#x`.
+#[test]
+fn dotenv_refuses_a_name_that_cannot_have_been_meant() {
+    for src in ["FOO BAR=baz\n", "FOO#x=1\n"] {
+        let err = env::parse_dotenv(src, env::Options::default()).unwrap_err();
+        assert!(err.message.contains("F1.7"), "{}", err.message);
+    }
+    // Deliberately narrower than a POSIX name grammar, which would reject this
+    // — a name F1.2 documents as valid.
+    let cfg = env::parse_dotenv("FOO.BAR=v\n", env::Options::default()).unwrap();
+    assert_eq!(cfg.get_string("\"foo.bar\"").unwrap(), "v");
+}
