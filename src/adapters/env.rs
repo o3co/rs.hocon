@@ -398,12 +398,18 @@ fn dotenv_value(v: &str, origin: &str, line: usize, name: &str) -> Result<String
     Ok(trimmed.to_string())
 }
 
-/// Drop a leading `export` and the whitespace after it (spec F1.7).
+/// Drop a leading `export` and the spaces or tabs after it (spec F1.7).
 ///
 /// Stripping the literal `"export "` missed a tab, so `export\tFOO=bar` became
 /// the variable `export\tfoo` — a key nothing would ever look up, produced
 /// silently. A name that merely *begins* with `export` (`exportFOO=1`) is still
 /// a name, so the whitespace is what makes it the keyword.
+///
+/// Space and tab specifically, not `char::is_whitespace`: that is what this
+/// dialect already trims on the value side. Leaving the rest out is also the
+/// better outcome — `export\u{c}FOO=bar` is then a *name* of `export\u{c}FOO`,
+/// which [`check_name`] refuses, rather than a keyword line producing a
+/// silently odd key.
 fn strip_export(line: &str) -> &str {
     let Some(rest) = line.strip_prefix("export") else {
         return line;
