@@ -240,18 +240,54 @@ fn to_path(rest: &str, name: &str) -> Result<Vec<String>, AdapterError> {
 fn display_path(segments: &[String]) -> String {
     segments
         .iter()
-        .map(|s| {
-            let bare = !s.is_empty()
-                && s.chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
-            if bare {
-                s.clone()
-            } else {
-                format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
-            }
-        })
+        .map(|s| render_segment(s))
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Render one path segment as a HOCON path expression element (spec F0.10):
+/// bare when it can be, otherwise as a **JSON string literal** — which is also
+/// HOCON's own quoted-string syntax, and which go.hocon and py.hocon produce
+/// for the same segment.
+///
+/// The escaping used to cover only `\` and `"`, so a NUL or a newline in a
+/// variable name went into the error message raw and could break the line a
+/// reader saw in a log. Two departures from plain JSON, both deliberate:
+/// U+2028 and U+2029 are escaped although JSON permits them raw, being line
+/// separators to enough log viewers to matter; and printable non-ASCII stays
+/// itself, because F1.3 leaves such segments unfolded and escaping them would
+/// bury the common case.
+///
+/// The result is **not** guaranteed to paste into a getter: no implementation's
+/// path parser decodes escapes inside a quoted segment. What it does guarantee,
+/// and what an error message needs, is that two different paths never render
+/// alike.
+fn render_segment(seg: &str) -> String {
+    let bare = !seg.is_empty()
+        && seg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if bare {
+        return seg.to_string();
+    }
+    let mut out = String::with_capacity(seg.len() + 2);
+    out.push('"');
+    for c in seg.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{2028}' | '\u{2029}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Nest segment-list paths, applying the objects-win rule over the whole set

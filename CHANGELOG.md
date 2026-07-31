@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `adapters::env`: control characters went into error messages raw
+
+`display_path` escaped only `\` and `"`, so a variable name holding a newline or
+a NUL put it straight into the collision message — the one place the escaping
+exists to prevent, since such a name can break the line a reader sees in a log.
+go.hocon and py.hocon spelled the same segment two other ways again
+([xx.hocon#76](https://github.com/o3co/xx.hocon/issues/76)).
+
+A quoted segment is a JSON string literal now — which is also HOCON's own
+quoted-string syntax — pinned as spec F0.10, so all three produce the same text
+for the same key. **U+2028 / U+2029 are escaped** although JSON permits them
+raw, for the same log-safety reason. Printable non-ASCII stays itself (`é`,
+`İ`), because F1.3 leaves such segments unfolded and escaping them would bury
+the common case.
+
+The bare-segment rule now admits `A`–`Z` as well, matching go.hocon: HOCON's own
+grammar accepts an uppercase key unquoted, and the adapters that do not
+case-fold share this renderer.
+
+The rendered path is **not** guaranteed to paste into a getter — measured, no
+implementation's path parser decodes escapes inside a quoted segment. What it
+does guarantee, and what a collision message needs, is that two different paths
+never render alike.
+
 ### Fixed — deeply nested input aborted the process instead of returning an error
 
 **BREAKING** (a document nested deeper than 128 levels is now refused).
