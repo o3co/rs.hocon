@@ -1,6 +1,7 @@
 {
   "about": [
-    "Fixtures for the format adapters (docs/format-ingestion-mapping.md, F-items).",
+    "Fixtures for the format adapters (F-items). The mapping spec:",
+    "https://github.com/o3co/xx.hocon/blob/main/docs/format-ingestion-mapping.md",
     "",
     "Unlike expected/hocon/, these expectations are NOT generated from Lightbend.",
     "Lightbend has no equivalent of these adapters, so there is no oracle: the",
