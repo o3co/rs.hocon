@@ -58,7 +58,16 @@ struct EnvFixture {
     vars: HashMap<String, String>,
 }
 
-fn ingest(format: &str, kind: Option<&str>, text: &str, id: &str) -> Result<Config, AdapterError> {
+/// Dispatch a case to its adapter. `prefix` is the manifest's optional
+/// `prefix`, which only `dotenv` cases carry — an `env-vars` input names its
+/// own prefix inside the JSON document.
+fn ingest(
+    format: &str,
+    kind: Option<&str>,
+    prefix: &str,
+    text: &str,
+    id: &str,
+) -> Result<Config, AdapterError> {
     match format {
         "jsonc" => jsonc::parse(text, Some(id)),
         "properties" => properties::parse(text, Some(id)),
@@ -69,8 +78,8 @@ fn ingest(format: &str, kind: Option<&str>, text: &str, id: &str) -> Result<Conf
                 return env::parse_dotenv(
                     text,
                     env::Options {
+                        prefix: prefix.to_string(),
                         origin: Some(id.to_string()),
-                        ..Default::default()
                     },
                 );
             }
@@ -100,11 +109,12 @@ fn format_ingestion_fixtures() {
         let id = c["id"].as_str().unwrap();
         let format = c["format"].as_str().unwrap();
         let kind = c["kind"].as_str();
+        let prefix = c["prefix"].as_str().unwrap_or("");
         let note = c["note"].as_str().unwrap_or("");
         let text = std::fs::read_to_string(root().join(c["input"].as_str().unwrap()))
             .unwrap_or_else(|e| panic!("{id}: input: {e}"));
 
-        let result = ingest(format, kind, &text, id);
+        let result = ingest(format, kind, prefix, &text, id);
 
         if c["expect"] == "error" {
             let err = result
