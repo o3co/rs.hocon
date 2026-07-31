@@ -599,3 +599,62 @@ fn properties_refuses_a_key_deeper_than_the_segment_limit() {
     let err = properties::parse(&format!("{} = 1", key(65)), None).unwrap_err();
     assert!(err.to_string().contains("over the limit of 64"), "{}", err);
 }
+
+// --- F0.10: a rendered path is a JSON string literal -------------------------
+
+/// The escaping used to cover only `\\` and `"`, so a NUL or a newline in a
+/// variable name reached the log raw and could break the line a reader saw.
+/// It is a JSON string literal now — HOCON's own quoted-string syntax — and
+/// go.hocon and py.hocon render the same segment the same way.
+#[test]
+fn a_rendered_path_segment_is_a_json_string_literal() {
+    let render = |seg: &str| -> String {
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert(format!("APP_{seg}"), "1".to_string());
+        vars.insert(format!("APP_{}", seg.to_uppercase()), "2".to_string());
+        let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
+        err.message
+            .rsplit("both map to ")
+            .next()
+            .expect("the collision message names the path")
+            .to_string()
+    };
+
+    assert_eq!(render("a b"), "\"a b\"");
+    assert_eq!(render("a.b"), "\"a.b\"");
+    assert_eq!(render("a\nb"), "\"a\\nb\"");
+    assert_eq!(render("a\tb"), "\"a\\tb\"");
+    assert_eq!(
+        render("a\u{0}b"),
+        "\"a\\u0000b\"",
+        "NUL is JSON's escape, not Rust's"
+    );
+    assert_eq!(render("a\"b"), "\"a\\\"b\"");
+    // U+2028 is legal raw in JSON and escaped anyway: it is a line separator to
+    // enough log viewers that a key could otherwise break its own message.
+    assert_eq!(render("a\u{2028}b"), "\"a\\u2028b\"");
+    // Printable non-ASCII stays itself — F1.3 leaves these unfolded, so they
+    // arrive here in normal use and escaping them would bury the common case.
+    assert_eq!(render("\u{130}a"), "\"\u{130}a\"");
+}
+
+/// The property an error message actually needs: two different paths never
+/// render alike, so a collision report can be acted on. Pasting the result into
+/// a getter is deliberately *not* promised — no implementation's path parser
+/// decodes escapes inside a quoted segment.
+#[test]
+fn distinct_paths_render_distinctly() {
+    let render_one = |name: &str| -> String {
+        let mut vars: HashMap<String, String> = HashMap::new();
+        vars.insert(format!("APP_{name}"), "1".to_string());
+        vars.insert(format!("APP_{}", name.to_uppercase()), "2".to_string());
+        let err = env::load_from(&vars, env_opts("APP_")).unwrap_err();
+        err.message
+            .rsplit("both map to ")
+            .next()
+            .unwrap()
+            .to_string()
+    };
+    // A literal dot in one segment must not read as the two-segment path.
+    assert_ne!(render_one("foo.bar"), render_one("foo__bar"));
+}
