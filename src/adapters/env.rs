@@ -168,7 +168,7 @@ pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> 
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let line = line.strip_prefix("export ").unwrap_or(line);
+        let line = strip_export(line);
         let Some((name, rest)) = line.split_once('=') else {
             return Err(AdapterError::new(format!(
                 "{origin}:{}: expected NAME=value",
@@ -176,16 +176,20 @@ pub fn parse_dotenv(input: &str, opts: Options) -> Result<Config, AdapterError> 
             )));
         };
         let name = name.trim();
+        // The two checks before the filter are about the *line* rather than the
+        // entry: a line with no `=` is not a NAME=value pair at all, and an
+        // empty name gives nothing to compare the prefix against.
         if name.is_empty() {
             return Err(AdapterError::new(format!(
                 "{origin}:{}: empty variable name",
                 i + 1
             )));
         }
-        let value = dotenv_value(rest.trim_start_matches([' ', '\t']), &origin, i + 1, name)?;
         let Some(stripped) = name.strip_prefix(&opts.prefix) else {
             continue;
         };
+        check_name(name, &origin, i + 1)?;
+        let value = dotenv_value(rest.trim_start_matches([' ', '\t']), &origin, i + 1, name)?;
         pairs.push((to_path(stripped, name)?, value));
     }
 
@@ -392,4 +396,45 @@ fn dotenv_value(v: &str, origin: &str, line: usize, name: &str) -> Result<String
         }
     }
     Ok(trimmed.to_string())
+}
+
+/// Drop a leading `export` and the whitespace after it (spec F1.7).
+///
+/// Stripping the literal `"export "` missed a tab, so `export\tFOO=bar` became
+/// the variable `export\tfoo` — a key nothing would ever look up, produced
+/// silently. A name that merely *begins* with `export` (`exportFOO=1`) is still
+/// a name, so the whitespace is what makes it the keyword.
+fn strip_export(line: &str) -> &str {
+    let Some(rest) = line.strip_prefix("export") else {
+        return line;
+    };
+    let trimmed = rest.trim_start_matches([' ', '\t']);
+    if trimmed.len() == rest.len() {
+        // No whitespace after it, so this is a variable whose name merely
+        // begins with "export" (`exportFOO=1`), not the keyword.
+        return line;
+    }
+    trimmed
+}
+
+/// Refuse a name that cannot have been meant (spec F1.7).
+///
+/// F1.7's rule for values is an error naming the fix rather than a guess about
+/// the author's intent; names get the same treatment. Whitespace or `#` inside
+/// one means the line was mis-parsed — `FOO BAR=baz` and `FOO#x=1` used to
+/// become the keys `foo bar` and `foo#x`.
+///
+/// Deliberately narrower than a POSIX name grammar, which would reject
+/// `APP_FOO.BAR` — a name F1.2 documents as valid and the fixtures exercise.
+fn check_name(name: &str, origin: &str, line: usize) -> Result<(), AdapterError> {
+    for c in name.chars() {
+        if c.is_whitespace() || c == '#' {
+            let what = if c == '#' { "'#'" } else { "whitespace" };
+            return Err(AdapterError::new(format!(
+                "{origin}:{line}: variable name {name:?} contains {what}; \
+                 the line is not NAME=value (spec F1.7)"
+            )));
+        }
+    }
+    Ok(())
 }

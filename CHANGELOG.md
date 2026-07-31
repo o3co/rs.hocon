@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `.env`: the prefix filter runs first, and names are validated (F1.7)
+
+**BREAKING both ways**: a line the prefix discards is no longer validated (so a
+`.env` that used to fail may now load), and a name containing whitespace or `#`
+is now refused (so one that used to load may now fail).
+
+Three things, all pinned by an amended spec F1.7 after cross-checking found all
+four implementations behaving identically by accident
+([xx.hocon#78](https://github.com/o3co/xx.hocon/issues/78)):
+
+- **The prefix filter moves ahead of validation.** The value was parsed before
+  the filter and the path mapped after it, so one check landed on each side —
+  `BAD=x # y` failed even when the caller only wanted `APP_*`, while
+  `OTHER__=x` was never checked at all. `load`'s contract already said which
+  way this goes ("entries outside the prefix are never inspected", the F1.1
+  principle); the two functions disagreeing was the actual inconsistency.
+- **`export` may be followed by any whitespace.** Matching the literal
+  `export ` missed a tab, so `export<TAB>FOO=bar` became the variable
+  `export<TAB>foo` — a key nothing would ever look up, produced silently. A
+  name that merely begins with `export` is still a name.
+- **A name containing whitespace or `#` is an error.** F1.7's rule for values —
+  an error naming the fix rather than a guess about the author's intent —
+  applies to names too; both characters mean the line was mis-parsed.
+  `FOO BAR=baz` and `FOO#x=1` used to become the keys `foo bar` and `foo#x`.
+  Deliberately narrower than a POSIX name grammar, which would reject
+  `APP_FOO.BAR` — a name F1.2 documents as valid.
+
 ### Fixed — `adapters::env`: control characters went into error messages raw
 
 `display_path` escaped only `\` and `"`, so a variable name holding a newline or
