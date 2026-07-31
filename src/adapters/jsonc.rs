@@ -203,6 +203,197 @@ fn strip_trailing_commas(src: &str) -> String {
 mod tests {
     use super::*;
 
+    /// The adversarial corpus behind issue #155.
+    ///
+    /// The security review on #154 ran 36 hostile inputs through the strip
+    /// passes and found no panic, and that result is the reason the passes
+    /// still build a `Vec<char>`: indexing chars makes a non-char-boundary
+    /// slice structurally impossible. The inputs themselves were never
+    /// committed, so the evidence lived only in a sentence in the issue —
+    /// which is worth exactly nothing to the next person who rewrites this.
+    ///
+    /// This is that corpus, rebuilt from the eight categories the issue names
+    /// (unterminated block comments, multibyte characters straddling comment
+    /// boundaries, comment markers inside strings, escaped quotes at string
+    /// end, BOM, CRLF, U+2028, deep nesting) and extended where reading the
+    /// code suggested a neighbouring shape. It is a reconstruction, not the
+    /// original list — the original is not recoverable — so the count differs
+    /// and the ids are ours.
+    ///
+    /// The bar every entry must clear is the one the review established:
+    /// **`parse` returns, one way or the other.** `Ok` and `Err` are both
+    /// acceptable answers for a hostile input; a panic is not, because
+    /// `parse_file` is public and a panic in a config loader takes the process
+    /// with it.
+    const ADVERSARIAL: &[(&str, &str)] = &[
+        // --- unterminated block comments ---
+        ("ub01-bare", "/*"),
+        ("ub02-after-doc", "{\"a\":1} /*"),
+        ("ub03-open-brace", "{/*"),
+        ("ub04-mid-value", "{\"a\": /*x"),
+        ("ub05-slash-star-slash", "/*/"),
+        ("ub06-star-at-eof", "{\"a\":1} /*x*"),
+        // --- unterminated strings, including an escape that runs off the end ---
+        ("us01-bare-quote", "\""),
+        ("us02-in-key", "{\"a"),
+        ("us03-in-value", "{\"a\": \"b"),
+        ("us04-trailing-backslash", "{\"a\": \"b\\"),
+        ("us05-escape-eats-quote", "{\"a\": \"b\\\""),
+        // --- escaped quotes and backslashes at a string boundary ---
+        ("eq01-escaped-quote", "{\"a\": \"b\\\"\"}"),
+        ("eq02-escaped-backslash", "{\"a\": \"b\\\\\"}"),
+        ("eq03-double-escaped", "{\"a\": \"b\\\\\\\\\"}"),
+        ("eq04-escape-in-key", "{\"a\\\\\": 1}"),
+        (
+            "eq05-escaped-quote-then-comment",
+            "{\"a\": \"b\\\"\" /*c*/}",
+        ),
+        // --- comment markers that are data, not comments ---
+        ("cm01-line-in-string", "{\"a\": \"//x\"}"),
+        ("cm02-block-in-string", "{\"a\": \"/*x*/\"}"),
+        ("cm03-closer-in-string", "{\"a\": \"*/\"}"),
+        ("cm04-marker-as-key", "{\"//\": 1}"),
+        ("cm05-quoted-quote-then-marker", "{\"a\": \"\\\"/*\\\"\"}"),
+        ("cm06-opener-only-in-string", "{\"a\": \"/*\"}"),
+        // --- multibyte characters straddling a comment or string boundary ---
+        ("mb01-after-block", "{\"a\": 1 /*\u{3042}*/}"),
+        ("mb02-before-value", "{\"a\": /*\u{3042}*/ 1}"),
+        ("mb03-in-key", "{\"\u{3042}\": 1}"),
+        (
+            "mb04-around-marker-in-string",
+            "{\"a\": \"\u{3042}/*b*/\u{3044}\"}",
+        ),
+        ("mb05-unterminated-block", "/*\u{3042}"),
+        ("mb06-astral", "{\"a\": \"\u{1f600}\" /*\u{1f600}*/}"),
+        ("mb07-astral-unterminated", "{\"a\": \"\u{1f600}"),
+        // --- BOM (F0.9) ---
+        ("bo01-doc", "\u{feff}{\"a\":1}"),
+        ("bo02-alone", "\u{feff}"),
+        ("bo03-then-comment", "\u{feff}/*c*/{\"a\":1}"),
+        // --- CRLF and lone CR (F3.2: a `//` comment ends at LF *or* CR) ---
+        ("cr01-trailing-crlf", "{\"a\":1}\r\n"),
+        ("cr02-inside-doc", "{\r\n\"a\":1\r\n}"),
+        ("cr03-lone-cr-ends-line-comment", "{\"a\":1 //c\r}"),
+        ("cr04-leading-line-comment", "//c\r{\"a\":1}"),
+        ("cr05-cr-in-block", "{\"a\": /*x\ry*/ 1}"),
+        // --- U+2028 / U+2029, which deliberately do NOT end a comment ---
+        ("ls01-in-line-comment", "{\"a\":1} //c\u{2028}"),
+        ("ls02-raw-in-string", "{\"a\": \"\u{2028}\"}"),
+        ("ls03-in-block-comment", "{\"a\": 1 /*\u{2028}*/}"),
+        ("ls04-paragraph-separator", "{\"a\":1} //c\u{2029}"),
+        // --- degenerate punctuation the trailing-comma pass has to survive ---
+        ("tc01-empty-object-comma", "{,}"),
+        ("tc02-empty-array-comma", "[,]"),
+        ("tc03-double-comma", "{\"a\":1,,}"),
+        ("tc04-comma-alone", ","),
+        ("tc05-comma-then-eof", "{\"a\":1,"),
+        // --- lone markers and the empty document ---
+        ("lm01-empty", ""),
+        ("lm02-slash", "/"),
+        ("lm03-closer", "*/"),
+        ("lm04-slash-then-eof", "{\"a\":1}/"),
+    ];
+
+    /// Deep nesting is generated rather than written out, so it lives beside
+    /// the table instead of in it.
+    fn deeply_nested() -> Vec<(String, String)> {
+        vec![
+            (
+                "dn01-arrays".to_string(),
+                "[".repeat(200) + &"]".repeat(200),
+            ),
+            (
+                "dn02-objects".to_string(),
+                "{\"a\":".repeat(200) + "1" + &"}".repeat(200),
+            ),
+            ("dn03-unterminated-arrays".to_string(), "[".repeat(200)),
+            (
+                "dn04-nested-in-comment".to_string(),
+                format!("/*{}*/{{\"a\":1}}", "[".repeat(200)),
+            ),
+        ]
+    }
+
+    /// The property the security review established, now enforced.
+    ///
+    /// `catch_unwind` rather than a bare call so a regression names the input
+    /// that caused it — a panic escaping the loop would otherwise report only
+    /// the slice index, which is the least useful half of the story.
+    #[test]
+    fn adversarial_inputs_never_panic() {
+        let mut cases: Vec<(String, String)> = ADVERSARIAL
+            .iter()
+            .map(|(id, src)| (id.to_string(), src.to_string()))
+            .collect();
+        cases.extend(deeply_nested());
+
+        let mut accepted = 0;
+        for (id, src) in &cases {
+            let outcome =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse(src, None).is_ok()));
+            match outcome {
+                Ok(true) => accepted += 1,
+                Ok(false) => {}
+                Err(_) => panic!("{id} panicked on {src:?}"),
+            }
+        }
+
+        // A corpus where everything errors would pass the panic check while
+        // exercising almost nothing — the interesting inputs are the ones that
+        // survive stripping and reach serde_json. Guarding the mix keeps a
+        // future "reject earlier" change from quietly hollowing this out.
+        assert!(
+            accepted >= 15 && accepted < cases.len(),
+            "{accepted} of {} accepted — the corpus has stopped exercising both paths",
+            cases.len()
+        );
+    }
+
+    /// A hostile input may be accepted or refused, but the refusals that carry
+    /// a diagnosis must keep carrying it — an unterminated construct reported
+    /// as a generic JSON syntax error sends the reader to the wrong line.
+    #[test]
+    fn unterminated_constructs_are_named() {
+        for src in ["/*", "{\"a\":1} /*", "/*/", "/*\u{3042}", "{\"a\":1} /*x*"] {
+            let err = strip_comments(src).expect_err(src);
+            assert!(
+                err.message.contains("unterminated block comment"),
+                "{src:?}: {}",
+                err.message
+            );
+        }
+        for src in [
+            "\"",
+            "{\"a",
+            "{\"a\": \"b",
+            "{\"a\": \"b\\",
+            "{\"a\": \"\u{1f600}",
+        ] {
+            let err = strip_comments(src).expect_err(src);
+            assert!(
+                err.message.contains("unterminated string literal"),
+                "{src:?}: {}",
+                err.message
+            );
+        }
+    }
+
+    /// U+2028 and U+2029 are line breaks to JavaScript but not to the JSONC
+    /// dialect this tracks (spec F3.2). If one ended a `//` comment, the
+    /// closing braces after it would become trailing content and the document
+    /// would be refused — so accepting it is the assertion.
+    #[test]
+    fn a_line_separator_does_not_end_a_line_comment() {
+        for sep in ['\u{2028}', '\u{2029}'] {
+            let src = format!("{{\"a\":1 //c{sep}}}}}}}");
+            let stripped = strip_comments(&src).expect(&src);
+            assert!(
+                !stripped.contains('}'),
+                "{sep:?} ended the comment: {stripped:?}"
+            );
+        }
+    }
+
     /// The sequence of line terminators, which is what "same line structure"
     /// means: a `\r\n` collapsed to `\n`, or a lone `\r` dropped, both show up
     /// here as a difference.
