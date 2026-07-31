@@ -1,3 +1,4 @@
+use crate::depth::MAX_DOCUMENT_DEPTH;
 use crate::error::ParseError;
 use crate::lexer::{Segment, Token, TokenKind};
 use crate::value::{ScalarType, ScalarValue};
@@ -76,7 +77,11 @@ pub struct AstField {
 
 /// Entry point: parse a slice of tokens into an AST.
 pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
-    let mut parser = Parser { tokens, pos: 0 };
+    let mut parser = Parser {
+        tokens,
+        pos: 0,
+        depth: 0,
+    };
     parser.skip(&[TokenKind::Newline]);
     if parser.peek_kind() == TokenKind::LBrace {
         let first_pos = parser.current_pos();
@@ -166,6 +171,10 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<AstNode, ParseError> {
 struct Parser<'a> {
     tokens: &'a [Token],
     pos: usize,
+    /// Current object/array nesting. Checked on the way in rather than
+    /// recovered from afterwards: in Rust a stack overflow is an abort, so
+    /// there is nothing to recover from (see crate::depth).
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -223,6 +232,32 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Enter one level of nesting, or refuse.
+    ///
+    /// The error names the limit rather than the position, because a document
+    /// this deep has no single interesting position — every level looks the
+    /// same, and the fix is structural.
+    fn enter(&mut self) -> Result<(), ParseError> {
+        self.depth += 1;
+        if self.depth > MAX_DOCUMENT_DEPTH {
+            let pos = self.current_pos();
+            return Err(ParseError {
+                message: format!(
+                    "document nests deeper than {MAX_DOCUMENT_DEPTH} levels; this \
+                     limit exists because exhausting the stack in Rust aborts the \
+                     process rather than raising"
+                ),
+                line: pos.line,
+                col: pos.col,
+            });
+        }
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
+    }
+
     fn skip(&mut self, kinds: &[TokenKind]) {
         while kinds.contains(&self.peek_kind()) {
             self.advance();
@@ -230,6 +265,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_object(&mut self, expect_closing_brace: bool) -> Result<AstNode, ParseError> {
+        self.enter()?;
+        let out = self.parse_object_inner(expect_closing_brace);
+        self.leave();
+        out
+    }
+
+    fn parse_object_inner(&mut self, expect_closing_brace: bool) -> Result<AstNode, ParseError> {
         let p = self.current_pos();
         let mut fields: Vec<AstField> = Vec::new();
 
@@ -1038,6 +1080,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array(&mut self) -> Result<AstNode, ParseError> {
+        self.enter()?;
+        let out = self.parse_array_inner();
+        self.leave();
+        out
+    }
+
+    fn parse_array_inner(&mut self) -> Result<AstNode, ParseError> {
         let p = self.current_pos();
         let mut items: Vec<AstNode> = Vec::new();
 

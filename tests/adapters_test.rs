@@ -462,3 +462,86 @@ fn used_as_a_substitution_source_under_hocon() {
         .unwrap();
     assert_eq!(merged.get_string("image").unwrap(), "postgres:16");
 }
+
+// --- document depth: the abort has to become an Err (#162) -------------------
+//
+// Rust leaves no third option here. The sibling implementations catch their
+// interpreter's or engine's own error and rethrow it as their own type; a stack
+// overflow in Rust is SIGABRT, which no catch_unwind contains and which takes
+// the caller's whole process with it. Refusing before the stack runs out is the
+// only way to hand the caller something to act on.
+
+/// 128 is `serde_json`'s limit, which this crate's own JSONC adapter has been
+/// enforcing since it shipped — so the core now agrees with the adapter rather
+/// than the same crate carrying two numbers.
+#[test]
+fn jsonc_and_the_core_agree_on_the_document_limit() {
+    let deep = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
+    assert!(jsonc::parse(&deep(127), None).is_ok());
+    assert!(jsonc::parse(&deep(128), None).is_err());
+    assert!(hocon::parse(&deep(128)).is_ok());
+    let err = hocon::parse(&deep(129)).unwrap_err();
+    assert!(err.to_string().contains("nests deeper than 128"), "{err}");
+}
+
+#[test]
+fn core_refuses_a_document_deeper_than_the_limit() {
+    for src in [
+        format!("{}1{}", "{\"a\":".repeat(500), "}".repeat(500)),
+        format!("a = {}1{}", "[".repeat(500), "]".repeat(500)),
+    ] {
+        let err = hocon::parse(&src).unwrap_err();
+        assert!(err.to_string().contains("nests deeper than 128"), "{err}");
+    }
+}
+
+/// The limit has to hold on the 2 MiB a spawned thread gets, not just the main
+/// thread's 8 MiB — a library called from a request handler has the former.
+/// Without the cap this parser survives ~600 levels there and aborts by 1000.
+#[test]
+fn the_limit_holds_on_a_two_mib_stack() {
+    let handle = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let deep = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
+            (
+                hocon::parse(&deep(128)).is_ok(),
+                hocon::parse(&deep(5000)).is_err(),
+            )
+        })
+        .expect("spawn");
+    assert_eq!(
+        handle.join().expect("the thread must not abort"),
+        (true, true)
+    );
+}
+
+/// `from_map` takes a tree the caller built, so it needs the same cap: without
+/// it, coercion recursed past the stack and aborted rather than returning Err.
+#[cfg(feature = "serde")]
+#[test]
+fn from_map_refuses_a_tree_deeper_than_the_limit() {
+    let build = |n: usize| {
+        let mut v = serde_json::Value::from(1u64);
+        for _ in 0..n {
+            let mut m = serde_json::Map::new();
+            m.insert("a".to_string(), v);
+            v = serde_json::Value::Object(m);
+        }
+        match v {
+            serde_json::Value::Object(m) => m,
+            _ => unreachable!(),
+        }
+    };
+    assert!(hocon::from_map(build(127), None).is_ok());
+    // Just over the limit, deliberately: a `serde_json::Value` thousands deep
+    // overflows in *serde_json's* own recursive Drop while this test tears it
+    // down, which is a property of holding that value at all and not something
+    // this cap reaches. 200 proves the cap and stays safe to build and drop.
+    let err = hocon::from_map(build(200), None).unwrap_err();
+    assert!(
+        err.message.contains("nests deeper than 128"),
+        "{}",
+        err.message
+    );
+}

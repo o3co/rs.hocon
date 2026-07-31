@@ -12,7 +12,21 @@
     "YAML fixtures deliberately quote any scalar whose resolution differs between",
     "YAML 1.1 and 1.2 (010, no, 1:30 and friends). Scalar resolution belongs to",
     "the YAML library in use, not to this spec, so asserting on those forms would",
-    "test the library rather than the adapter. See F5 'Scope'."
+    "test the library rather than the adapter. See F5 'Scope'.",
+    "",
+    "The `properties` format was added after the first four, so a runner that",
+    "predates it hits its unknown-format branch (a panic or throw in all four).",
+    "A new format value is not a xx.hocon-only change: each runner needs a",
+    "dispatch arm for it.",
+    "",
+    "Two reading rules the runner must honour, because two cases are silently",
+    "vacuous otherwise: read the input verbatim (fi24 turns on a lone CR, which",
+    "universal-newline text reads rewrite), and do not decode the BOM away",
+    "(fi17 and fi51 need the U+FEFF to reach the adapter, so no utf-8-sig).",
+    "",
+    "Schema, runner contract and the F-items that deliberately have no fixture",
+    "(F1.9, F5.1, F5.3 on the parse path): docs/fixture-conventions.md,",
+    "'Format-ingestion fixtures'."
   ],
   "cases": [
     {
@@ -52,6 +66,42 @@
       "note": "F1.7 a trailing # is refused rather than guessed at"
     },
     {
+      "id": "fi14-dot-in-name",
+      "format": "env",
+      "input": "env/fi14-dot-in-name.env.json",
+      "kind": "env-vars",
+      "expect": "ok",
+      "expected": "env/fi14-dot-in-name-expected.json",
+      "note": "F1.2 only __ creates hierarchy: a literal . in a variable name is key text, so APP_FOO.BAR is the single top-level key \"foo.bar\" and coexists with APP_FOO__BAR (two segments) instead of colliding with it under F1.6. Requires the mapped path to be carried as a segment list end-to-end — joining on . and re-splitting manufactures a boundary the environment never had."
+    },
+    {
+      "id": "fi15-ascii-fold",
+      "format": "env",
+      "input": "env/fi15-ascii-fold.env.json",
+      "kind": "env-vars",
+      "expect": "ok",
+      "expected": "env/fi15-ascii-fold-expected.json",
+      "note": "F1.3 case folding is ASCII-only: A-Z lowercase, every other codepoint is left alone. APP_İ (U+0130) must not collide with APP_I under F1.6, and APP_K (U+212A KELVIN SIGN) must not collide with APP_K — full Unicode lowercasing folds both away, and it folds them differently per language (Go's simple mapping turns U+0130 into i, everyone else's full mapping into i + U+0307), so the mapping is pinned rather than inherited from each stdlib."
+    },
+    {
+      "id": "fi16-proto-keys",
+      "format": "env",
+      "input": "env/fi16-proto-keys.env.json",
+      "kind": "env-vars",
+      "expect": "ok",
+      "expected": "env/fi16-proto-keys-expected.json",
+      "note": "F2.9 no key denylist on the shared key-nesting path: constructor and prototype are ordinary keys, at the root and nested. __proto__ cannot be reached through env at all — it begins and ends with the __ separator, so it would map to empty segments — which is why fi50 pins it through properties."
+    },
+    {
+      "id": "fi17-bom",
+      "format": "env",
+      "input": "env/fi17-bom.env",
+      "kind": "dotenv",
+      "expect": "ok",
+      "expected": "env/fi17-bom-expected.json",
+      "note": "F0.9 a leading UTF-8 BOM is stripped rather than glued to the first key. Left in place it yields the key \"\\ufefffoo\", so a lookup of foo misses and the value is silently unreachable — the plausible-but-wrong output F0.9 exists to prevent."
+    },
+    {
       "id": "fi20-comments",
       "format": "jsonc",
       "input": "jsonc/fi20-comments.jsonc",
@@ -74,6 +124,29 @@
       "expect": "error",
       "cites": "F0.3",
       "note": "F0.3 a config root must be an object"
+    },
+    {
+      "id": "fi23-comment-splices-tokens",
+      "format": "jsonc",
+      "input": "jsonc/fi23-comment-splices-tokens.jsonc",
+      "expect": "error",
+      "note": "F3.2 comment stripping is token-separating: a comment is replaced by whitespace, never the empty string, so 1/*x*/2 stays two tokens and fails the JSON decode instead of silently reading as 12. No cites — the message is the underlying JSON decoder's and differs per implementation."
+    },
+    {
+      "id": "fi24-cr-terminated-comment",
+      "format": "jsonc",
+      "input": "jsonc/fi24-cr-terminated-comment.jsonc",
+      "expect": "ok",
+      "expected": "jsonc/fi24-cr-terminated-comment-expected.json",
+      "note": "F3.2 a // comment ends at LF *or* CR. The input separates the comment from \"b\" with a lone CR (0x0D). Scanning only for \\n makes the comment swallow that line, and because the trailing-comma pass then tidies the dangling comma the document still parses — losing the key \"b\" with no error at all. CAVEAT: a harness that reads the input in text mode with universal-newline translation (Python's Path.read_text default) turns the CR into an LF before the adapter sees it and the case passes vacuously; read the fixture as bytes, or with newline=\"\", to keep it load-bearing."
+    },
+    {
+      "id": "fi25-line-separator-in-comment",
+      "format": "jsonc",
+      "input": "jsonc/fi25-line-separator-in-comment.jsonc",
+      "expect": "ok",
+      "expected": "jsonc/fi25-line-separator-in-comment-expected.json",
+      "note": "F3.2 the mirror image of fi24: U+2028 deliberately does NOT terminate a // comment. node-jsonc-parser, which defines this dialect, treats only LF and CR as line breaks, so the comment runs through the U+2028 and \"b\" is commented out — the document is {\"a\":1,\"c\":3}. Ending the comment early would make the file mean one thing in the editor that owns the format and another here."
     },
     {
       "id": "fi30-datetimes",
@@ -146,6 +219,30 @@
       "expect": "error",
       "cites": "F0.6",
       "note": "F0.6 NaN is not representable in HOCON"
+    },
+    {
+      "id": "fi50-proto-keys",
+      "format": "properties",
+      "input": "properties/fi50-proto-keys.properties",
+      "expect": "ok",
+      "expected": "properties/fi50-proto-keys-expected.json",
+      "note": "F2.9 no key denylist: __proto__, constructor and prototype survive as ordinary keys, at the root and under a dotted parent. Dropping them would be data loss; JS implementations get prototype-pollution safety by construction (null-prototype carriers, own-property definition), never by dropping keys."
+    },
+    {
+      "id": "fi51-bom",
+      "format": "properties",
+      "input": "properties/fi51-bom.properties",
+      "expect": "ok",
+      "expected": "properties/fi51-bom-expected.json",
+      "note": "F0.9 a leading UTF-8 BOM is stripped rather than glued to the first key. This is the flat-format shape of the failure: left in place the key is \"\\ufeffa\", so a lookup of a misses and the value is silently unreachable."
+    },
+    {
+      "id": "fi52-dotted-keys",
+      "format": "properties",
+      "input": "properties/fi52-dotted-keys.properties",
+      "expect": "ok",
+      "expected": "properties/fi52-dotted-keys-expected.json",
+      "note": "F2.1/F2.2/F2.4 baseline for the format: dotted keys nest, all values are strings, = / : / whitespace all separate, # and ! comment, \\: is an escaped key character. F0.2 ${a.b} stays literal."
     }
   ]
 }

@@ -118,6 +118,7 @@
 ))]
 pub mod adapters;
 pub mod config;
+pub(crate) mod depth;
 pub mod error;
 /// Internal lexer module. Not part of the stable public API.
 ///

@@ -45,6 +45,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use super::{config_from_object, AdapterError};
+use crate::depth::MAX_PATH_SEGMENTS;
 use crate::value::{HoconValue, ScalarValue};
 use crate::Config;
 
@@ -52,11 +53,6 @@ use crate::Config;
 /// of the segment, so `APP_DB__MAX_CONN` is `db.max_conn` (spec F1.2). Fixed
 /// rather than configurable so every language's adapter nests identically.
 const SEPARATOR: &str = "__";
-
-/// Ceiling on mapped path depth. `set_nested` and the resulting tree's `Drop`
-/// are both recursive, so an unbounded depth overflows the stack and aborts
-/// the process. Nothing legitimate nests this far.
-const MAX_DEPTH: usize = 64;
 
 /// How variable names become config paths.
 #[derive(Debug, Clone, Default)]
@@ -226,9 +222,9 @@ fn to_path(rest: &str, name: &str) -> Result<Vec<String>, AdapterError> {
     // allows a 128 KiB environment entry and `parse_dotenv` takes arbitrary
     // file text, so this is reachable from input. A path this deep is a
     // mistake in every real config, and an error says so.
-    if segs.len() > MAX_DEPTH {
+    if segs.len() > MAX_PATH_SEGMENTS {
         return Err(AdapterError::new(format!(
-            "env: \"{name}\" maps to a path {} segments deep, over the limit of {MAX_DEPTH}",
+            "env: \"{name}\" maps to a path {} segments deep, over the limit of {MAX_PATH_SEGMENTS}",
             segs.len()
         )));
     }

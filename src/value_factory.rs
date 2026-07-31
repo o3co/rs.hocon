@@ -15,6 +15,8 @@ use crate::config::Config;
 use indexmap::IndexMap;
 
 #[cfg(feature = "serde")]
+use crate::depth::MAX_DOCUMENT_DEPTH;
+#[cfg(feature = "serde")]
 use crate::error::ConfigError;
 #[cfg(feature = "serde")]
 use crate::value::{HoconValue, ScalarType, ScalarValue};
@@ -54,7 +56,7 @@ pub fn from_map(
     values: serde_json::Map<String, serde_json::Value>,
     origin_description: Option<&str>,
 ) -> Result<Config, ConfigError> {
-    let root = coerce_map(values)?;
+    let root = coerce_map(values, 1)?;
     Ok(Config::new_with_meta(
         root,
         origin_description.map(|s| s.to_owned()),
@@ -64,14 +66,24 @@ pub fn from_map(
 #[cfg(feature = "serde")]
 fn coerce_map(
     map: serde_json::Map<String, serde_json::Value>,
+    depth: usize,
 ) -> Result<IndexMap<String, HoconValue>, ConfigError> {
+    // Same limit as the parser, for the same reason: this recurses per level
+    // and the caller hands over a tree it built itself, so without a cap a deep
+    // one aborts the process here rather than returning an Err (crate::depth).
+    if depth > MAX_DOCUMENT_DEPTH {
+        return Err(ConfigError {
+            path: String::new(),
+            message: format!("tree nests deeper than {MAX_DOCUMENT_DEPTH} levels"),
+        });
+    }
     // Sorted key iteration for stable cross-impl JSON output.
     let mut keys: Vec<String> = map.keys().cloned().collect();
     keys.sort();
     let mut result = IndexMap::new();
     for k in keys {
         let v = map.get(&k).unwrap().clone();
-        let hv = coerce_value(v).map_err(|msg| ConfigError {
+        let hv = coerce_value(v, depth).map_err(|msg| ConfigError {
             path: k.clone(),
             message: msg,
         })?;
@@ -81,7 +93,7 @@ fn coerce_map(
 }
 
 #[cfg(feature = "serde")]
-fn coerce_value(v: serde_json::Value) -> Result<HoconValue, String> {
+fn coerce_value(v: serde_json::Value, depth: usize) -> Result<HoconValue, String> {
     use serde_json::Value;
     match v {
         Value::Null => Ok(HoconValue::Scalar(ScalarValue {
@@ -133,13 +145,14 @@ fn coerce_value(v: serde_json::Value) -> Result<HoconValue, String> {
         Value::Array(arr) => {
             let mut items = Vec::with_capacity(arr.len());
             for (i, elem) in arr.into_iter().enumerate() {
-                let hv = coerce_value(elem).map_err(|msg| format!("element[{}]: {}", i, msg))?;
+                let hv = coerce_value(elem, depth + 1)
+                    .map_err(|msg| format!("element[{}]: {}", i, msg))?;
                 items.push(hv);
             }
             Ok(HoconValue::Array(items))
         }
         Value::Object(obj) => {
-            let inner = coerce_map(obj).map_err(|e| e.message)?;
+            let inner = coerce_map(obj, depth + 1).map_err(|e| e.message)?;
             Ok(HoconValue::Object(inner))
         }
     }
