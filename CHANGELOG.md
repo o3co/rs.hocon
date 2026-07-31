@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-07-31
+
+Cross-impl release, coordinated to land at v1.12.0 across go.hocon / ts.hocon /
+rs.hocon / py.hocon so the ecosystem stays on one version line.
+
+**Minor, not patch, and one change is BREAKING in both directions**: the `.env`
+adapter now runs the prefix filter before validation (a file that used to fail
+may now load) and refuses a variable name containing whitespace or `#` (a file
+that used to load may now fail). Both follow from a spec amendment made after a
+cross-check found all four implementations behaving identically *by accident*
+— see [xx.hocon#78](https://github.com/o3co/xx.hocon/issues/78).
+
+The rest: deeply nested input returned an error instead of aborting the process
+(a Rust stack overflow is `SIGABRT` and cannot be caught, so this one is a cap
+rather than a converted error), control characters no longer reach error
+messages raw, coinciding sibling YAML keys are an error rather than last-wins,
+and the JSONC strip passes stopped allocating a `Vec<char>`.
+
+The F-item spec these errors cite is now public at
+[`xx.hocon/docs/format-ingestion-mapping.md`](https://github.com/o3co/xx.hocon/blob/main/docs/format-ingestion-mapping.md);
+it previously lived in a private working scope.
+
+The published version comes from the tag (`cargo set-version` in the release
+workflow); `Cargo.toml` carries a snapshot version and is not bumped here.
+
 ### Changed — `.env`: the prefix filter runs first, and names are validated (F1.7)
 
 **BREAKING both ways**: a line the prefix discards is no longer validated (so a
