@@ -103,6 +103,25 @@
       "note": "F0.9 a leading UTF-8 BOM is stripped rather than glued to the first key. Left in place it yields the key \"\\ufefffoo\", so a lookup of foo misses and the value is silently unreachable — the plausible-but-wrong output F0.9 exists to prevent."
     },
     {
+      "id": "fi18-dotenv-prefix",
+      "format": "env",
+      "input": "env/fi18-dotenv-prefix.env",
+      "kind": "dotenv",
+      "prefix": "APP_",
+      "expect": "ok",
+      "expected": "env/fi18-dotenv-prefix-expected.json",
+      "note": "F1.7 the prefix filter runs before validation, and export may be followed by a run of spaces and/or tabs. The OTHER= line carries a trailing comment this dialect refuses, and must never be inspected because it sits outside the mount — a .env shared with tools that do support trailing comments has to stay loadable for the slice the caller actually asked for. The two export lines use a tab and three spaces respectively: matching \"export \" alone turned the tab-separated line into the key \"export<TAB>app_foo\", silently."
+    },
+    {
+      "id": "fi19-dotenv-name-nel",
+      "format": "env",
+      "input": "env/fi19-dotenv-name-nel.env",
+      "kind": "dotenv",
+      "expect": "error",
+      "cites": "contains whitespace",
+      "note": "F1.7 whitespace in a name means the Unicode White_Space property, pinned rather than inherited from each stdlib. U+0085 (NEL) is the codepoint that separates the four convenience predicates: Go unicode.IsSpace, Rust char::is_whitespace and Python str.isspace all have it, JavaScript regex \\s does not — so this line errored in three implementations and produced the key foo<NEL>bar in ts.hocon. The mirror difference is Python-only: str.isspace reports U+001C-U+001F as space where White_Space does not, so those stay ordinary name characters. A plain space in a name is the uncontroversial core of the same rule and is covered by per-impl tests rather than a second fixture."
+    },
+    {
       "id": "fi20-comments",
       "format": "jsonc",
       "input": "jsonc/fi20-comments.jsonc",
