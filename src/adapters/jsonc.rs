@@ -102,63 +102,81 @@ fn convert(v: &JsonValue, at: &str) -> Result<HoconValue, AdapterError> {
 /// body collapses to a single space — so only line numbers are meaningful,
 /// which is the same trade `//` stripping has always made.
 fn strip_comments(src: &str) -> Result<String, AdapterError> {
-    let b: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
+    let mut it = src.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        match c {
             '"' => {
-                let end = end_of_string(&b, i)?;
-                out.extend(&b[i..end]);
-                i = end;
+                let end = end_of_string(&mut it)?;
+                out.push_str(&src[i..end]);
             }
-            '/' if i + 1 < b.len() && b[i + 1] == '/' => {
+            '/' if peek_is(&mut it, '/') => {
                 // A lone CR ends the comment too: a classic-Mac or otherwise
                 // CR-delimited file would otherwise have the rest of the
                 // document swallowed by the first `//` (spec F3.2). The
-                // terminator itself is left in place, so it still separates
-                // tokens.
-                while i < b.len() && b[i] != '\n' && b[i] != '\r' {
-                    i += 1;
+                // terminator itself is left for the outer loop, so it still
+                // separates tokens.
+                while let Some(&(_, c)) = it.peek() {
+                    if c == '\n' || c == '\r' {
+                        break;
+                    }
+                    it.next();
                 }
             }
-            '/' if i + 1 < b.len() && b[i + 1] == '*' => {
-                let mut j = i + 2;
-                loop {
-                    if j + 1 >= b.len() {
-                        return Err(AdapterError::new("jsonc: unterminated block comment"));
-                    }
-                    if b[j] == '*' && b[j + 1] == '/' {
+            '/' if peek_is(&mut it, '*') => {
+                it.next(); // the '*'
+                let mut closed = false;
+                while let Some((_, c)) = it.next() {
+                    if c == '*' && peek_is(&mut it, '/') {
+                        it.next();
+                        closed = true;
                         break;
                     }
                     // Re-emit terminators verbatim so a `\r\n` stays a pair
                     // and a lone `\r` is not silently dropped. Keeping only
                     // `\n` collapsed CRLF and lost classic-Mac line breaks
                     // outright, which contradicted the invariant above.
-                    if b[j] == '\n' || b[j] == '\r' {
-                        out.push(b[j]);
+                    if c == '\n' || c == '\r' {
+                        out.push(c);
                     }
-                    j += 1;
+                }
+                if !closed {
+                    return Err(AdapterError::new("jsonc: unterminated block comment"));
                 }
                 out.push(' ');
-                i = j + 2;
             }
-            c => {
-                out.push(c);
-                i += 1;
-            }
+            c => out.push(c),
         }
     }
     Ok(out)
 }
 
-fn end_of_string(b: &[char], i: usize) -> Result<usize, AdapterError> {
-    let mut j = i + 1;
-    while j < b.len() {
-        match b[j] {
-            '\\' => j += 2,
+/// Whether the next character is `want`, without consuming it.
+fn peek_is(it: &mut std::iter::Peekable<std::str::CharIndices<'_>>, want: char) -> bool {
+    matches!(it.peek(), Some(&(_, c)) if c == want)
+}
+
+/// Consume a string literal whose opening quote has already been taken from
+/// `it`, and return the byte offset just past its closing quote.
+///
+/// The returned offset is a char boundary **by provenance**: it is either an
+/// index yielded by `char_indices` or that index plus the exact `len_utf8` of
+/// the character there, never a computed guess. That is what lets the callers
+/// slice `src` directly with no possibility of a panic — the property the old
+/// `Vec<char>` bought at four bytes per character.
+fn end_of_string(
+    it: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
+) -> Result<usize, AdapterError> {
+    while let Some((j, c)) = it.next() {
+        match c {
+            // Whatever follows an escape is data, including a quote. A
+            // backslash at the end of the document consumes nothing and the
+            // loop exits, which is the unterminated case below.
+            '\\' if it.next().is_none() => break,
+            '\\' => {}
+            // `"` is one byte, so the char boundary after it is j + 1.
             '"' => return Ok(j + 1),
-            _ => j += 1,
+            _ => {}
         }
     }
     Err(AdapterError::new("jsonc: unterminated string literal"))
@@ -166,35 +184,45 @@ fn end_of_string(b: &[char], i: usize) -> Result<usize, AdapterError> {
 
 /// Drop a comma whose next meaningful character closes its object or array.
 fn strip_trailing_commas(src: &str) -> String {
-    let b: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == '"' {
-            match end_of_string(&b, i) {
-                Ok(end) => {
-                    out.extend(&b[i..end]);
-                    i = end;
-                    continue;
-                }
+    let mut it = src.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        if c == '"' {
+            match end_of_string(&mut it) {
+                Ok(end) => out.push_str(&src[i..end]),
+                // An unterminated string is not this pass's error to raise —
+                // `strip_comments` has already refused one, so a caller that
+                // reaches here gets the remainder verbatim and the decoder
+                // reports it.
                 Err(_) => {
-                    out.extend(&b[i..]);
+                    out.push_str(&src[i..]);
                     return out;
                 }
             }
+            continue;
         }
-        if b[i] == ',' {
-            let mut j = i + 1;
-            while j < b.len() && b[j].is_whitespace() {
-                j += 1;
+        if c == ',' {
+            // `,` is one byte, so this is the boundary after it.
+            let after_comma = i + 1;
+            let mut ws_end = after_comma;
+            while let Some(&(j, ch)) = it.peek() {
+                if !ch.is_whitespace() {
+                    break;
+                }
+                ws_end = j + ch.len_utf8();
+                it.next();
             }
-            if j < b.len() && (b[j] == '}' || b[j] == ']') {
-                i += 1;
-                continue;
-            }
+            let closes = matches!(it.peek(), Some(&(_, '}')) | Some(&(_, ']')));
+            // The whitespace is kept either way — only the comma goes — so the
+            // line structure this module promises survives.
+            out.push_str(if closes {
+                &src[after_comma..ws_end]
+            } else {
+                &src[i..ws_end]
+            });
+            continue;
         }
-        out.push(b[i]);
-        i += 1;
+        out.push(c);
     }
     out
 }
