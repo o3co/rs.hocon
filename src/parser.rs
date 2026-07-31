@@ -238,8 +238,9 @@ impl<'a> Parser<'a> {
     /// this deep has no single interesting position — every level looks the
     /// same, and the fix is structural.
     fn enter(&mut self) -> Result<(), ParseError> {
-        self.depth += 1;
-        if self.depth > MAX_DOCUMENT_DEPTH {
+        // Checked before the increment so the counter is never left above the
+        // limit for an error path to unwind through.
+        if self.depth + 1 > MAX_DOCUMENT_DEPTH {
             let pos = self.current_pos();
             return Err(ParseError {
                 message: format!(
@@ -251,6 +252,7 @@ impl<'a> Parser<'a> {
                 col: pos.col,
             });
         }
+        self.depth += 1;
         Ok(())
     }
 

@@ -64,6 +64,26 @@ pub fn from_map(
 }
 
 #[cfg(feature = "serde")]
+fn depth_exceeded() -> String {
+    format!("tree nests deeper than {MAX_DOCUMENT_DEPTH} levels")
+}
+
+/// Prefix an inner error with where it happened — except the depth error, which
+/// is about the tree as a whole. Left to accumulate, it collected one
+/// `element[0]:` per level and arrived 128 prefixes long, burying the one fact
+/// the reader needs.
+#[cfg(feature = "serde")]
+fn add_context(where_: impl Fn() -> String) -> impl Fn(String) -> String {
+    move |msg: String| {
+        if msg == depth_exceeded() {
+            msg
+        } else {
+            format!("{}: {}", where_(), msg)
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
 fn coerce_map(
     map: serde_json::Map<String, serde_json::Value>,
     depth: usize,
@@ -74,7 +94,7 @@ fn coerce_map(
     if depth > MAX_DOCUMENT_DEPTH {
         return Err(ConfigError {
             path: String::new(),
-            message: format!("tree nests deeper than {MAX_DOCUMENT_DEPTH} levels"),
+            message: depth_exceeded(),
         });
     }
     // Sorted key iteration for stable cross-impl JSON output.
@@ -95,6 +115,12 @@ fn coerce_map(
 #[cfg(feature = "serde")]
 fn coerce_value(v: serde_json::Value, depth: usize) -> Result<HoconValue, String> {
     use serde_json::Value;
+    // Checked here rather than only in coerce_map: an array recurses through
+    // this function without passing through a map at all, so a tree that is
+    // arrays all the way down would otherwise slip past the cap entirely.
+    if depth > MAX_DOCUMENT_DEPTH {
+        return Err(depth_exceeded());
+    }
     match v {
         Value::Null => Ok(HoconValue::Scalar(ScalarValue {
             raw: "null".to_owned(),
@@ -146,7 +172,7 @@ fn coerce_value(v: serde_json::Value, depth: usize) -> Result<HoconValue, String
             let mut items = Vec::with_capacity(arr.len());
             for (i, elem) in arr.into_iter().enumerate() {
                 let hv = coerce_value(elem, depth + 1)
-                    .map_err(|msg| format!("element[{}]: {}", i, msg))?;
+                    .map_err(add_context(|| format!("element[{i}]")))?;
                 items.push(hv);
             }
             Ok(HoconValue::Array(items))

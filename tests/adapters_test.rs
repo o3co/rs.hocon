@@ -471,15 +471,27 @@ fn used_as_a_substitution_source_under_hocon() {
 // the caller's whole process with it. Refusing before the stack runs out is the
 // only way to hand the caller something to act on.
 
-/// 128 is `serde_json`'s limit, which this crate's own JSONC adapter has been
-/// enforcing since it shipped — so the core now agrees with the adapter rather
-/// than the same crate carrying two numbers.
+/// The core takes `serde_json`'s number, which this crate's own JSONC adapter
+/// has enforced since it shipped — one crate with one limit rather than two
+/// unrelated ones.
+///
+/// They differ by exactly one level, deliberately rather than by oversight:
+/// `serde_json` counts the outermost value and refuses at 128, so it admits
+/// 127, while the core counts the levels it enters and admits 128. Closing that
+/// gap would mean either second-guessing `serde_json`'s counting or moving the
+/// core's for cosmetics. What matters, and what this pins, is that neither
+/// admits a document the other would call absurd.
 #[test]
-fn jsonc_and_the_core_agree_on_the_document_limit() {
+fn the_core_and_the_jsonc_adapter_use_the_same_limit_to_within_a_level() {
     let deep = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
+
     assert!(jsonc::parse(&deep(127), None).is_ok());
-    assert!(jsonc::parse(&deep(128), None).is_err());
-    assert!(hocon::parse(&deep(128)).is_ok());
+    assert!(
+        jsonc::parse(&deep(128), None).is_err(),
+        "serde_json admits 127"
+    );
+
+    assert!(hocon::parse(&deep(128)).is_ok(), "the core admits 128");
     let err = hocon::parse(&deep(129)).unwrap_err();
     assert!(err.to_string().contains("nests deeper than 128"), "{err}");
 }
@@ -544,4 +556,46 @@ fn from_map_refuses_a_tree_deeper_than_the_limit() {
         "{}",
         err.message
     );
+}
+
+/// The depth error is about the tree as a whole, so it must not collect one
+/// `element[i]:` prefix per level on the way out — left to accumulate it
+/// arrived hundreds of prefixes long, burying the one fact the reader needs.
+#[cfg(feature = "serde")]
+#[test]
+fn the_depth_error_does_not_accumulate_context() {
+    let mut v = serde_json::Value::from(1u64);
+    for _ in 0..200 {
+        v = serde_json::Value::Array(vec![v]);
+    }
+    let mut m = serde_json::Map::new();
+    m.insert("a".to_string(), v);
+    let err = hocon::from_map(m, None).unwrap_err();
+    assert_eq!(err.message, "tree nests deeper than 128 levels");
+}
+
+/// An array-only tree reaches `coerce_value` without ever passing through
+/// `coerce_map`, so a cap enforced only on maps let it through entirely.
+#[cfg(feature = "serde")]
+#[test]
+fn from_map_caps_an_array_only_tree_too() {
+    let mut v = serde_json::Value::from(1u64);
+    for _ in 0..400 {
+        v = serde_json::Value::Array(vec![v]);
+    }
+    let mut m = serde_json::Map::new();
+    m.insert("a".to_string(), v);
+    assert!(hocon::from_map(m, None).is_err());
+}
+
+/// A `.properties` dotted key builds the same unbounded chain an environment
+/// variable name does, through a `set_nested` that recurses per segment, so it
+/// takes the same cap. The README claims 64 for both; this is the half that was
+/// missing.
+#[test]
+fn properties_refuses_a_key_deeper_than_the_segment_limit() {
+    let key = |n: usize| vec!["k"; n].join(".");
+    assert!(properties::parse(&format!("{} = 1", key(64)), None).is_ok());
+    let err = properties::parse(&format!("{} = 1", key(65)), None).unwrap_err();
+    assert!(err.to_string().contains("over the limit of 64"), "{}", err);
 }
