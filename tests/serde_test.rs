@@ -161,3 +161,70 @@ fn deserialize_vec_from_numeric_keyed_object_sorted_and_compacted() {
         .expect("Vec<String> deserialization must sort by integer key");
     assert_eq!(val.items, vec!["a", "b", "d"]);
 }
+
+// ---------------------------------------------------------------------------
+// from_str / from_file — one-step text → T entry points
+// ---------------------------------------------------------------------------
+
+#[test]
+fn from_str_deserializes_in_one_step() {
+    let server: ServerConfig = hocon::from_str("host = localhost, port = 8080").unwrap();
+    assert_eq!(
+        server,
+        ServerConfig {
+            host: "localhost".to_string(),
+            port: 8080
+        }
+    );
+}
+
+#[test]
+fn from_str_resolves_substitutions() {
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Cfg {
+        a: i64,
+        b: i64,
+    }
+    let cfg: Cfg = hocon::from_str("a = 1, b = ${a}").unwrap();
+    assert_eq!(cfg, Cfg { a: 1, b: 1 });
+}
+
+#[test]
+fn from_str_parse_error_surfaces_as_parse_variant() {
+    let err = hocon::from_str::<ServerConfig>("host = {").unwrap_err();
+    assert!(
+        matches!(err, hocon::HoconError::Parse(_)),
+        "syntax error must surface as HoconError::Parse, got {err:?}"
+    );
+}
+
+#[test]
+fn from_str_type_mismatch_surfaces_as_config_variant_with_empty_path() {
+    let err = hocon::from_str::<ServerConfig>("host = localhost, port = not-a-number").unwrap_err();
+    match err {
+        hocon::HoconError::Config(e) => {
+            assert!(
+                e.path.is_empty(),
+                "root-level decode error carries an empty path"
+            );
+        }
+        other => panic!("expected HoconError::Config, got {other:?}"),
+    }
+}
+
+#[test]
+fn from_file_deserializes_with_relative_includes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("defaults.conf"), "port = 8080\n").unwrap();
+    let main = dir.path().join("app.conf");
+    std::fs::write(&main, "include \"defaults.conf\"\nhost = localhost\n").unwrap();
+
+    let server: ServerConfig = hocon::from_file(&main).unwrap();
+    assert_eq!(
+        server,
+        ServerConfig {
+            host: "localhost".to_string(),
+            port: 8080
+        }
+    );
+}

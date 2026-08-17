@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `hocon::from_str::<T>()` and `hocon::from_file::<T>()` (`serde` feature) —
+  one-step parse + deserialize into any `serde::Deserialize` type, the
+  `serde_json::from_str` shape. Substitutions resolve against the process
+  environment exactly like `parse` / `parse_file`; a deserialization failure
+  surfaces as `HoconError::Config` with an empty `path` (the document root),
+  matching the array-root convention. The existing composition points
+  (`Config::deserialize`, `Config::get_as`, `serde::from_value`) are unchanged.
+
 ## [1.12.0] - 2026-07-31
 
 Cross-impl release, coordinated to land at v1.12.0 across go.hocon / ts.hocon /
