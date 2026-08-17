@@ -70,8 +70,16 @@ struct Server {
     port: u16,
 }
 
-let app: App = hocon::from_str(input)?;          // テキスト → T の 1 ステップ
-let app: App = hocon::from_file("app.conf")?;    // ファイルからも同様
+// テキスト → T の 1 ステップ
+let app: App = hocon::from_str(r#"
+    server {
+        host = "localhost"
+        port = 8080
+    }
+"#)?;
+
+// ファイルからも同様
+let app: App = hocon::from_file("app.conf")?;
 ```
 
 ## なぜ HOCON？
