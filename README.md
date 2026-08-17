@@ -77,7 +77,7 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
 
 - Complete HOCON syntax: objects, arrays, comments, multi-line strings, unquoted strings
 - Substitutions (`${foo}`, `${?foo}`) with cycle detection
-- `include` directives (file, classpath, URL) with relative path resolution
+- `include "file.conf"` and `include file("file.conf")` directives with relative path resolution
 - Object merging and array concatenation per spec
 - String, array, and object value concatenation
 - Duration and byte-size parsing (`10 seconds`, `512 MB`)
