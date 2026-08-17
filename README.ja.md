@@ -54,6 +54,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+自分の型へ直接デシリアライズすることもできます（`serde` フィーチャー）:
+
+```rust
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct App {
+    server: Server,
+}
+
+#[derive(Deserialize)]
+struct Server {
+    host: String,
+    port: u16,
+}
+
+let app: App = hocon::from_str(input)?;          // テキスト → T の 1 ステップ
+let app: App = hocon::from_file("app.conf")?;    // ファイルからも同様
+```
+
 ## なぜ HOCON？
 
 | | `.env` | JSON | YAML | HOCON |
@@ -82,7 +102,8 @@ HOCON は単なるシリアライズ形式ではなく、**プログラムに注
 - 環境変数の参照（`${HOME}`）
 - ドット区切りパス式（`server.host`）
 - フォールバック設定のマージ（`with_fallback`）
-- オプションの Serde デシリアライゼーション
+- オプションの Serde デシリアライゼーション: 1 ステップの `hocon::from_str::<T>()` /
+  `from_file::<T>()`、パス指定の `Config::get_as::<T>(path)`、`Config::deserialize::<T>()`
 - Lightbend 等価テスト合格（equiv01 - equiv05）
 
 ## API リファレンス
@@ -167,10 +188,17 @@ struct ServerConfig {
     port: u16,
 }
 
+// テキスト (またはファイル) → T の 1 ステップ — serde_json::from_str と同型:
+let server: ServerConfig = hocon::from_str("host = localhost, port = 8080")?;
+let server: ServerConfig = hocon::from_file("server.conf")?;
+
+// パス指定: パス上の任意ノード (オブジェクト・配列・スカラー) をデシリアライズ:
 let config = hocon::parse(input)?;
-let server: ServerConfig = config
-    .get_config("server")?
-    .deserialize()?;
+let server: ServerConfig = config.get_as("server")?;
+let ports: Vec<u16> = config.get_as("ports")?;
+
+// Config 全体からも (with_fallback / resolve の後などに):
+let server: ServerConfig = config.deserialize()?;
 ```
 
 ## エラー型

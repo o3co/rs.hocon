@@ -1,7 +1,9 @@
+use crate::error::{ConfigError, HoconError};
 use crate::numeric_array::numeric_object_to_array;
 use crate::value::{HoconValue, ScalarType, ScalarValue};
 use indexmap::IndexMap;
 use std::fmt;
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -62,6 +64,62 @@ where
     T: ::serde::de::DeserializeOwned,
 {
     T::deserialize(HoconDeserializer::new(value))
+}
+
+/// Parse a HOCON string and deserialize it into `T` in one step.
+///
+/// The one-liner for the common case — `serde_json::from_str`, but for HOCON:
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// struct Server {
+///     host: String,
+///     port: u16,
+/// }
+///
+/// let server: Server = hocon::from_str("host = localhost, port = 8080")?;
+/// assert_eq!(server.port, 8080);
+/// # Ok::<(), hocon::HoconError>(())
+/// ```
+///
+/// Substitutions are resolved against the process environment, exactly like
+/// [`parse`](crate::parse); use [`crate::parse_with_env`] +
+/// [`Config::deserialize`](crate::Config::deserialize) to control the
+/// environment. For a path-scoped decode use
+/// [`Config::get_as`](crate::Config::get_as).
+///
+/// A deserialization failure is reported as [`HoconError::Config`] with an
+/// empty `path` (the error concerns the document root), matching the
+/// array-root convention.
+pub fn from_str<T>(input: &str) -> Result<T, HoconError>
+where
+    T: ::serde::de::DeserializeOwned,
+{
+    let cfg = crate::parse(input)?;
+    cfg.deserialize().map_err(deserialize_to_hocon_error)
+}
+
+/// Parse a HOCON file and deserialize it into `T` in one step.
+///
+/// The file counterpart of [`from_str`]: `include` directives resolve
+/// relative to the file's directory, exactly like
+/// [`parse_file`](crate::parse_file).
+pub fn from_file<T, P>(path: P) -> Result<T, HoconError>
+where
+    T: ::serde::de::DeserializeOwned,
+    P: AsRef<Path>,
+{
+    let cfg = crate::parse_file(path)?;
+    cfg.deserialize().map_err(deserialize_to_hocon_error)
+}
+
+fn deserialize_to_hocon_error(e: DeserializeError) -> HoconError {
+    HoconError::Config(ConfigError {
+        message: e.message,
+        path: String::new(),
+    })
 }
 
 /// Helper: parse raw string as integer type with float truncation fallback.

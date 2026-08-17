@@ -165,7 +165,7 @@ pub use value_factory::from_map;
 pub use lexer::{tokenize, Segment, SubstPayload, Token, TokenKind};
 
 #[cfg(feature = "serde")]
-pub use serde::{from_value, DeserializeError};
+pub use serde::{from_file, from_str, from_value, DeserializeError};
 
 use std::collections::HashMap;
 use std::path::Path;

@@ -56,6 +56,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Or deserialize straight into your own types (with the `serde` feature):
+
+```rust
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct App {
+    server: Server,
+}
+
+#[derive(Deserialize)]
+struct Server {
+    host: String,
+    port: u16,
+}
+
+let app: App = hocon::from_str(input)?;          // one step: text → T
+let app: App = hocon::from_file("app.conf")?;    // same, from a file
+```
+
 ## Why HOCON?
 
 | | `.env` | JSON | YAML | HOCON |
@@ -86,7 +106,9 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
 - Fallback configuration merging (`with_fallback`)
 - Deferred resolution lifecycle: `parse_string_with_options` → `with_fallback` → `resolve()`
   per Lightbend `parseString` / `withFallback` / `resolve()` API (E12, v1.4.0)
-- Optional Serde deserialization support
+- Optional Serde deserialization: one-step `hocon::from_str::<T>()` /
+  `from_file::<T>()`, path-scoped `Config::get_as::<T>(path)`, and
+  `Config::deserialize::<T>()`
 - Passes Lightbend equivalence tests (equiv01 through equiv05)
 
 ## API Reference
@@ -205,10 +227,17 @@ struct ServerConfig {
     port: u16,
 }
 
+// One step, text (or file) → T — like serde_json::from_str:
+let server: ServerConfig = hocon::from_str("host = localhost, port = 8080")?;
+let server: ServerConfig = hocon::from_file("server.conf")?;
+
+// Path-scoped: deserialize any node (object, array, or scalar) at a path:
 let config = hocon::parse(input)?;
-let server: ServerConfig = config
-    .get_config("server")?
-    .deserialize()?;
+let server: ServerConfig = config.get_as("server")?;
+let ports: Vec<u16> = config.get_as("ports")?;
+
+// Or the whole Config, e.g. after with_fallback / resolve:
+let server: ServerConfig = config.deserialize()?;
 ```
 
 ## Error Types
