@@ -112,6 +112,7 @@
 #[cfg(any(
     feature = "adapters-properties",
     feature = "adapters-env",
+    feature = "adapters-json5",
     feature = "adapters-jsonc",
     feature = "adapters-toml",
     feature = "adapters-yaml",
