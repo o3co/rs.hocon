@@ -68,7 +68,8 @@ pub fn parse_file(path: impl AsRef<std::path::Path>) -> Result<Config, AdapterEr
     let path = path.as_ref();
     let text = std::fs::read_to_string(path)
         .map_err(|e| AdapterError::new(format!("json5: {}: {e}", path.display())))?;
-    parse(&text, Some(&path.display().to_string()))
+    let origin = path.display().to_string();
+    parse(&text, Some(origin.as_str()))
 }
 
 fn adapter_err(origin: Option<&str>, msg: &str) -> AdapterError {
@@ -655,7 +656,22 @@ impl<'a> Parser<'a> {
         }
         let text = &src[start..self.pos];
         if !saw_digit {
-            return Err(self.err(format!("malformed number {text:?}")));
+            // Extend the reported token past the sign so `+foo` reports
+            // "+foo", not a bare "+" (identifier chars only; no state change
+            // beyond the error path).
+            let mut end = self.pos;
+            while end < src.len() {
+                let Some(c) = src[end..].chars().next() else {
+                    break;
+                };
+                if c.is_alphanumeric() || c == '_' || c == '$' {
+                    end += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let shown = &src[start..end];
+            return Err(self.err(format!("malformed number {shown:?}")));
         }
         // F0.5: '.', 'e', 'E' make a float; everything else is an i64 or an
         // error. The leading '+' is stripped for str::parse's sake.
