@@ -34,6 +34,12 @@ pub(crate) struct SubstitutionResolver<'a> {
     /// than the original path-equality check. Spec amendment deferred to a
     /// follow-up xx.hocon PR (see Phase 6 #3f close-out notes).
     resolving_field_path: Vec<String>,
+    /// S13a.12 recursion guard: field keys whose prior is currently being
+    /// resolved through the prefix-self-ref branch. Saved priors are
+    /// prefix-self-ref-free by the fold invariant; re-entry only happens on a
+    /// shape the fold could not see through — it is reported as unresolvable
+    /// instead of recursing forever.
+    resolving_prefix_priors: HashSet<String>,
 }
 
 impl<'a> SubstitutionResolver<'a> {
@@ -51,6 +57,7 @@ impl<'a> SubstitutionResolver<'a> {
             use_system_environment,
             allow_unresolved,
             resolving_field_path: Vec::new(),
+            resolving_prefix_priors: HashSet::new(),
         }
     }
 
@@ -140,6 +147,19 @@ impl<'a> SubstitutionResolver<'a> {
         Ok(HoconValue::Object(result))
     }
 
+    /// S13a.12: walk resolved-object fields by segment text. A missing
+    /// segment or a walk into a scalar/array is path-absent → None.
+    fn navigate_resolved_hocon_impl(v: &HoconValue, remainder: &[String]) -> Option<HoconValue> {
+        let mut cur = v;
+        for seg in remainder {
+            match cur {
+                HoconValue::Object(fields) => cur = fields.get(seg.as_str())?,
+                _ => return None,
+            }
+        }
+        Some(cur.clone())
+    }
+
     fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) {
         if let HoconValue::Object(fields) = value {
             for (key, child) in fields {
@@ -185,7 +205,88 @@ impl<'a> SubstitutionResolver<'a> {
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
         if s.known_absent {
+            // S13a.12: a REQUIRED substitution folded to known_absent (prefix
+            // fold with no below value at the navigated path) is the spec's
+            // "undefined" classification — an error, not a silent
+            // disappearance. The `+=` chain-bottom sentinel is always `${?…}`
+            // and keeps the silent path.
+            if !s.optional {
+                let k = if s.list_suffix {
+                    format!("{}[]", segments_to_key(&s.segments))
+                } else {
+                    segments_to_key(&s.segments)
+                };
+                if self.allow_unresolved {
+                    use crate::value::PlaceholderValue;
+                    return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                        path: k,
+                        optional: false,
+                    })));
+                }
+                return Err(ResolveError {
+                    message: format!("could not resolve substitution: ${{{k}}}"),
+                    path: k,
+                    line: s.line,
+                    col: s.col,
+                });
+            }
             return Ok(None);
+        }
+
+        // S13a.12 (HOCON.md L791): a substitution whose target lies INSIDE
+        // the field currently being resolved (the field path is a proper
+        // prefix of the target path, e.g. `foo : ${foo.a}` while resolving
+        // `foo`) is self-referential and resolves against the field's
+        // "below" value — its saved prior — never the final tree. Runs
+        // before the cache fast path: the cache holds final-tree values.
+        {
+            let rfp = &self.resolving_field_path;
+            if !rfp.is_empty() && rfp.len() < s.segments.len() {
+                let rfp_key = string_segments_to_key(rfp.iter().map(String::as_str));
+                if segments_to_key(&s.segments[..rfp.len()]) == rfp_key {
+                    if !self.resolving_prefix_priors.contains(&rfp_key) {
+                        let leaf = rfp.last().expect("rfp non-empty").clone();
+                        if let Some(prior) = scope.prior_values.get(leaf.as_str()) {
+                            let prior = prior.clone();
+                            let remainder: Vec<String> = s.segments[rfp.len()..]
+                                .iter()
+                                .map(|seg| seg.text.clone())
+                                .collect();
+                            self.resolving_prefix_priors.insert(rfp_key.clone());
+                            let prior_result = self.resolve_val(&prior, scope);
+                            self.resolving_prefix_priors.remove(&rfp_key);
+                            if let Some(prior_resolved) = prior_result? {
+                                if let Some(nav) =
+                                    Self::navigate_resolved_hocon_impl(&prior_resolved, &remainder)
+                                {
+                                    return Ok(Some(nav));
+                                }
+                            }
+                        }
+                    }
+                    if s.optional {
+                        return Ok(None);
+                    }
+                    let k = if s.list_suffix {
+                        format!("{}[]", segments_to_key(&s.segments))
+                    } else {
+                        segments_to_key(&s.segments)
+                    };
+                    if self.allow_unresolved {
+                        use crate::value::PlaceholderValue;
+                        return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
+                            path: k,
+                            optional: false,
+                        })));
+                    }
+                    return Err(ResolveError {
+                        message: format!("could not resolve substitution: ${{{k}}}"),
+                        path: k,
+                        line: s.line,
+                        col: s.col,
+                    });
+                }
+            }
         }
 
         // Cache key includes list_suffix to prevent `${X}` and `${X[]}` collisions:
