@@ -476,7 +476,7 @@ impl Config {
     /// `ms`/`milli`/`millis`/`millisecond`/`milliseconds`,
     /// `s`/`second`/`seconds`, `m`/`minute`/`minutes`,
     /// `h`/`hour`/`hours`, `d`/`day`/`days`. (No week unit: the Lightbend
-    /// reference rejects `\"1w\"` — weeks exist only in the Period format.)
+    /// reference rejects `"1w"` — weeks exist only in the Period format.)
     ///
     /// Unit names are case-sensitive and must be lowercase (HOCON spec,
     /// S19.8): `"100 MS"` and `"100 Seconds"` are errors. This also applies
