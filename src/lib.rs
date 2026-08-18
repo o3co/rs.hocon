@@ -136,6 +136,7 @@ pub mod options;
 #[doc(hidden)]
 pub mod parser;
 pub(crate) mod properties;
+mod render_hocon;
 /// Internal resolver module. Not part of the stable public API.
 ///
 /// This module is `pub` to allow integration tests to access internal types

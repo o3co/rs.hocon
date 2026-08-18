@@ -114,6 +114,8 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
 - Fallback configuration merging (`with_fallback`)
 - Deferred resolution lifecycle: `parse_string_with_options` → `with_fallback` → `resolve()`
   per Lightbend `parseString` / `withFallback` / `resolve()` API (E12, v1.4.0)
+- HOCON emitter: `Config::render_hocon()` renders a resolved config back to
+  HOCON text with a parse-back round-trip guarantee (E18)
 - Optional Serde deserialization: one-step `hocon::from_str::<T>()` /
   `from_file::<T>()`, path-scoped `Config::get_as::<T>(path)`, and
   `Config::deserialize::<T>()`
@@ -179,6 +181,19 @@ let max_size: i64 = config.get_bytes("upload.max-size")?;
 let exists: bool     = config.has("server.host");
 let keys: Vec<&str>  = config.keys();           // top-level keys in insertion order
 let raw: Option<&HoconValue> = config.get("server.host");
+```
+
+### HOCON Rendering
+
+Render a resolved, data-only `Config` back to HOCON text (cross-impl
+convention E18, lockstep with go.hocon `RenderHOCON`, ts.hocon `renderHocon`,
+py.hocon `render_hocon`). The guarantee is the round trip — parsing the output
+yields the same value tree — not byte-stable formatting. Strings that look
+like another type stay quoted (`"8080"` re-parses as a string), and an
+unresolved substitution placeholder is an error:
+
+```rust
+let text: String = config.render_hocon()?;
 ```
 
 ### Fallback Merge
