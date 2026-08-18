@@ -307,10 +307,19 @@ fn merge_prior_layers(base: &ResObj, top: &ResObj) -> ResObj {
             }
         }
     }
+    // Carry BOTH layers' bookkeeping: top's prior_values (its keys' own
+    // delayed-merge chains) win per key over base's, and reset_keys union so
+    // reset markers from either layer survive the splice.
+    let mut prior_values = base.prior_values.clone();
+    for (k, pv) in &top.prior_values {
+        prior_values.insert(k.clone(), pv.clone());
+    }
+    let mut reset_keys = base.reset_keys.clone();
+    reset_keys.extend(top.reset_keys.iter().cloned());
     ResObj {
         fields,
-        prior_values: base.prior_values.clone(),
-        reset_keys: base.reset_keys.clone(),
+        prior_values,
+        reset_keys,
     }
 }
 

@@ -214,7 +214,11 @@ impl<'a> SubstitutionResolver<'a> {
             // disappearance. The `+=` chain-bottom sentinel is always `${?…}`
             // and keeps the silent path.
             if !s.optional {
-                let k = segments_to_key(&s.segments);
+                let k = if s.list_suffix {
+                    format!("{}[]", segments_to_key(&s.segments))
+                } else {
+                    segments_to_key(&s.segments)
+                };
                 if self.allow_unresolved {
                     use crate::value::PlaceholderValue;
                     return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
@@ -266,7 +270,11 @@ impl<'a> SubstitutionResolver<'a> {
                     if s.optional {
                         return Ok(None);
                     }
-                    let k = segments_to_key(&s.segments);
+                    let k = if s.list_suffix {
+                        format!("{}[]", segments_to_key(&s.segments))
+                    } else {
+                        segments_to_key(&s.segments)
+                    };
                     if self.allow_unresolved {
                         use crate::value::PlaceholderValue;
                         return Ok(Some(HoconValue::Placeholder(PlaceholderValue {
