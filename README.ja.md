@@ -110,6 +110,8 @@ HOCON は単なるシリアライズ形式ではなく、**プログラムに注
 - 環境変数の参照（`${HOME}`）
 - ドット区切りパス式（`server.host`）
 - フォールバック設定のマージ（`with_fallback`）
+- HOCON エミッター: `Config::render_hocon()` が解決済み設定を HOCON テキストに
+  逆変換（パースし直すと同じ値ツリーに戻るラウンドトリップ保証、E18）
 - オプションの Serde デシリアライゼーション: 1 ステップの `hocon::from_str::<T>()` /
   `from_file::<T>()`、パス指定の `Config::get_as::<T>(path)`、`Config::deserialize::<T>()`
 - Lightbend 等価テスト合格（equiv01 - equiv05）
@@ -174,6 +176,19 @@ let max_size: i64 = config.get_bytes("upload.max-size")?;
 let exists: bool     = config.has("server.host");
 let keys: Vec<&str>  = config.keys();           // トップレベルキー（挿入順）
 let raw: Option<&HoconValue> = config.get("server.host");
+```
+
+### HOCON レンダリング
+
+解決済み・データのみの `Config` を HOCON テキストに逆変換します（クロス実装
+規約 E18。go.hocon `RenderHOCON` / ts.hocon `renderHocon` / py.hocon
+`render_hocon` とロックステップ）。保証はラウンドトリップ — 出力をパースし
+直すと同じ値ツリーに戻ること — であり、バイト単位のフォーマット固定では
+ありません。別の型に読めてしまう文字列はクォートされたまま（`"8080"` は
+文字列として再パース）、未解決の変数参照プレースホルダはエラーになります:
+
+```rust
+let text: String = config.render_hocon()?;
 ```
 
 ### フォールバックマージ

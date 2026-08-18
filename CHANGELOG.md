@@ -62,6 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   otherwise last-wins (F0.7). Nesting is capped at the core parser's 128
   levels (rs-specific: a stack overflow aborts the process). Lands in
   lockstep with go.hocon#193 and the ts.hocon / py.hocon ports.
+- `Config::render_hocon()` — HOCON emitter (xx.hocon E18): renders a resolved,
+  data-only `Config` as HOCON text. The contract is the round trip —
+  `parse(render(tree))` yields the same value tree — with the byte format
+  deliberately unpinned. Root fields braceless, nested objects as `key { … }`,
+  newline-separated arrays, two-space indent; keys and strings emit bare only
+  when provably unambiguous (`"8080"`, keywords, and `${…}` look-alikes stay
+  quoted), multi-line strings triple-quote only when lossless. An unresolved
+  placeholder is a `ConfigError`. Lockstep port of go.hocon v1.11.0
+  `RenderHOCON`, landing with the ts.hocon / py.hocon ports; validated against
+  the shared round-trip corpus rt01–rt10 (`make testdata` syncs
+  `tests/testdata/emitter-roundtrip/`).
 - `hocon::from_str::<T>()` and `hocon::from_file::<T>()` (`serde` feature) —
   one-step parse + deserialize into any `serde::Deserialize` type, the
   `serde_json::from_str` shape. Substitutions resolve against the process

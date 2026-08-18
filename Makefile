@@ -41,6 +41,10 @@ testdata:
 	  rm -rf tests/testdata/format-ingestion; \
 	  cp -R "$$tmpdir/testdata/format-ingestion" tests/testdata/format-ingestion; \
 	fi; \
+	if [ -d "$$tmpdir/testdata/emitter-roundtrip" ]; then \
+	  rm -rf tests/testdata/emitter-roundtrip; \
+	  cp -R "$$tmpdir/testdata/emitter-roundtrip" tests/testdata/emitter-roundtrip; \
+	fi; \
 	printf '%s\n' "$$sha" > .xx-hocon-version; \
 	echo "Done. Fetched $$sha"
 
