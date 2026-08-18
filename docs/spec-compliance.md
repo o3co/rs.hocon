@@ -698,8 +698,8 @@ same item descriptions verbatim.
   tests: src/config.rs:756 (get_duration_hours); src/config.rs:774 (get_duration_fractional)
   status: ✅
 - **S19.7** `d` / `day` / `days` — §Duration format (L1313)
-  tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units)
-  status: ✅
+  tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units); tests/spec_s21_lightbend_units.rs (week rejection)
+  status: ✅ — the table also carried an extra-spec `w`/`week`/`weeks` arm; removed 2026-08-18 (the spec's duration list ends at days and the Lightbend reference rejects `1w` — probe; weeks remain valid in the Period format, S20).
 - **S19.8** Duration unit names are case sensitive (lowercase only) — §Duration format (L1304)
   tests: tests/spec_phase5.rs (s19_8_spec_uppercase_ms_rejected; s19_8_spec_mixed_case_seconds_rejected; s19_8_spec_uppercase_single_letter_rejected; s19_8_lowercase_units_accepted)
   status: ✅
@@ -729,11 +729,11 @@ struct. ts and go remain ➖ (no period accessor).
   tests: src/config.rs:813 (get_bytes_plain)
   status: ✅
 - **S21.2** Powers of 10 (kB, MB, GB, TB, PB, EB, ZB, YB + long forms) — §Size in bytes format (L1365)
-  tests: src/config.rs:819 (get_bytes_kilobytes); src/config.rs:831 (get_bytes_megabytes); src/config.rs:843 (get_bytes_gigabytes); src/config.rs:855 (get_bytes_terabytes); src/config.rs:873 (get_bytes_long_unit)
-  status: ✅
+  tests: src/config.rs (get_bytes_kilobytes and siblings); tests/spec_s21_lightbend_units.rs (PB–YB, case-sensitivity)
+  status: ✅ — the prior ✅ over-claimed: the table stopped at TB and was keyed `KB`, which Lightbend rejects (its kilo-decimal spelling is `kB` — probe 2026-08-18, four-impl units audit). Aligned to the exact case-sensitive reference set; ZB/YB (multipliers past i64) route through the float path, where any count ≥ 1 overflows exactly as it does in Lightbend.
 - **S21.3** Powers of 2 (K/Ki/KiB, M/Mi/MiB, ...) — §Size in bytes format (L1376)
-  tests: src/config.rs:825 (get_bytes_kibibytes); src/config.rs:837 (get_bytes_mebibytes); src/config.rs:849 (get_bytes_gibibytes); src/config.rs:861 (get_bytes_tebibytes)
-  status: ✅
+  tests: src/config.rs (get_bytes_kibibytes and siblings); tests/spec_s21_lightbend_units.rs (Pi–Yi, `kiB`/`ki` rejected)
+  status: ✅ — extended 2026-08-18 through `Yi`/`YiB` + long forms, capital-first exactly per Lightbend.
 - **S21.4** Single-letter abbreviations → powers of 2 (java -Xmx convention) — §Size in bytes format (L1385)
   tests: tests/spec_s21_4_single_letter_bytes.rs (s21_4_1_k_uppercase_is_1024 through s21_4_12_kib_stays_binary); tests/conformance_bsl.rs (bsl01-bsl09); tests/units_default_test.rs (ub05_bytes_with_unit — updated to 1_048_576)
   status: ✅ (was ✅ mis-classified; prior ✅ cited get_bytes_no_space which exercised '512MB' multi-letter, never single-letter K/M/G/T; behavior corrected — BREAKING: K/M/G/T now binary per L1385 — Phase 6 #3h)
