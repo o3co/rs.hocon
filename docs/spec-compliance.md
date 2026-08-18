@@ -416,8 +416,15 @@ same item descriptions verbatim.
   tests: tests/lightbend_test.rs:303 (lightbend_test09_delayed_merge_object); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
   status: ✅
 - **S13a.12** Self-ref in path expression `${foo.a}` resolves to "below" — §Self-Referential (L791)
-  tests: tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
-  status: ✅
+  tests: tests/s13a12_prefix_self_ref_test.rs
+  status: ✅ — Fixed 2026-08-18. The previous ✅ was a misclassification: the cited
+  lightbend_test06 cannot discriminate (its later object overrides every key the
+  substitution contributes, so discard and merge produce identical output). A cross-impl
+  probe showed the L791 example yielded `{a:2}` (c lost) in all four siblings — the
+  prefix direction (`foo` ⊏ `foo.a`) was missing from self-reference detection. Fixed in
+  lockstep with ts/py/go: fold-side prefix folding (value-stack positions only — an
+  object-interior sibling reference keeps S13a.14 lazy final-tree semantics) with layer
+  merge, plus resolve-side prior navigation with undefined semantics on a miss.
 - **S13a.13** `a = ${?a}foo` resolves to `"foo"` (look-back undefined) — §Self-Referential (L841)
   tests: tests/integration_test.rs (s13a_13_optional_self_ref_concat_with_no_prior_spec); tests/self_ref_lookback_test.rs (sr01–sr11)
   status: ✅ (fixed in #76; cleared in cluster phase6-3f)
