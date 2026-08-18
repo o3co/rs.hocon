@@ -35,6 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`adapters::json5` — JSON5 documents mounted as HOCON (spec F3.3).** The
+  accepted grammar is JSON5 1.0.0 as defined by the reference implementation
+  (the json5 npm package), the dialect owner F3.3 tracks. A hand-rolled
+  scanner and recursive-descent parser behind the new `adapters-json5`
+  feature, with zero extra dependencies — JSON5 changes the token grammar
+  itself (identifier keys, single quotes, hex integers, line continuations),
+  so the JSONC comment-stripping approach cannot apply. Where the mapping
+  spec is stricter than JSON5 the spec wins: hex and decimal integers must
+  fit in `i64` (F0.5), `Infinity`/`NaN` in every spelling are errors (F0.6),
+  an unpaired `\uXXXX` surrogate is an error and a valid pair combines
+  (F3.5), and duplicate keys follow HOCON semantics — objects merge,
+  otherwise last-wins (F0.7). Nesting is capped at the core parser's 128
+  levels (rs-specific: a stack overflow aborts the process). Lands in
+  lockstep with go.hocon#193 and the ts.hocon / py.hocon ports.
 - `hocon::from_str::<T>()` and `hocon::from_file::<T>()` (`serde` feature) —
   one-step parse + deserialize into any `serde::Deserialize` type, the
   `serde_json::from_str` shape. Substitutions resolve against the process
