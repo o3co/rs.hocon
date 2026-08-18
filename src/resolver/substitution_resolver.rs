@@ -186,12 +186,16 @@ impl<'a> SubstitutionResolver<'a> {
             }
             ResolverValue::Obj(o) => self.resolve_res_obj(o).map(Some),
             ResolverValue::UnresolvedArray(items) => {
+                // S13.12 (HOCON.md L635): an element that resolves to nothing
+                // (an undefined optional substitution) is NOT added — Lightbend
+                // yields [1, 3] for `[1, ${?missing}, 3]`, never [1, null, 3].
+                // A literal `null` element resolves to a null scalar (Some),
+                // and is kept.
                 let mut resolved_items = Vec::new();
                 for item in items {
-                    let resolved = self
-                        .resolve_val(item, scope)?
-                        .unwrap_or(HoconValue::Scalar(ScalarValue::null()));
-                    resolved_items.push(resolved);
+                    if let Some(resolved) = self.resolve_val(item, scope)? {
+                        resolved_items.push(resolved);
+                    }
                 }
                 Ok(Some(HoconValue::Array(resolved_items)))
             }

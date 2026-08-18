@@ -339,9 +339,6 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                     col: sc,
                 });
             }
-            if value.starts_with('\n') {
-                value = value[1..].to_string();
-            }
             tokens.push(Token {
                 kind: TokenKind::TripleQuotedString,
                 value,
@@ -1008,9 +1005,12 @@ mod tests {
     }
 
     #[test]
-    fn strips_leading_newline_from_triple_quoted() {
+    fn preserves_leading_newline_in_triple_quoted() {
+        // S9.2: Lightbend preserves every character between the quotes
+        // (typesafe-config 1.4.6 probe, 2026-08-18); the old strip was a
+        // spec deviation shared by the ts/py/rs ports.
         let t = first("\"\"\"\nhello\"\"\"");
-        assert_eq!(t.value, "hello");
+        assert_eq!(t.value, "\nhello");
     }
 
     #[test]

@@ -112,7 +112,10 @@ world"""
     "#,
     )
     .unwrap();
-    assert_eq!(config.get_string("msg").unwrap(), "hello\nworld");
+    // S9.2: the newline right after `"""` is content — Lightbend preserves
+    // every character between the quotes (the old leading-newline strip was
+    // a spec deviation, removed 2026-08-18).
+    assert_eq!(config.get_string("msg").unwrap(), "\nhello\nworld");
 }
 
 #[test]
