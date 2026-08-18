@@ -101,9 +101,11 @@ fn render_value(out: &mut String, v: &HoconValue, depth: usize) -> Result<(), Co
             out.push_str(&render_scalar(s));
             Ok(())
         }
+        // The "value is not resolved" prefix keeps ConfigError::is_not_resolved()
+        // true for this case, matching the getter convention.
         HoconValue::Placeholder(p) => Err(ConfigError {
             message: format!(
-                "render_hocon: unrenderable value ${{{}{}}} (config must be resolved data)",
+                "value is not resolved (render_hocon: unrenderable substitution ${{{}{}}}; call Config::resolve() before rendering)",
                 if p.optional { "?" } else { "" },
                 p.path
             ),
@@ -129,6 +131,14 @@ fn render_array(out: &mut String, items: &[HoconValue], depth: usize) -> Result<
     Ok(())
 }
 
+// Boolean/Number raws are emitted verbatim, matching go's ScalarVal.Raw.
+// The E18 input domain is parser/from_map output, whose raws are canonical by
+// construction (the parser admits only `true`/`false` boolean lexemes; number
+// raws are parsed lexemes or serde_json canonical tokens). `ScalarValue` is
+// constructible by hand, but `Config` — the only thing render_hocon accepts —
+// has no public constructor taking a caller-built value tree, so a
+// non-canonical raw cannot reach this function through the public API;
+// re-validating each lexeme here would duplicate the constructors' invariant.
 fn render_scalar(s: &ScalarValue) -> String {
     match s.value_type {
         ScalarType::Null => "null".to_string(),
@@ -148,6 +158,12 @@ fn is_safe_unquoted_key(k: &str) -> bool {
 }
 
 fn render_key(k: &str) -> String {
+    // `include` is reserved unquoted at the start of a key (S12.5/S14a) — the
+    // parser (and Lightbend: "include keyword is not followed by a quoted
+    // string") rejects `include = 1`, so the key must be quoted to round-trip.
+    if k == "include" {
+        return quote_string(k);
+    }
     if is_safe_unquoted_key(k) {
         k.to_string()
     } else {

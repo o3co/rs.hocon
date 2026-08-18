@@ -263,6 +263,69 @@
       "expect": "ok",
       "expected": "properties/fi52-dotted-keys-expected.json",
       "note": "F2.1/F2.2/F2.4 baseline for the format: dotted keys nest, all values are strings, = / : / whitespace all separate, # and ! comment, \\: is an escaped key character. F0.2 ${a.b} stays literal."
+    },
+    {
+      "id": "fi60-full-grammar",
+      "format": "json5",
+      "input": "json5/fi60-full-grammar.json5",
+      "expect": "ok",
+      "expected": "json5/fi60-full-grammar-expected.json",
+      "note": "F3.3 the JSON5 1.0.0 grammar minus Infinity/NaN: identifier keys (incl. $/_/Unicode), single quotes, hex, leading/trailing decimal points, explicit +, \\x escapes, line continuations, both comment forms, trailing commas"
+    },
+    {
+      "id": "fi61-ls-terminates-comment",
+      "format": "json5",
+      "input": "json5/fi61-ls-terminates-comment.json5",
+      "expect": "ok",
+      "expected": "json5/fi61-ls-terminates-comment-expected.json",
+      "note": "F3.3 the mirror image of jsonc's fi25: U+2028 DOES terminate a // comment in JSON5 — its dialect owner (the json5 npm reference implementation) treats LS/PS as line terminators, where node-jsonc-parser does not. Same character, opposite answers, each per its owner."
+    },
+    {
+      "id": "fi62-array-root",
+      "format": "json5",
+      "input": "json5/fi62-array-root.json5",
+      "expect": "error",
+      "cites": "F0.3",
+      "note": "F0.3 a config root must be an object"
+    },
+    {
+      "id": "fi63-infinity",
+      "format": "json5",
+      "input": "json5/fi63-infinity.json5",
+      "expect": "error",
+      "cites": "F0.6",
+      "note": "F0.6 JSON5 allows signed Infinity; the HOCON number model does not"
+    },
+    {
+      "id": "fi64-int64-overflow",
+      "format": "json5",
+      "input": "json5/fi64-int64-overflow.json5",
+      "expect": "error",
+      "cites": "F0.5",
+      "note": "F0.5 hex integer past int64 errors instead of losing precision (the reference implementation silently widens to a JS float here — the mapping spec is stricter)"
+    },
+    {
+      "id": "fi65-lone-surrogate",
+      "format": "json5",
+      "input": "json5/fi65-lone-surrogate.json5",
+      "expect": "error",
+      "cites": "F3.5",
+      "note": "F3.5 an unpaired \\uXXXX surrogate escape is an error; a valid pair combines"
+    },
+    {
+      "id": "fi66-duplicate-keys",
+      "format": "json5",
+      "input": "json5/fi66-duplicate-keys.json5",
+      "expect": "ok",
+      "expected": "json5/fi66-duplicate-keys-expected.json",
+      "note": "F0.7 duplicate keys follow HOCON semantics: two objects deep-merge, anything else is last-wins"
+    },
+    {
+      "id": "fi67-strict-eof",
+      "format": "json5",
+      "input": "json5/fi67-strict-eof.json5",
+      "expect": "error",
+      "note": "F3.2-style strictness carried over: exactly one top-level value; a stray closer after it is an error, not ignored text. No cites — wording is per implementation."
     }
   ]
 }

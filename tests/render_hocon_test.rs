@@ -41,8 +41,7 @@ fn render_hocon_rejects_unresolved() {
             .render_hocon()
             .expect_err("render_hocon on unresolved config succeeded, want error");
         assert!(
-            err.message.contains("unrenderable value")
-                && err.message.contains("config must be resolved data"),
+            err.is_not_resolved() && err.message.contains("unrenderable substitution"),
             "{name}: unexpected error message: {}",
             err.message
         );
@@ -182,6 +181,7 @@ mod from_map_cases {
             "awkward-keys",
             json!({
                 "a.b": "dotted key",
+                "include": "reserved word must be quoted to round-trip",
                 "has space": 1,
                 "": "empty key",
                 "a=b": true,
