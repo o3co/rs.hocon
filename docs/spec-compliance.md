@@ -193,8 +193,8 @@ same item descriptions verbatim.
   tests: src/lexer.rs:770 (tokenizes_triple_quoted_strings); tests/integration_test.rs:105 (parse_with_triple_quoted_string); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
   status: ✅
 - **S9.2** Newlines and whitespace preserved literally — §Multi-line strings (L293)
-  tests: src/lexer.rs:770 (tokenizes_triple_quoted_strings); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
-  status: ✅
+  tests: src/lexer.rs:770 (tokenizes_triple_quoted_strings); tests/s9_s13_lightbend_conformance.rs (leading-newline case); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
+  status: ✅ — the lexer stripped a LEADING newline (spec deviation; Lightbend preserves every character between the quotes — probe 2026-08-18, surfaced by the py.hocon verification wave); fixed 2026-08-18. equiv05 has no leading-newline case, which is how the strip survived the fixture.
 - **S9.3** Unicode escapes NOT interpreted inside triple-quoted — §Multi-line strings (L294)
   tests: tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
   status: ✅
@@ -353,8 +353,8 @@ same item descriptions verbatim.
   tests: src/resolver/mod.rs:157 (drops_field_for_optional_missing); tests/testdata/hocon/equiv04/missing-substitutions.conf (fixture)
   status: ✅
 - **S13.12** Optional undefined in array element → element not added — §Substitutions (L635)
-  tests: tests/testdata/hocon/equiv04/missing-substitutions.conf (fixture)
-  status: ✅
+  tests: tests/s9_s13_lightbend_conformance.rs (element omitted; literal null kept; nested arrays; concat-element remainder)
+  status: ✅ — the previous ✅ was a stale citation: equiv04/missing-substitutions.conf contains no array-element case, and the resolver actually null-filled the element ([1, null, 3]; Lightbend yields [1, 3] — probe 2026-08-18, surfaced by the py.hocon verification wave). Fixed 2026-08-18.
 - **S13.13** Optional undefined in string concat → empty string — §Substitutions (L636)
   tests: tests/integration_test.rs:1041 (s13_13_optional_undefined_in_string_concat_is_empty)
   status: ✅
