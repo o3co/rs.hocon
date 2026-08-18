@@ -153,10 +153,7 @@ impl<'a> SubstitutionResolver<'a> {
         let mut cur = v;
         for seg in remainder {
             match cur {
-                HoconValue::Object(fields) => match fields.get(seg.as_str()) {
-                    Some(next) => cur = next,
-                    None => return None,
-                },
+                HoconValue::Object(fields) => cur = fields.get(seg.as_str())?,
                 _ => return None,
             }
         }
