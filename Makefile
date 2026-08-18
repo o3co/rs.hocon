@@ -26,6 +26,7 @@ testdata:
 	  exit 1; \
 	fi; \
 	if [ -f .xx-hocon-version ] && [ -d "$(EXPECTED_DIR)" ] && [ -d "$(FETCH_SENTINEL)" ] && \
+	   [ -d tests/testdata/emitter-roundtrip ] && \
 	   [ "$$sha" = "$$(cat .xx-hocon-version)" ]; then \
 	  echo "Fixtures up to date ($$sha)"; \
 	  exit 0; \
