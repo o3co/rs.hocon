@@ -698,7 +698,7 @@ same item descriptions verbatim.
   tests: src/config.rs:756 (get_duration_hours); src/config.rs:774 (get_duration_fractional)
   status: ✅
 - **S19.7** `d` / `day` / `days` — §Duration format (L1313)
-  tests: src/config.rs:765 (get_duration_days); tests/integration_test.rs:211 (test_duration_missing_units); tests/spec_s21_lightbend_units.rs (week rejection)
+  tests: src/config.rs (get_duration_days); tests/integration_test.rs (test_duration_missing_units); tests/spec_s21_lightbend_units.rs (week rejection)
   status: ✅ — the table also carried an extra-spec `w`/`week`/`weeks` arm; removed 2026-08-18 (the spec's duration list ends at days and the Lightbend reference rejects `1w` — probe; weeks remain valid in the Period format, S20).
 - **S19.8** Duration unit names are case sensitive (lowercase only) — §Duration format (L1304)
   tests: tests/spec_phase5.rs (s19_8_spec_uppercase_ms_rejected; s19_8_spec_mixed_case_seconds_rejected; s19_8_spec_uppercase_single_letter_rejected; s19_8_lowercase_units_accepted)
