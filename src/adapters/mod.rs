@@ -17,8 +17,8 @@
 //! `${...}` aimed at the fallback would fail before the fallback is attached.
 //!
 //! Every adapter is behind a cargo feature, so the crate's default build still
-//! depends on `indexmap` alone. `properties` and `env` need nothing extra;
-//! `jsonc`, `toml` and `yaml` pull one crate each.
+//! depends on `indexmap` alone. `properties`, `env` and `json5` need nothing
+//! extra; `jsonc`, `toml` and `yaml` pull one crate each.
 //!
 //! Foreign data stays data: a `${a.b}` in an ingested value is literal text,
 //! never a reference (spec F0.2). Ingestion is AST-level — a document is
@@ -32,6 +32,8 @@ use crate::Config;
 
 #[cfg(feature = "adapters-env")]
 pub mod env;
+#[cfg(feature = "adapters-json5")]
+pub mod json5;
 #[cfg(feature = "adapters-jsonc")]
 pub mod jsonc;
 #[cfg(feature = "adapters-properties")]

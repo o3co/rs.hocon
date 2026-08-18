@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use hocon::adapters::{env, jsonc, properties, toml, yaml, AdapterError};
+use hocon::adapters::{env, json5, jsonc, properties, toml, yaml, AdapterError};
 use hocon::{Config, HoconValue};
 
 fn root() -> PathBuf {
@@ -69,6 +69,7 @@ fn ingest(
     id: &str,
 ) -> Result<Config, AdapterError> {
     match format {
+        "json5" => json5::parse(text, Some(id)),
         "jsonc" => jsonc::parse(text, Some(id)),
         "properties" => properties::parse(text, Some(id)),
         "toml" => toml::parse(text, Some(id)),

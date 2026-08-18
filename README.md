@@ -468,16 +468,17 @@ Deferring resolution matters: the plain `parse` resolves as it goes, so a
 | --- | --- | --- |
 | `adapters-properties` | `java.util.Properties`, sharing the `include` syntax layer | — |
 | `adapters-env` | Bulk-mounts a prefixed namespace; also reads `.env` | — |
+| `adapters-json5` | JSON5 documents (JSON5 1.0.0, hand-rolled scanner) | — |
 | `adapters-jsonc` | JSON with comments and trailing commas | `serde_json` |
 | `adapters-toml` | TOML documents | `toml` |
 | `adapters-yaml` | YAML documents | `yaml-rust2` |
 
-`adapters` enables all five. Every one is opt-in, so the default build still
+`adapters` enables all six. Every one is opt-in, so the default build still
 depends on `indexmap` alone. Plain JSON needs no adapter — HOCON is a JSON
 superset, so `hocon::parse` accepts it as it stands.
 
 ```sh
-cargo add hocon-parser --features adapters        # all five
+cargo add hocon-parser --features adapters        # all six
 cargo add hocon-parser --features adapters-env    # or just the one you need
 ```
 
@@ -522,6 +523,18 @@ splice its neighbors together:
 ```jsonc
 {"a": 1/*x*/2}   // syntax error — NOT the number 12
 ```
+
+### JSON5 is scanned, not preprocessed
+
+JSON5 changes the token grammar itself — unquoted identifier keys, single
+quotes, hex integers, line continuations — so `adapters::json5` is a
+hand-rolled scanner and recursive-descent parser rather than a preprocessor in
+front of a JSON decoder, and needs no extra dependency. The accepted grammar
+is JSON5 1.0.0 as defined by the reference implementation (the json5 npm
+package). Where the mapping spec is stricter than JSON5, the spec wins:
+integers must fit in `i64` (F0.5), `Infinity`/`NaN` are errors (F0.6), a lone
+`\uXXXX` surrogate is an error (F3.5), and duplicate keys follow HOCON
+semantics — objects merge, otherwise the later value wins (F0.7).
 
 ### YAML scalar resolution is the library's answer
 

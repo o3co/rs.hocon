@@ -25,9 +25,10 @@ serde = ["dep:serde", "dep:serde_json"]
 include-package = []
 
 # Format adapters. Each is opt-in so the default build still depends on
-# indexmap alone; properties and env need nothing extra.
+# indexmap alone; properties, env and json5 need nothing extra.
 adapters-properties = []
 adapters-env = []
+adapters-json5 = []
 adapters-jsonc = ["dep:serde_json"]
 adapters-toml = ["dep:toml"]
 adapters-yaml = ["dep:yaml-rust2"]
@@ -36,6 +37,7 @@ adapters-yaml = ["dep:yaml-rust2"]
 adapters = [
     "adapters-properties",
     "adapters-env",
+    "adapters-json5",
     "adapters-jsonc",
     "adapters-toml",
     "adapters-yaml",
