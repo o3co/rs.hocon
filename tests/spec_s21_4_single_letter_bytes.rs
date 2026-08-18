@@ -168,9 +168,9 @@ fn s21_4_f4_7e_succeeds() {
 #[test]
 fn s21_4_11_kb_stays_si_decimal() {
     assert_eq!(
-        parse_bytes_str("1KB").unwrap(),
+        parse_bytes_str("1kB").unwrap(),
         1_000,
-        "S21.4 (regression): 'KB' multi-letter must remain SI decimal 1000"
+        "S21.4 (regression): 'kB' multi-letter must remain SI decimal 1000"
     );
 }
 

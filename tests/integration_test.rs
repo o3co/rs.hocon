@@ -225,7 +225,6 @@ fn test_duration_missing_units() {
         ("dur = 1 microsecond", "dur", 1_000u128),
         ("dur = 1 millis", "dur", 1_000_000u128),
         ("dur = 1 millisecond", "dur", 1_000_000u128),
-        ("dur = 1w", "dur", 604_800_000_000_000u128),
     ];
     for (input, path, expected_nanos) in tests {
         let cfg = hocon::parse(input).unwrap();

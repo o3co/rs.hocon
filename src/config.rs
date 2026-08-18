@@ -475,7 +475,8 @@ impl Config {
     /// `us`/`micro`/`micros`/`microsecond`/`microseconds`,
     /// `ms`/`milli`/`millis`/`millisecond`/`milliseconds`,
     /// `s`/`second`/`seconds`, `m`/`minute`/`minutes`,
-    /// `h`/`hour`/`hours`, `d`/`day`/`days`, `w`/`week`/`weeks`.
+    /// `h`/`hour`/`hours`, `d`/`day`/`days`. (No week unit: the Lightbend
+    /// reference rejects `\"1w\"` — weeks exist only in the Period format.)
     ///
     /// Unit names are case-sensitive and must be lowercase (HOCON spec,
     /// S19.8): `"100 MS"` and `"100 Seconds"` are errors. This also applies
@@ -852,7 +853,10 @@ fn parse_duration(s: &str) -> Option<std::time::Duration> {
         "m" | "minute" | "minutes" => 60_000_000_000.0,
         "h" | "hour" | "hours" => 3_600_000_000_000.0,
         "d" | "day" | "days" => 86_400_000_000_000.0,
-        "w" | "week" | "weeks" => 604_800_000_000_000.0,
+        // NOTE: no week arm — HOCON's duration list ends at days, and the
+        // Lightbend reference rejects "1w" (probe 2026-08-18). Period (S20)
+        // is different: Lightbend's parsePeriod DOES accept weeks, and the
+        // period parser below keeps them.
         _ => return None,
     };
 
@@ -964,35 +968,58 @@ fn parse_bytes(s: &str) -> Option<i64> {
         return None;
     }
 
-    // Case-sensitive matching: KB vs KiB matters.
+    // S21.1–S21.4 — the EXACT Lightbend unit set (typesafe-config 1.4.6
+    // probe, 2026-08-18). Multi-letter units are case-sensitive: the
+    // kilo-decimal spelling is `kB` (KB/kb are errors), binary prefixes are
+    // capital-first (`Ki`, never `ki`), long forms are lowercase only. Only
+    // the bare byte unit (B/b) and the single-letter -Xmx forms accept both
+    // cases.
     //
-    // Single-letter abbreviations (K, M, G, T, P, E) map to **powers of two**
-    // per HOCON.md L1385: "single-character abbreviations ('128K') should go
-    // with… powers of two" — aligned with Lightbend typesafe-config 1.4.3.
-    //
-    // BREAKING (since 1.3.0): K/M/G/T were previously treated as SI decimal
-    // (1_000, 1_000_000, …). They are now binary (1_024, 1_048_576, …).
-    // Multi-letter forms KB/MB/GB/TB remain SI decimal (separate match arms).
-    // See CHANGELOG.md — S21.4 BREAKING entry.
+    // Single-letter abbreviations map to **powers of two** per HOCON.md
+    // L1385 (java -Xmx convention), BREAKING since 1.3.0 for K/M/G/T — see
+    // CHANGELOG.md.
     let multiplier: i64 = match unit_str {
-        "" | "B" | "byte" | "bytes" => 1,
-        // Single-letter → powers of two (HOCON.md L1385). BREAKING for K/M/G/T.
+        "" | "B" | "b" | "byte" | "bytes" => 1,
+        // Single-letter → powers of two (HOCON.md L1385). Z/z/Y/y are in the
+        // big-unit arm below (their multipliers exceed i64).
         "K" | "k" => 1_024,
         "M" | "m" => 1_048_576,
         "G" | "g" => 1_073_741_824,
         "T" | "t" => 1_099_511_627_776,
         "P" | "p" => 1_125_899_906_842_624,
         "E" | "e" => 1_152_921_504_606_846_976,
-        // Multi-letter SI decimal forms (unchanged).
-        "KB" | "kilobyte" | "kilobytes" => 1_000,
-        "KiB" | "Ki" | "kibibyte" | "kibibytes" => 1_024,
+        // Multi-letter forms: SI decimal + IEC binary, through E/Ei.
+        "kB" | "kilobyte" | "kilobytes" => 1_000,
+        "Ki" | "KiB" | "kibibyte" | "kibibytes" => 1_024,
         "MB" | "megabyte" | "megabytes" => 1_000_000,
-        "MiB" | "Mi" | "mebibyte" | "mebibytes" => 1_048_576,
+        "Mi" | "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
         "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
-        "GiB" | "Gi" | "gibibyte" | "gibibytes" => 1_073_741_824,
+        "Gi" | "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
         "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
-        "TiB" | "Ti" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
-        _ => return None,
+        "Ti" | "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
+        "PB" | "petabyte" | "petabytes" => 1_000_000_000_000_000,
+        "Pi" | "PiB" | "pebibyte" | "pebibytes" => 1_125_899_906_842_624,
+        "EB" | "exabyte" | "exabytes" => 1_000_000_000_000_000_000,
+        "Ei" | "EiB" | "exbibyte" | "exbibytes" => 1_152_921_504_606_846_976,
+        _ => {
+            // Units whose multiplier exceeds i64 (ZB=10^21, YB=10^24,
+            // Zi=2^70, Yi=2^80). Lightbend recognises them and range-errors
+            // on any result past the long ceiling, so an integer count ≥ 1
+            // can never survive — every valid use is fractional and goes
+            // through the float path with its overflow guard.
+            let big: f64 = match unit_str {
+                "ZB" | "zettabyte" | "zettabytes" => 1e21,
+                "Zi" | "ZiB" | "zebibyte" | "zebibytes" | "Z" | "z" => 2f64.powi(70),
+                "YB" | "yottabyte" | "yottabytes" => 1e24,
+                "Yi" | "YiB" | "yobibyte" | "yobibytes" | "Y" | "y" => 2f64.powi(80),
+                _ => return None,
+            };
+            let f: f64 = num_str.parse().ok()?;
+            if !f.is_finite() || f.abs() * big >= 2f64.powi(63) {
+                return None;
+            }
+            return Some((f * big) as i64);
+        }
     };
 
     // Integer fast-path: lossless, avoids any floating-point rounding.
@@ -1397,7 +1424,7 @@ mod tests {
 
     #[test]
     fn get_bytes_kilobytes() {
-        let c = make_config(vec![("s", sv("10 KB"))]);
+        let c = make_config(vec![("s", sv("10 kB"))]);
         assert_eq!(c.get_bytes("s").unwrap(), 10_000);
     }
 
@@ -1533,9 +1560,12 @@ mod tests {
     // ──────────────────────────────────────────────────────────────
 
     #[test]
-    fn parse_duration_integer_overflow_weeks_is_none() {
-        // i64::MAX weeks would require ~5.6e33 nanos, far past u64::MAX.
-        assert!(parse_duration("9223372036854775807 weeks").is_none());
+    fn parse_duration_weeks_rejected() {
+        // No week unit in HOCON durations: the Lightbend reference rejects
+        // "1w" (probe 2026-08-18); weeks exist only in the Period format.
+        assert!(parse_duration("1w").is_none());
+        assert!(parse_duration("1week").is_none());
+        assert!(parse_duration("1 weeks").is_none());
     }
 
     #[test]
@@ -1566,8 +1596,8 @@ mod tests {
 
     #[test]
     fn parse_duration_fractional_succeeds_below_boundary() {
-        // 1.5 weeks = ~907_200_000_000_000 ns, well within u64.
-        let d = parse_duration("1.5w").unwrap();
+        // 10.5 days = 907_200_000_000_000 ns, well within u64.
+        let d = parse_duration("10.5d").unwrap();
         assert_eq!(d.as_nanos(), 907_200_000_000_000u128);
     }
 

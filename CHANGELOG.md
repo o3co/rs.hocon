@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **BREAKING (spec fix, S21.2–S21.3): byte units now match the Lightbend
+  reference exactly.** The kilo-decimal spelling is `kB` — the old `KB` key
+  (which Lightbend rejects) is now an error, and the case-sensitive table
+  gains the missing units: `PB`–`YB`, `PiB`–`YiB` (+ long forms) and
+  single-letter `Z`/`z`/`Y`/`y`; the bare byte unit gains its `b` spelling.
+  Multipliers past i64 (ZB, YB, Zi, Yi) route through the float path, where
+  any count ≥ 1 overflows exactly as it does in Lightbend (probe
+  2026-08-18). Part of the four-impl units audit.
+- **BREAKING (spec fix, S19): the duration parser no longer accepts
+  `w`/`week`/`weeks`.** The spec's duration unit list ends at days and the
+  Lightbend reference rejects `"1w"`; weeks remain valid in the Period
+  format (`get_period`), which matches Lightbend's `parsePeriod`.
+
 - **BREAKING (spec fix, S9.2): a triple-quoted string whose content starts
   with a newline now preserves it** (`"""<LF>hello"""` → `"\nhello"`, was
   `"hello"`). The lexer stripped the leading newline; the Lightbend reference
