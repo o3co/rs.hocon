@@ -1,0 +1,6 @@
+{
+  merged: { x: 1, shared: 'below' },
+  merged: { y: 2, shared: 'above' },
+  scalar: 1,
+  scalar: 2,
+}
