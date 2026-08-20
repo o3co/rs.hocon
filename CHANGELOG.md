@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The JSON5 adapter no longer rejects a float literal that underflows f64
+  (`1e-400`): it now reads it as `0`, matching the go/ts/py siblings and the
+  dialect owner (JS `Number`). The rejection came from over-generalizing Go's
+  `strconv.ParseFloat` range error, which only fires on overflow. Overflowing
+  literals (`1e999`) are still errors (spec F0.6).
+
 ## [1.13.0] - 2026-08-19
 
 ### Fixed

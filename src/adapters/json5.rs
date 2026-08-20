@@ -680,14 +680,12 @@ impl<'a> Parser<'a> {
             let f: f64 = unsigned
                 .parse()
                 .map_err(|_| self.err(format!("malformed number {text:?}")))?;
-            // Go's strconv.ParseFloat reports out-of-range values as errors;
-            // Rust's parse saturates to ±Inf on overflow and to 0 on
-            // underflow, so both conditions are re-checked here to keep the
-            // implementations agreeing. Underflow = a mantissa with a
-            // significant digit that still came out as zero.
-            let mantissa = text.split(['e', 'E']).next().unwrap_or(text);
-            let underflow = f == 0.0 && mantissa.bytes().any(|b| b.is_ascii_digit() && b != b'0');
-            if !f.is_finite() || underflow {
+            // Overflow only: Go's strconv.ParseFloat returns ErrRange for
+            // ±Inf but accepts underflow silently as 0 (measured), and the
+            // dialect owner (JS `Number`) reads `1e-400` as 0 — so an
+            // underflowing literal is the value 0, not an error. Rust's parse
+            // saturates to ±Inf on overflow, which F0.6 rejects.
+            if !f.is_finite() {
                 return Err(self.err(format!("malformed number {text:?}")));
             }
             // {:?} keeps a whole-valued float visibly a float ("1000.0"),
