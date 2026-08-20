@@ -195,6 +195,20 @@ fn number_errors() {
     parse_err("{a: -Infinityx}", "malformed number");
 }
 
+/// A literal whose magnitude falls outside f64's range: overflow saturates to
+/// ±Inf, which F0.6 rejects, but underflow is the representable value 0 — the
+/// dialect owner (JS `Number`) and the go/ts/py siblings all read `1e-400` as
+/// 0, and go's strconv.ParseFloat only errors on the overflow side.
+#[test]
+fn float_range_edges() {
+    parse_err("{a: 1e999}", "malformed number");
+    parse_err("{a: -1e999}", "malformed number");
+    assert_eq!(parse("{a: 1e-400}").get_f64("a").unwrap(), 0.0);
+    assert_eq!(parse("{a: -1e-400}").get_f64("a").unwrap(), 0.0);
+    // The smallest denormal is in range and survives exactly.
+    assert_eq!(parse("{a: 5e-324}").get_f64("a").unwrap(), 5e-324);
+}
+
 // ---------------------------------------------------------------------------
 // Comments, whitespace, structure
 // ---------------------------------------------------------------------------
