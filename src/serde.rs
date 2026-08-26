@@ -184,6 +184,20 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
                         }
                     }
                     if let Ok(f) = sv.raw.parse::<f64>() {
+                        // E19 hardening (xx.hocon#97): a non-finite f64 cannot
+                        // be represented by serde_json::Number — passing it on
+                        // would silently degrade to `null` in a serde_json
+                        // target. The parser already rejects overflowing
+                        // literals, so this only fires on internally
+                        // constructed values; refuse loudly instead.
+                        if !f.is_finite() {
+                            return Err(DeserializeError {
+                                message: format!(
+                                    "non-finite number {:?} cannot be deserialized",
+                                    sv.raw
+                                ),
+                            });
+                        }
                         return visitor.visit_f64(f);
                     }
                     visitor.visit_string(sv.raw.clone())
@@ -608,6 +622,17 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
                         }
                     }
                     if let Ok(f) = sv.raw.parse::<f64>() {
+                        // E19 hardening (xx.hocon#97): see the borrowed
+                        // deserializer above — refuse a non-finite f64 loudly
+                        // rather than letting serde_json degrade it to null.
+                        if !f.is_finite() {
+                            return Err(DeserializeError {
+                                message: format!(
+                                    "non-finite number {:?} cannot be deserialized",
+                                    sv.raw
+                                ),
+                            });
+                        }
                         return visitor.visit_f64(f);
                     }
                     visitor.visit_string(sv.raw)

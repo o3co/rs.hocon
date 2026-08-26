@@ -1023,7 +1023,11 @@ impl<'a> Parser<'a> {
                 TokenKind::Unquoted => {
                     let (_, val, line, col) = self.advance_get();
                     AstNode::Scalar {
-                        value: parse_scalar_value(&val),
+                        value: parse_scalar_value(&val).map_err(|message| ParseError {
+                            message,
+                            line,
+                            col,
+                        })?,
                         pos: Pos { line, col },
                         separator: false,
                     }
@@ -1185,12 +1189,12 @@ fn validate_package_file_arg(file: &str, line: usize, col: usize) -> Result<(), 
     Ok(())
 }
 
-fn parse_scalar_value(raw: &str) -> ScalarValue {
+fn parse_scalar_value(raw: &str) -> Result<ScalarValue, String> {
     match raw {
         "true" | "false" => {
-            return ScalarValue::new(raw.to_string(), ScalarType::Boolean);
+            return Ok(ScalarValue::new(raw.to_string(), ScalarType::Boolean));
         }
-        "null" => return ScalarValue::null(),
+        "null" => return Ok(ScalarValue::null()),
         _ => {}
     }
 
@@ -1212,18 +1216,28 @@ fn parse_scalar_value(raw: &str) -> ScalarValue {
         // (`get_i64`, serde `ScalarType::Number`) already parse `raw`, so the
         // standalone semantic value is unchanged (`01` still reads as 1).
         if raw.parse::<i64>().is_ok() {
-            return ScalarValue::number(raw.to_string());
+            return Ok(ScalarValue::number(raw.to_string()));
         }
         // f64 fallback for fractional / scientific forms — preserve the
         // original input text rather than f64-round-tripping (Lightbend
         // keeps the input form for fractions; round-trip would change
         // precision and surface non-canonical exponents).
-        if raw.parse::<f64>().is_ok() {
-            return ScalarValue::number(raw.to_string());
+        if let Ok(f) = raw.parse::<f64>() {
+            // E19 (xx.hocon#97): a numeric literal whose magnitude overflows
+            // f64 (`1e999`) is a parse error. Lightbend admits Infinity but
+            // cannot render or re-parse it as a number; erroring at the parse
+            // (as go always has via strconv.ParseFloat) is the documented
+            // divergence. Underflow (`1e-400`) parses as 0 and stays accepted
+            // — a number-shaped raw can never yield NaN, so only the infinite
+            // case is checked.
+            if f.is_infinite() {
+                return Err(format!("invalid float \"{raw}\""));
+            }
+            return Ok(ScalarValue::number(raw.to_string()));
         }
     }
 
-    ScalarValue::string(raw.to_string())
+    Ok(ScalarValue::string(raw.to_string()))
 }
 
 #[cfg(test)]
