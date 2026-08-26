@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-08-26
+
 ### Fixed
 
 - The JSON5 adapter no longer rejects a float literal that underflows f64
@@ -834,7 +836,8 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.13.1...HEAD
+[1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/o3co/rs.hocon/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/o3co/rs.hocon/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/o3co/rs.hocon/compare/v1.10.0...v1.11.0
