@@ -97,10 +97,11 @@ fn i64_min_and_max_float_form_preserved() {
 
 #[test]
 fn huge_exponent_rejects_without_huge_allocation() {
-    // Must return None quickly, not attempt a multi-GB zero-padded string.
-    let c = parse("n = 1e2147483647").unwrap();
-    assert_eq!(c.get("n").unwrap().as_i64(), None);
-    assert!(c.get_i64("n").is_err());
+    // Must reject quickly, not attempt a multi-GB zero-padded string.
+    // E19 (xx.hocon#97): the overflowing literal is now rejected at parse
+    // time (it reads as +Inf), one layer earlier than the accessor-level
+    // rejection this test originally pinned.
+    assert!(parse("n = 1e2147483647").is_err());
     let c2 = parse("n = 1e-2147483648").unwrap();
     assert_eq!(c2.get("n").unwrap().as_i64(), None); // ~0, non-whole
 }
