@@ -47,6 +47,15 @@ fn rejects_overflow_in_array_element() {
 }
 
 #[test]
+fn rejects_integer_form_beyond_double_range() {
+    // E19 is keyed on the lexeme's value, not its spelling: an integer-form
+    // literal beyond the double range overflows the i64 → f64 fallback the
+    // same way an exponent form does.
+    let src = format!("a = {}", "9".repeat(400));
+    assert!(matches!(parse_err(&src), HoconError::Parse(_)));
+}
+
+#[test]
 fn accepts_underflow_as_zero() {
     let cfg = hocon::parse("a = 1e-400").expect("underflow parses");
     assert_eq!(cfg.get_f64("a").expect("get_f64"), 0.0);

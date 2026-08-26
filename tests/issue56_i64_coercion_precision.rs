@@ -100,8 +100,14 @@ fn huge_exponent_rejects_without_huge_allocation() {
     // Must reject quickly, not attempt a multi-GB zero-padded string.
     // E19 (xx.hocon#97): the overflowing literal is now rejected at parse
     // time (it reads as +Inf), one layer earlier than the accessor-level
-    // rejection this test originally pinned.
-    assert!(parse("n = 1e2147483647").is_err());
+    // rejection this test originally pinned. Assert the specific E19 error
+    // so an unrelated parse failure cannot satisfy this test.
+    match parse("n = 1e2147483647") {
+        Err(hocon::HoconError::Parse(e)) => {
+            assert_eq!(e.message, "invalid float \"1e2147483647\"");
+        }
+        other => panic!("expected E19 parse error, got {other:?}"),
+    }
     let c2 = parse("n = 1e-2147483648").unwrap();
     assert_eq!(c2.get("n").unwrap().as_i64(), None); // ~0, non-whole
 }
