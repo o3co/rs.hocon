@@ -8,10 +8,18 @@
 //!   that read HOCON unit values (`30m`, `64KiB`, `2w`) with the getters'
 //!   rules, plus an `::option` variant each.
 //!
-//! A failure is a [`DeserializeError`] whose `path` names the failing key
-//! (`server.port`, `servers[0].host`). Where serde buffers the input
-//! (`#[serde(flatten)]`, untagged and internally tagged enums) the path stops
-//! at the buffered value.
+//! A decode failure names the failing key (`server.port`, `servers[0].host`)
+//! in a `path`, carried by the error type of each entry point:
+//! - [`Config::deserialize`](crate::Config::deserialize) and [`from_value`]
+//!   return a [`DeserializeError`] (`path` relative to the value);
+//! - [`Config::get_as`](crate::Config::get_as) returns a
+//!   [`ConfigError`](crate::ConfigError) whose `path` starts with the lookup path;
+//! - [`from_str`] / [`from_file`] return
+//!   [`HoconError::Config`](crate::HoconError::Config) with the
+//!   [`ConfigError`](crate::ConfigError) inside.
+//!
+//! Where serde buffers the input (`#[serde(flatten)]`, untagged and
+//! internally tagged enums) the path stops at the buffered value.
 //!
 //! The unit helpers read a number's source text through this crate's
 //! deserializers, so they read exactly what the getters read. Where serde
