@@ -484,20 +484,20 @@ defaults { size = 20 }  # merges: color stays, size updated
 |---|:---:|:---:|
 | 変数参照（`${path}`） | ✅ | ✅ |
 | オプショナルな変数参照（`${?path}`） | ✅ | ✅ |
-| Include（`"..."` / `file(...)`） | ✅ | ✅ |
+| Include（`"..."` / `file(...)`） | ✅ | ✅（`load_str` の入力からは不可） |
 | `include required(...)` | ✅ | ❌ |
 | `include url(...)` | ❌（設計上の判断 — [既知の制約](#既知の制約) を参照） | ✅（`url-support` feature、デフォルトで有効） |
 | オブジェクト/配列の連結 | ✅ | ✅ |
-| 型変換 | ✅ | ⚠️（整数値の浮動小数 → 整数の変換なし） |
+| 型変換 | ✅ | ⚠️（`5.0` のような整数値の浮動小数点数を整数に変換しない） |
 | Duration のパース | ✅ | ✅ |
 | バイトサイズのパース | ✅ | ✅ |
-| Period のパース | ✅（`get_period`） | ⚠️（`as_months` / `as_years` は固定長の duration を返す） |
+| Period のパース | ✅（`get_period`） | ⚠️（Period 型なし。`as_months` / `as_years` は 30 日 / 365 日固定で duration を換算） |
 | `+=` 追記 | ✅ | ✅ |
 | Serde デシリアライゼーション | ✅ | ✅ |
 | 環境変数へのフォールバック | ✅ | ✅（`no_system()` で無効化できる） |
-| 循環 include の検出 | ✅ | ⚠️（循環は検出しない。include の深さ上限（デフォルト 10）で止まる） |
-| 複数のソースを 1 つの config に読み込む | ⚠️（`with_fallback`） | ✅（`HoconLoader` で `load_str` / `load_file` をつなげる） |
-| 寛容モード（エラーを値として残し、ドキュメントは返す） | ❌（厳格のみ。`allow_unresolved` は未解決の変数参照を後回しにするだけ） | ✅（`Hocon::BadValue`。`strict()` で最初のエラーで止める） |
+| 循環 include の検出 | ⚠️（`..` を経由する循環は検出しない — [#192](https://github.com/o3co/rs.hocon/issues/192)） | ⚠️（循環は検出しない。ファイルの include は深さ上限で止まる。上限のデフォルトは 10） |
+| 複数のソースを 1 つの config に読み込む | ✅（未解決のまま parse + `with_fallback` + `resolve`） | ✅（`HoconLoader` で `load_str` / `load_file` をつなげる） |
+| 寛容モード（エラーを値として残し、ドキュメントは返す） | ❌（厳格のみ。`allow_unresolved` は未解決の変数参照をプレースホルダのまま残すだけ） | ✅（`Hocon::BadValue`。`strict()` で最初のエラーで止める） |
 
 ### 設定フレームワーク
 

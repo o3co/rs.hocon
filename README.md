@@ -495,20 +495,20 @@ Verified against [`hocon`](https://github.com/mockersf/hocon.rs) (mockersf) **v0
 |---|:---:|:---:|
 | Substitutions (`${path}`) | ✅ | ✅ |
 | Optional substitutions (`${?path}`) | ✅ | ✅ |
-| Include (`"..."` / `file(...)`) | ✅ | ✅ |
+| Include (`"..."` / `file(...)`) | ✅ | ✅ (not from `load_str` input) |
 | `include required(...)` | ✅ | ❌ |
 | `include url(...)` | ❌ (by design — see [Known Limitations](#known-limitations)) | ✅ (`url-support` feature, on by default) |
 | Object/Array concatenation | ✅ | ✅ |
-| Type coercion | ✅ | ⚠️ (no whole-float → integer) |
+| Type coercion | ✅ | ⚠️ (does not convert a whole-number float such as `5.0` to an integer) |
 | Duration parsing | ✅ | ✅ |
 | Byte size parsing | ✅ | ✅ |
-| Period parsing | ✅ (`get_period`) | ⚠️ (`as_months` / `as_years` return fixed-length durations) |
+| Period parsing | ✅ (`get_period`) | ⚠️ (no Period type; `as_months` / `as_years` convert durations using fixed 30 d / 365 d) |
 | `+=` append | ✅ | ✅ |
 | Serde deserialization | ✅ | ✅ |
 | Env variable fallback | ✅ | ✅ (can be turned off with `no_system()`) |
-| Circular include detection | ✅ | ⚠️ (no cycle detection; includes stop at a depth limit, 10 by default) |
-| Loading several sources into one config | ⚠️ (`with_fallback`) | ✅ (`HoconLoader` chains `load_str` / `load_file`) |
-| Lenient mode (errors kept as values, document still returned) | ❌ (strict; `allow_unresolved` only defers unresolved substitutions) | ✅ (`Hocon::BadValue`; `strict()` to fail fast) |
+| Circular include detection | ⚠️ (cycles through `..` paths are not detected — [#192](https://github.com/o3co/rs.hocon/issues/192)) | ⚠️ (no cycle detection; file includes stop at a depth limit, 10 by default) |
+| Loading several sources into one config | ✅ (unresolved parse + `with_fallback` + `resolve`) | ✅ (`HoconLoader` chains `load_str` / `load_file`) |
+| Lenient mode (errors kept as values, document still returned) | ❌ (strict; `allow_unresolved` only leaves unresolved substitutions as placeholders) | ✅ (`Hocon::BadValue`; `strict()` to fail fast) |
 
 ### Config Framework
 
