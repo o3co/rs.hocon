@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
                                 && prev
                                     .value
                                     .chars()
-                                    .all(|c| matches!(c, '0'..='9' | '.' | 'e' | 'E' | '-'))
+                                    .all(|c| matches!(c, '0'..='9' | '.' | 'e' | 'E' | '+' | '-'))
                             {
                                 return Err(ParseError {
                                     message: format!(
