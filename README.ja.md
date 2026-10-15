@@ -8,6 +8,8 @@
 
 [Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) の Rust パーサーです。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応しています。現在の準拠率は [仕様準拠](#仕様準拠) を参照してください。
 
+**ドキュメント:** [o3co.github.io/hocon](https://o3co.github.io/hocon/) — 4 実装・hocon2 CLI・共通の準拠コーパスをまとめた横断ハブです。
+
 [English](README.md)
 
 **ライブラリの位置づけ** — このライブラリは HOCON の設定ローダーです。目的は `.hocon` 設定ファイルを読み込み、`Config` API（`get_string`、`get_i64`、`get_f64`、`get_bool`、`get_duration`、`get_bytes`、`get_period`、`serde` フィーチャー有効時は `get_as`）で型付きアクセスを提供することです。低レベルのパーサー API ではありません。`ScalarValue` などの内部型はマイナーバージョン間で変更される可能性があります。

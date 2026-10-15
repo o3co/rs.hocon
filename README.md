@@ -11,6 +11,8 @@ parser for Rust. Hand-written lexer, recursive-descent parser, and a typed `Conf
 with optional Serde integration. See [Spec Compliance](#spec-compliance) for the current
 conformance rate.
 
+**Docs:** [o3co.github.io/hocon](https://o3co.github.io/hocon/) — the cross-language hub for all four implementations, the hocon2 CLI and the shared conformance corpus.
+
 [日本語](README.ja.md)
 
 **Library stance** — This library is a HOCON config loader. Its purpose is reading `.hocon` config files and providing typed access via the `Config` API (`get_string`, `get_i64`, `get_f64`, `get_bool`, `get_duration`, `get_bytes`, `get_period`, and with the `serde` feature `get_as`). It is not a low-level parser API; internal types like `ScalarValue` may change between minor versions.
