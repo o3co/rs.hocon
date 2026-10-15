@@ -1,6 +1,6 @@
 //! S18.4 — string value with no unit → default unit — conformance tests.
 //!
-//! Fixtures: xx.hocon testdata/hocon/units-default/ (27 fixtures).
+//! Fixtures: xx.hocon testdata/hocon/units-default/ (29 fixtures).
 //! No expected sidecars — per-impl assertions carry the assertion burden (the xx.hocon
 //! generator does not yet support accessor-time output capture; see spec §Test strategy).
 //!
@@ -10,6 +10,7 @@
 //!   ub01-ub06  Bytes family   (bare int, WS, fractional-truncated, negative-accessor, unit, empty)
 //!   un01-un03  Cross-family negative edge cases (empty, WS-only, unit-only)
 //!   ud09-ud11, ub07-ub08  E20 exact decimal unit arithmetic
+//!   ud12-ud13  E21 a duration past the representable range is an error
 
 use std::path::PathBuf;
 
@@ -342,5 +343,33 @@ fn ub08_bytes_fractional_unit_exact() {
         cfg.get_bytes("b").unwrap(),
         1001,
         "ub08 (E20): 1.001kB must be exactly 1001"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E21 — a duration the implementation cannot represent is an error (ud12–ud13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ud12: `10^400` days (integer form) → Err.
+#[test]
+fn ud12_duration_overflow_rejected() {
+    let cfg = load("ud12-duration-overflow-rejected.conf");
+    let err = cfg.get_duration("t").unwrap_err();
+    assert!(
+        err.message.starts_with("duration too large"),
+        "ud12 (E21): must Err as too large, got {}",
+        err.message
+    );
+}
+
+/// ud13: `10^400 + 0.5` days (fractional form) → Err.
+#[test]
+fn ud13_duration_overflow_fractional_rejected() {
+    let cfg = load("ud13-duration-overflow-fractional-rejected.conf");
+    let err = cfg.get_duration("t").unwrap_err();
+    assert!(
+        err.message.starts_with("duration too large"),
+        "ud13 (E21): must Err as too large, got {}",
+        err.message
     );
 }

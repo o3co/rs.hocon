@@ -459,7 +459,8 @@ impl Config {
     /// to [`get_duration_option`](Self::get_duration_option).
     ///
     /// The arithmetic is exact (extra-spec E20): `"1.001s"` is exactly
-    /// 1001 ms, truncated toward zero at the nanosecond.
+    /// 1001 ms, truncated toward zero at the nanosecond. A duration past what
+    /// `std::time::Duration` holds is an error, however it is spelled (E21).
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
