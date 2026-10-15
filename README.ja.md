@@ -253,7 +253,9 @@ let retention: hocon::Period = config.get_period("retention")?;
 `kB`）。数値だけの値はデフォルトの単位（ミリ秒、バイト、日）で読みます。period は整数のみです。
 duration とバイトサイズの小数の値は厳密に
 計算してからゼロ方向に切り捨てます（`1.001s` は 1001 ms、`1.0009kB` は 1000 バイト）。
-`std::time::Duration` で表せる範囲を超える duration はエラーです。
+`std::time::Duration` で表せる範囲を超える duration はエラーです。数値には Lightbend と同じく
+指数表記も使えます。`1e+5ms` は 100 秒、`2E2KiB` は 204800 バイトです（単位は末尾の英字の並びなので、
+`1E` は 1 エクサバイトです）。
 
 ### 検査
 

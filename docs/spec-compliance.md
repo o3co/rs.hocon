@@ -668,8 +668,9 @@ same item descriptions verbatim.
   status: ✅
   notes: A number value is read from the literal as written, exponent included, exactly (extra-spec E20): a duration truncates at the nanosecond, a byte size toward zero (`b = 1.5` is 1, `b = 1e3` is 1000, matching Lightbend's `longValue()`).
 - **S18.2** String parsed as: optional ws + number + ws + unit + ws — §Units format (L1281-1294)
-  tests: src/config.rs:1081 (get_duration_no_space); src/config.rs:1165 (get_bytes_no_space)
+  tests: src/config.rs:1081 (get_duration_no_space); src/config.rs:1165 (get_bytes_no_space); src/units.rs (exponent_forms_in_unit_values, huge_exponents_end_fast); tests/units_default_test.rs (ud14–ud20, ub09–ub13)
   status: ✅
+  notes: As Lightbend's `getUnits`, the unit is the trailing run of letters and the number is a Java `double` (exponent included: `1e+5ms`, `2E2KiB`), computed exactly per extra-spec E20 without building large powers of ten.
 - **S18.3** Unit name letters-only (Unicode L* / `isLetter`) — §Units format (L1287)
   tests: tests/spec_phase5.rs (s18_3_unit_with_digit_rejected; s18_3_unit_with_hyphen_rejected; s18_3_valid_letter_only_unit_accepted)
   status: ✅
