@@ -508,7 +508,10 @@ impl Config {
                             });
                         }
                         let secs = f / 1000.0;
-                        if secs > u64::MAX as f64 {
+                        // `Duration::from_secs_f64` panics at 2^64 seconds and
+                        // above; `u64::MAX as f64` rounds up to exactly 2^64,
+                        // so the bound is `>=`.
+                        if secs >= u64::MAX as f64 {
                             return Err(ConfigError {
                                 message: format!("duration too large at {}: {}", path, sv.raw),
                                 path: path.to_string(),
@@ -1613,6 +1616,29 @@ mod tests {
     fn parse_bytes_fractional_truncated() {
         assert_eq!(parse_bytes("1024.5"), Some(1024));
     }
+    #[test]
+    fn get_duration_number_at_2_pow_64_seconds_errors() {
+        use std::collections::HashMap;
+        // 2^64 s in milliseconds: previously panicked in Duration::from_secs_f64.
+        let cfg = crate::parse_with_env("d = 18446744073709551616000", &HashMap::new()).unwrap();
+        let err = cfg.get_duration("d").unwrap_err();
+        assert_eq!(
+            err.message,
+            "duration too large at d: 18446744073709551616000"
+        );
+    }
+
+    #[test]
+    fn get_duration_number_just_below_2_pow_64_seconds_succeeds() {
+        use std::collections::HashMap;
+        // 2^64 − 2048 s (the f64 just below 2^64) still converts.
+        let cfg = crate::parse_with_env("d = 18446744073709549568000", &HashMap::new()).unwrap();
+        assert_eq!(
+            cfg.get_duration("d").unwrap(),
+            std::time::Duration::from_secs(18_446_744_073_709_549_568)
+        );
+    }
+
     #[test]
     fn get_bytes_negative_accessor_rejects() {
         use std::collections::HashMap;
