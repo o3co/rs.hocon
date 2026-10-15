@@ -130,9 +130,10 @@ impl ConfigError {
     }
 }
 
-/// Error returned when a getter is called on a [`Config`](crate::Config) path
-/// whose value (or any transitive parent) contains an unresolved substitution
-/// placeholder.
+/// Error returned by [`Config::resolve_with`](crate::Config::resolve_with)
+/// when its source config still contains unresolved substitutions (E12
+/// decision 10). A getter on an unresolved path returns a [`ConfigError`]
+/// whose `is_not_resolved()` is `true` instead.
 ///
 /// Detect via `downcast_ref::<NotResolvedError>()` or by matching
 /// `HoconError::NotResolved(e)`.  Per E12 decision 12.
@@ -170,8 +171,8 @@ pub enum HoconError {
     Resolve(ResolveError),
     /// File I/O error when reading the top-level config file.
     Io(std::io::Error),
-    /// A getter was called on a path whose value contains an unresolved
-    /// substitution placeholder. Per E12 decision 12.
+    /// `Config::resolve_with` was given a source config that is not
+    /// resolved (E12 decision 10).
     NotResolved(NotResolvedError),
     /// Type-mismatch error at the Config boundary (the Lightbend
     /// `ConfigException.WrongType` analog). Returned by the parse functions

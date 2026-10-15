@@ -223,6 +223,58 @@ fn readme_msrv_matches_cargo_toml() {
     );
 }
 
+/// README.ja.md states the same rates and MSRV, and drifted unnoticed once
+/// (it showed 75.6 / 84.0 long after README.md moved on); check it too.
+#[test]
+fn readme_ja_rates_and_msrv_match() {
+    let counts = count_compliance();
+    let readme = read("README.ja.md");
+    let spec_total = table_value(
+        "README.ja.md",
+        &readme,
+        "仕様全体（out-of-scope を含む）",
+        "spec-total compliance rate",
+    );
+    let in_scope = table_value(
+        "README.ja.md",
+        &readme,
+        "In-scope のみ",
+        "in-scope compliance rate",
+    );
+    assert_eq!(
+        spec_total,
+        format!("**{}%**", counts.rate(SPEC_ITEM_TOTAL)),
+        "README.ja spec-total rate vs docs/spec-compliance.md"
+    );
+    assert_eq!(
+        in_scope,
+        format!(
+            "**{}%**",
+            counts.rate(SPEC_ITEM_TOTAL - counts.out_of_scope)
+        ),
+        "README.ja in-scope rate vs docs/spec-compliance.md"
+    );
+
+    let declared = find_between(
+        "Cargo.toml",
+        &read("Cargo.toml"),
+        "rust-version = \"",
+        "\"",
+        "rust-version",
+    );
+    let claimed = find_between(
+        "README.ja.md",
+        &readme,
+        "MSRV は **",
+        "**",
+        "README.ja MSRV",
+    );
+    assert_eq!(
+        claimed, declared,
+        "README.ja MSRV vs Cargo.toml rust-version"
+    );
+}
+
 #[test]
 fn readme_marks_nothing_as_unreleased() {
     let offenders: Vec<String> = read("README.md")

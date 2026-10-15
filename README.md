@@ -133,6 +133,7 @@ Inside the auth module (features `serde` and `include-package`), the module publ
 use serde::Deserialize;
 use std::time::Duration;
 
+// src/auth.rs; the defaults sit at src/auth/reference.conf
 pub fn register(parser: hocon::Parser) -> hocon::Parser {
     parser.register_package("github.com/acme/auth", "reference.conf",
                             include_str!("auth/reference.conf"))
@@ -252,7 +253,8 @@ let retention: hocon::Period = config.get_period("retention")?;
 
 Unit names are case-sensitive: `KB` and `100 MS` are errors (the
 kilo-decimal spelling is `kB`). A bare number takes the default unit
-(milliseconds, bytes, days). Fractional values are computed exactly and
+(milliseconds, bytes, days). Periods take integer amounts only; fractional
+durations and byte sizes are computed exactly and
 truncated toward zero — `1.001s` is 1001 ms, `1.0009kB` is 1000 bytes — and a
 duration past what `std::time::Duration` holds is an error.
 
@@ -304,15 +306,16 @@ include package("github.com/acme/auth", "reference.conf")
 include required(package("github.com/acme/auth", "reference.conf"))  # same; required
 ```
 
-- The identifier follows the Go-module-path style (`host/org/name`) so one
-  document works with every o3co implementation.
+- The identifier should follow the Go-module-path style (`host/org/name`) so
+  one document works with every o3co implementation (the parser accepts any
+  non-empty string).
 - A package that depends on other packages exposes a
   `register(parser: hocon::Parser) -> hocon::Parser` function that registers its
   own files and then calls its dependencies' `register` (the cascade
   convention).
 - Registering different content for the same `(identifier, file)` panics;
-  re-registering byte-identical content is a no-op. Including an unregistered
-  package is a parse error.
+  re-registering byte-identical content is a no-op. Including a package that
+  was not registered fails the parse with `HoconError::Resolve`.
 
 ### Deferred Resolution (v1.4.0)
 

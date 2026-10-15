@@ -118,7 +118,8 @@
 //!   - `std::io::Error` -- file I/O errors (top-level file read; include file errors appear as [`ResolveError`]).
 //!   - [`NotResolvedError`] -- `Config::resolve_with` given a source that is
 //!     not resolved.
-//!   - [`ConfigError`] -- a decode failure from `from_str` / `from_file`.
+//!   - [`ConfigError`] -- a decode failure from `from_str` / `from_file`, or
+//!     an array at the document root (S3.5).
 //! - [`ConfigError`] -- missing keys or type mismatches when accessing values.
 //! - `DeserializeError` (feature `serde`) -- a decode failure, with the
 //!   failing key's path.

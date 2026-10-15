@@ -130,6 +130,7 @@ auth モジュールの中では（`serde` と `include-package` フィーチャ
 use serde::Deserialize;
 use std::time::Duration;
 
+// src/auth.rs; the defaults sit at src/auth/reference.conf
 pub fn register(parser: hocon::Parser) -> hocon::Parser {
     parser.register_package("github.com/acme/auth", "reference.conf",
                             include_str!("auth/reference.conf"))
@@ -247,7 +248,8 @@ let retention: hocon::Period = config.get_period("retention")?;
 ```
 
 単位名は大文字と小文字を区別します。`KB` や `100 MS` はエラーです（キロの 10 進表記は
-`kB`）。数値だけの値はデフォルトの単位（ミリ秒、バイト、日）で読みます。小数の値は厳密に
+`kB`）。数値だけの値はデフォルトの単位（ミリ秒、バイト、日）で読みます。period は整数のみです。
+duration とバイトサイズの小数の値は厳密に
 計算してからゼロ方向に切り捨てます（`1.001s` は 1001 ms、`1.0009kB` は 1000 バイト）。
 `std::time::Duration` で表せる範囲を超える duration はエラーです。
 
@@ -299,13 +301,14 @@ include package("github.com/acme/auth", "reference.conf")
 include required(package("github.com/acme/auth", "reference.conf"))  # same; required
 ```
 
-- 識別子は Go のモジュールパス形式（`host/org/name`）に従います。これにより、1 つの
-  ドキュメントが o3co のすべての実装で動きます。
+- 識別子は Go のモジュールパス形式（`host/org/name`）に従うことを推奨します。これにより、1 つの
+  ドキュメントが o3co のすべての実装で動きます（パーサーは空でない任意の文字列を受け付けます）。
 - 他のパッケージに依存するパッケージは、`register(parser: hocon::Parser) -> hocon::Parser`
   関数を公開します。この関数は自分のファイルを登録してから、依存先の `register` を呼びます
   （カスケード規約）。
 - 同じ `(identifier, file)` に異なる内容を登録すると panic します。バイト単位で同一の内容を
-  再登録しても何も起きません。登録されていないパッケージの include はパースエラーです。
+  再登録しても何も起きません。登録されていないパッケージを include すると、パースは
+  `HoconError::Resolve` で失敗します。
 
 ### 遅延解決 (v1.4.0)
 

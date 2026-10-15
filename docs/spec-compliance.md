@@ -819,6 +819,12 @@ Cross-implementation behaviors not enumerated by the Lightbend HOCON spec, track
 [`xx.hocon/docs/extra-spec-conventions.md`](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md).
 rs.hocon status per-item:
 
+- **E6** `${X[]}` config-defined wins — `[]` suffix is a no-op when X is a config key
+  tests: `tests/env_var_list_test.rs::s13c_ev05_config_defined_wins`
+  status: ✅ — config lookup returns early before `list_suffix` branch; env vars `X_0`, `X_1`, … are not consulted (Phase 6 #3g, 2026-05-18)
+- **E7** ASCII SPACE (0x20) or TAB (0x09) between path expression and `[]` is allowed (`${X []}` / `${?X []}`); wider whitespace (NBSP, CR, Zs, Zl, BOM, …) is REJECTED to match the narrow extra-spec convention
+  tests: `tests/env_var_list_test.rs::s13c_ev09_whitespace_before_suffix`, `tests/lexer_test.rs::lex_subst_list_suffix_e7_space`, `lex_subst_list_suffix_e7_tab`; negatives via `tests/env_var_list_test.rs::s13c_lex_nbsp_before_suffix_errors`, `_cr_before_suffix_errors`, `_zs_em_space_before_suffix_errors`
+  status: ✅ — `parse_subst_body` `'['` arm validates `pending_ws` against `{' ', '\t'}` and rejects other HOCON whitespace (Phase 6 #3g, 2026-05-18; tightened in Copilot review fix on rs.hocon#88)
 - **E19** A numeric literal whose magnitude overflows f64 (`1e999`) is a parse error; underflow (`1e-400`) reads as `0`
   tests: tests/e19_float_overflow_test.rs
   status: ✅ — deliberate divergence from Lightbend (which turns it into `Infinity`); the serde deserializers also refuse a non-finite `f64` (xx.hocon#97)
@@ -828,9 +834,3 @@ rs.hocon status per-item:
 - **E21** A duration the implementation cannot represent is an error, with one range for every spelling
   tests: src/units.rs (parse_duration_range_is_all_of_duration, parse_duration_past_u64_nanos_is_a_value); tests/units_default_test.rs (ud12–ud13)
   status: ✅ — rs's range is all of `std::time::Duration` (`u64::MAX` s + 999,999,999 ns) (xx.hocon#105)
-- **E6** `${X[]}` config-defined wins — `[]` suffix is a no-op when X is a config key
-  tests: `tests/env_var_list_test.rs::s13c_ev05_config_defined_wins`
-  status: ✅ — config lookup returns early before `list_suffix` branch; env vars `X_0`, `X_1`, … are not consulted (Phase 6 #3g, 2026-05-18)
-- **E7** ASCII SPACE (0x20) or TAB (0x09) between path expression and `[]` is allowed (`${X []}` / `${?X []}`); wider whitespace (NBSP, CR, Zs, Zl, BOM, …) is REJECTED to match the narrow extra-spec convention
-  tests: `tests/env_var_list_test.rs::s13c_ev09_whitespace_before_suffix`, `tests/lexer_test.rs::lex_subst_list_suffix_e7_space`, `lex_subst_list_suffix_e7_tab`; negatives via `tests/env_var_list_test.rs::s13c_lex_nbsp_before_suffix_errors`, `_cr_before_suffix_errors`, `_zs_em_space_before_suffix_errors`
-  status: ✅ — `parse_subst_body` `'['` arm validates `pending_ws` against `{' ', '\t'}` and rejects other HOCON whitespace (Phase 6 #3g, 2026-05-18; tightened in Copilot review fix on rs.hocon#88)
