@@ -22,10 +22,10 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/bom.conf (fixture)
   status: ✅
 - **S1.2.1** Quoted strings accept valid JSON escape sequences (`\" \\ \/ \b \f \n \r \t`) — §Unchanged from JSON (L118)
-  tests: src/lexer.rs:758 (handles_escape_sequences); tests/testdata/hocon/subst-tokenize/st10-escape-newline.conf (fixture); tests/testdata/hocon/subst-tokenize/st11-escape-tab.conf (fixture); tests/testdata/hocon/subst-tokenize/st12-escape-backslash.conf (fixture); tests/testdata/hocon/subst-tokenize/st13-escape-quote.conf (fixture); tests/testdata/hocon/subst-tokenize/st19-quoted-escape-slash.conf (fixture); tests/testdata/hocon/subst-tokenize/st20-quoted-escape-backspace-formfeed.conf (fixture)
+  tests: src/lexer.rs:988 (handles_escape_sequences); tests/testdata/hocon/subst-tokenize/st10-escape-newline.conf (fixture); tests/testdata/hocon/subst-tokenize/st11-escape-tab.conf (fixture); tests/testdata/hocon/subst-tokenize/st12-escape-backslash.conf (fixture); tests/testdata/hocon/subst-tokenize/st13-escape-quote.conf (fixture); tests/testdata/hocon/subst-tokenize/st19-quoted-escape-slash.conf (fixture); tests/testdata/hocon/subst-tokenize/st20-quoted-escape-backspace-formfeed.conf (fixture)
   status: ✅
 - **S1.2.2** Unknown / invalid escape sequence (e.g. `\q`, `\x`) is rejected — §Unchanged from JSON (L118)
-  tests: tests/integration_test.rs:407 (test_unknown_escape_sequence_error); tests/integration_test.rs:413 (test_unknown_escape_a_error); tests/testdata/hocon/subst-tokenize/st-err01-invalid-escape-x.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err02-invalid-escape-q.conf (fixture)
+  tests: tests/integration_test.rs:415 (test_unknown_escape_sequence_error); tests/integration_test.rs:421 (test_unknown_escape_a_error); tests/testdata/hocon/subst-tokenize/st-err01-invalid-escape-x.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err02-invalid-escape-q.conf (fixture)
   status: ✅
 - **S1.2.3** Malformed `\uXXXX` (short / non-hex) is rejected — §Unchanged from JSON (L118)
   tests: tests/testdata/hocon/subst-tokenize/st-err03-invalid-unicode-short.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err04-invalid-unicode-nonhex.conf (fixture)
@@ -34,29 +34,29 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/subst-tokenize/st-err07-newline-in-string.conf (fixture)
   status: ✅
 - **S1.2.5** Unterminated quoted string is rejected — §Unchanged from JSON (L118)
-  tests: src/lexer.rs:862 (throws_on_unterminated_string); tests/testdata/hocon/subst-tokenize/st-err06-unterminated-string.conf (fixture)
+  tests: src/lexer.rs:1095 (throws_on_unterminated_string); tests/testdata/hocon/subst-tokenize/st-err06-unterminated-string.conf (fixture)
   status: ✅
 - **S1.2.6** Unpaired UTF-16 surrogate codepoint in `\uXXXX` escape — §Unchanged from JSON (L118)
   out-of-scope: intentional language-natural divergence. Java (Lightbend reference) silently accepts unpaired surrogates because Java strings are 16-bit code-unit sequences; Rust `char` and Go `rune` cannot represent them and reject. xx.hocon conformance fixtures cannot cover this case (the Java generator fails to encode unpaired surrogates as UTF-8 when writing expected JSON). Each implementation follows its language's string-type constraints. Documented in xx.hocon commit 86bd82e.
-  tests: tests/lexer_test.rs:113 (surrogate_codepoint_rejected); tests/lexer_test.rs:125 (surrogate_codepoint_rejected_inside_subst)
+  tests: tests/lexer_test.rs:114 (surrogate_codepoint_rejected); tests/lexer_test.rs:126 (surrogate_codepoint_rejected_inside_subst)
   status: ➖
 - **S1.3** Value types: string, number, object, array, boolean, null — §Unchanged from JSON (L119)
-  tests: src/parser.rs:674 (parses_boolean_and_null); src/parser.rs:697 (parses_integer_scalars); tests/integration_test.rs:12 (parse_simple_config)
+  tests: src/parser.rs:1320 (parses_boolean_and_null); src/parser.rs:1343 (parses_integer_scalars); tests/integration_test.rs:13 (parse_simple_config)
   status: ✅
 - **S1.4** Number formats match JSON (no NaN, no Infinity) — §Unchanged from JSON (L120)
-  tests: src/parser.rs:708 (parses_float_scalars); src/parser.rs:719 (dot_prefix_is_string_not_number)
+  tests: src/parser.rs:1354 (parses_float_scalars); src/parser.rs:1365 (dot_prefix_is_string_not_number)
   status: ✅
 
 ## S2. Comments
 
 - **S2.1** `//` line comment — §Comments (L125)
-  tests: src/lexer.rs:735 (skips_slash_comments_keeps_newline); tests/integration_test.rs:91 (parse_with_comments); tests/testdata/hocon/equiv01/comments.conf (fixture)
+  tests: src/lexer.rs:965 (skips_slash_comments_keeps_newline); tests/integration_test.rs:92 (parse_with_comments); tests/testdata/hocon/equiv01/comments.conf (fixture)
   status: ✅
 - **S2.2** `#` line comment — §Comments (L125)
-  tests: src/lexer.rs:743 (skips_hash_comments); tests/integration_test.rs:91 (parse_with_comments); tests/testdata/hocon/equiv01/comments.conf (fixture)
+  tests: src/lexer.rs:973 (skips_hash_comments); tests/integration_test.rs:92 (parse_with_comments); tests/testdata/hocon/equiv01/comments.conf (fixture)
   status: ✅
 - **S2.3** Comment markers inside quoted strings are literal — §Comments (L126)
-  tests: src/lexer.rs:895 (s2_3_comment_markers_inside_quoted_string_are_literal); tests/integration_test.rs:521 (s2_3_comment_markers_in_quoted_values_are_literal)
+  tests: src/lexer.rs:1127 (s2_3_comment_markers_inside_quoted_string_are_literal); tests/integration_test.rs:528 (s2_3_comment_markers_in_quoted_values_are_literal)
   status: ✅
 
 ## S3. Omit root braces
@@ -65,13 +65,13 @@ same item descriptions verbatim.
   tests: tests/spec_s3_1_empty_file.rs (s3_1_1–s3_1_6 + positives); tests/conformance_empty_file.rs (ef01-ef06, `{}` sidecars normative); tests/spec_s3_1_empty_include.rs; tests/issue105_empty_include.rs (issue105_top_level_empty_parses_to_empty_object); tests/include_package_test.rs (ipk08 + whitespace/comment variants); src/parser.rs (parses_empty_input)
   status: ✅ — Corrected 2026-07-23 (xx.hocon E10). The item previously read "Empty file is invalid" — a misreading of the L130-132 JSON baseline as HOCON-normative; the L134 brace-omission relaxation makes an empty document the empty object. The Phase 6 #3h `assert_non_empty_document` guard (a regression) is removed from all four parse entry points, and the include-path carve-out is gone — empty documents parse to `{}` uniformly on every path.
 - **S3.2** Root non-object/non-array is invalid (when explicitly enclosed) — §Omit root braces (L131)
-  tests: tests/integration_test.rs:651 (s3_2_root_bare_string_rejected)
+  tests: tests/integration_test.rs:658 (s3_2_root_bare_string_rejected)
   status: ✅
 - **S3.3** Implicit `{}` when file does not start with `[` or `{` — §Omit root braces (L134)
-  tests: tests/testdata/hocon/equiv01/no-root-braces.conf (fixture); tests/integration_test.rs:12 (parse_simple_config)
+  tests: tests/testdata/hocon/equiv01/no-root-braces.conf (fixture); tests/integration_test.rs:13 (parse_simple_config)
   status: ✅
 - **S3.4** Unbalanced trailing `}` without opening `{` is invalid — §Omit root braces (L138)
-  tests: tests/integration_test.rs:277 (test_stray_brace_after_root)
+  tests: tests/integration_test.rs:285 (test_stray_brace_after_root)
   status: ✅
 - **S3.5** Array-root document is valid syntax; object-rooted parse API rejects with a type error — §Include semantics: merging (L989-991)
   tests: tests/spec_s3_5_array_root.rs (top-level + position + deferred + malformed guards + include/package variants + nested-chain pins + ar01–ar03 conformance loop)
@@ -88,7 +88,7 @@ same item descriptions verbatim.
 ## S4. Key-value separator
 
 - **S4.1** `=` is interchangeable with `:` — §Key-value separator (L143)
-  tests: src/parser.rs:638 (parses_key_colon_value); tests/testdata/hocon/equiv01/equals.conf (fixture)
+  tests: src/parser.rs:1284 (parses_key_colon_value); tests/testdata/hocon/equiv01/equals.conf (fixture)
   status: ✅
 - **S4.2** `:` / `=` may be omitted before `{` — §Key-value separator (L146)
   tests: tests/testdata/hocon/equiv01/omit-colons.conf (fixture)
@@ -100,73 +100,73 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/no-commas.conf (fixture)
   status: ✅
 - **S5.2** Single trailing comma is allowed and ignored — §Commas (L155)
-  tests: tests/integration_test.rs:535 (s5_2_single_trailing_comma_in_array_allowed); tests/integration_test.rs:547 (s5_2_single_trailing_comma_in_object_allowed)
+  tests: tests/integration_test.rs:542 (s5_2_single_trailing_comma_in_array_allowed); tests/integration_test.rs:554 (s5_2_single_trailing_comma_in_object_allowed)
   status: ✅
 - **S5.3** Two trailing commas (`[1,2,3,,]`) is invalid — §Commas (L160)
-  tests: tests/integration_test.rs:560 (s5_3_two_trailing_commas_in_array_rejected); tests/integration_test.rs:568 (s5_3_two_trailing_commas_in_object_rejected)
+  tests: tests/integration_test.rs:567 (s5_3_two_trailing_commas_in_array_rejected); tests/integration_test.rs:575 (s5_3_two_trailing_commas_in_object_rejected)
   status: ✅
 - **S5.4** Leading comma (`[,1,2,3]`) is invalid — §Commas (L161)
-  tests: tests/integration_test.rs:582 (s5_4_leading_comma_in_array_rejected); tests/integration_test.rs:590 (s5_4_leading_comma_in_object_rejected)
+  tests: tests/integration_test.rs:589 (s5_4_leading_comma_in_array_rejected); tests/integration_test.rs:597 (s5_4_leading_comma_in_object_rejected)
   status: ✅
 - **S5.5** Two consecutive commas (`[1,,2,3]`) is invalid — §Commas (L162)
-  tests: tests/integration_test.rs:601 (s5_5_two_consecutive_commas_in_array_rejected)
+  tests: tests/integration_test.rs:608 (s5_5_two_consecutive_commas_in_array_rejected)
   status: ✅
 - **S5.6** Same comma rules apply to object fields — §Commas (L163)
-  tests: tests/integration_test.rs:547 (s5_2_single_trailing_comma_in_object_allowed); tests/integration_test.rs:568 (s5_3_two_trailing_commas_in_object_rejected); tests/integration_test.rs:590 (s5_4_leading_comma_in_object_rejected); tests/integration_test.rs:614 (s5_6_two_consecutive_commas_between_object_fields_rejected)
+  tests: tests/integration_test.rs:554 (s5_2_single_trailing_comma_in_object_allowed); tests/integration_test.rs:575 (s5_3_two_trailing_commas_in_object_rejected); tests/integration_test.rs:597 (s5_4_leading_comma_in_object_rejected); tests/integration_test.rs:621 (s5_6_two_consecutive_commas_between_object_fields_rejected)
   status: ✅
 
 ## S6. Whitespace
 
 - **S6.1** Unicode Zs/Zl/Zp category characters are whitespace — §Whitespace (L170)
-  tests: src/lexer.rs:954 (s6_1_em_space_separates_tokens_spec); src/lexer.rs:967 (s6_1_line_separator_separates_tokens_spec)
+  tests: src/lexer.rs:1146 (s6_1_em_space_separates_tokens_spec); src/lexer.rs:1159 (s6_1_line_separator_separates_tokens_spec)
   status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — is_hocon_whitespace covers all Zs/Zl/Zp members
 - **S6.2** Non-breaking spaces (0x00A0, 0x2007, 0x202F) are whitespace — §Whitespace (L171)
-  tests: src/lexer.rs:984 (s6_2_nbsp_separates_tokens_spec); src/lexer.rs:997 (s6_2_figure_space_separates_tokens_spec); src/lexer.rs:1010 (s6_2_narrow_nbsp_separates_tokens_spec)
+  tests: src/lexer.rs:1176 (s6_2_nbsp_separates_tokens_spec); src/lexer.rs:1189 (s6_2_figure_space_separates_tokens_spec); src/lexer.rs:1202 (s6_2_narrow_nbsp_separates_tokens_spec)
   status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — NBSP variants included in is_hocon_whitespace
 - **S6.3** BOM (0xFEFF) treated as whitespace — §Whitespace (L173)
-  tests: src/lexer.rs:887 (strips_utf8_bom); src/lexer.rs:1123 (s6_3_bom_midstream_is_whitespace); tests/testdata/hocon/bom.conf (fixture)
+  tests: src/lexer.rs:1079 (strips_utf8_bom); src/lexer.rs:1315 (s6_3_bom_midstream_is_whitespace); tests/testdata/hocon/bom.conf (fixture)
   status: ✅ (broadened in #84) — BOM now treated as whitespace anywhere, not just at start of input
 - **S6.4** ASCII control whitespace (tab, vtab, FF, CR, FS, GS, RS, US) — §Whitespace (L174)
-  tests: src/lexer.rs:1027 (s6_4_tab_is_whitespace); src/lexer.rs:1040 (s6_4_cr_is_whitespace); src/lexer.rs:1055 (s6_4_vtab_is_whitespace_spec); src/lexer.rs:1068 (s6_4_ff_is_whitespace_spec); src/lexer.rs:1083 (s6_4_fs_gs_rs_us_are_whitespace_spec)
+  tests: src/lexer.rs:1219 (s6_4_tab_is_whitespace); src/lexer.rs:1232 (s6_4_cr_is_whitespace); src/lexer.rs:1247 (s6_4_vtab_is_whitespace_spec); src/lexer.rs:1260 (s6_4_ff_is_whitespace_spec); src/lexer.rs:1275 (s6_4_fs_gs_rs_us_are_whitespace_spec)
   status: ✅ (fixed in #84, [#62](https://github.com/o3co/rs.hocon/issues/62)) — all 8 ASCII control whitespace chars covered by is_hocon_whitespace
 - **S6.5** "newline" means specifically 0x000A (LF) — §Whitespace (L183)
-  tests: src/lexer.rs:855 (tokenizes_newlines)
+  tests: src/lexer.rs:1047 (tokenizes_newlines)
   status: ✅
 
 ## S7. Duplicate keys and object merging
 
 - **S7.1** Later non-object key overrides earlier — §Duplicate keys (L189)
-  tests: src/resolver/mod.rs:84 (last_value_wins_for_scalars)
+  tests: src/resolver/mod.rs:336 (last_value_wins_for_scalars)
   status: ✅
 - **S7.2** Two object values are merged recursively — §Duplicate keys (L191)
-  tests: src/resolver/mod.rs:73 (merges_duplicate_object_keys); tests/integration_test.rs:64 (parse_with_deep_merge)
+  tests: src/resolver/mod.rs:325 (merges_duplicate_object_keys); tests/integration_test.rs:65 (parse_with_deep_merge)
   status: ✅
 - **S7.3** Merge: fields in only one object are kept — §Duplicate keys (L199)
-  tests: src/resolver/mod.rs:73 (merges_duplicate_object_keys); tests/integration_test.rs:64 (parse_with_deep_merge)
+  tests: src/resolver/mod.rs:325 (merges_duplicate_object_keys); tests/integration_test.rs:65 (parse_with_deep_merge)
   status: ✅
 - **S7.4** Merge: non-object field in both → second wins — §Duplicate keys (L201)
-  tests: src/resolver/mod.rs:84 (last_value_wins_for_scalars)
+  tests: src/resolver/mod.rs:336 (last_value_wins_for_scalars)
   status: ✅
 - **S7.5** Merge: object field in both → recursive merge — §Duplicate keys (L203)
-  tests: tests/integration_test.rs:261 (test_object_concat_deep_merge); tests/integration_test.rs:269 (test_object_concat_deep_merge_multiple)
+  tests: tests/integration_test.rs:270 (test_object_concat_deep_merge); tests/integration_test.rs:277 (test_object_concat_deep_merge_multiple)
   status: ✅
 - **S7.6** Intermediate non-object value breaks merge with later object — §Duplicate keys (L207)
-  tests: src/resolver/mod.rs:211 (resolves_last_assignment_wins_for_substitution)
+  tests: src/resolver/mod.rs:463 (resolves_last_assignment_wins_for_substitution)
   status: ✅
 
 ## S8. Unquoted strings
 
 - **S8.1** Forbidden characters rejected (``$ " { } [ ] : = , + # ` ^ ? ! @ * & \``) and whitespace — §Unquoted strings (L245)
-  tests: tests/integration_test.rs:441 (unquoted_forbids_spec_special_chars); tests/issue68_path_empty_segment.rs (backtick, value/key/mid-token + quoted-string guard); tests/testdata/hocon/unquoted-forbidden/uf01–uf04 (fixtures)
+  tests: tests/integration_test.rs:449 (unquoted_forbids_spec_special_chars); tests/issue68_path_empty_segment.rs (backtick, value/key/mid-token + quoted-string guard); tests/testdata/hocon/unquoted-forbidden/uf01–uf04 (fixtures)
   status: ✅ (backtick was accepted until xx.hocon#68 — the ✅ predating that fix was unverified for this member of the forbidden set)
 - **S8.2** `//` inside an unquoted string starts a comment — §Unquoted strings (L248)
-  tests: src/lexer.rs:735 (skips_slash_comments_keeps_newline)
+  tests: src/lexer.rs:965 (skips_slash_comments_keeps_newline)
   status: ✅
 - **S8.3** Initial token `true`/`false`/`null` parsed as keyword — §Unquoted strings (L250)
-  tests: src/parser.rs:674 (parses_boolean_and_null); tests/testdata/hocon/equiv01/original.json (fixture)
+  tests: src/parser.rs:1320 (parses_boolean_and_null); tests/testdata/hocon/equiv01/original.json (fixture)
   status: ✅
 - **S8.4** Initial number characters parse as number — §Unquoted strings (L250)
-  tests: src/lexer.rs:792 (tokenizes_numbers_as_unquoted); src/parser.rs:697 (parses_integer_scalars)
+  tests: src/lexer.rs:1025 (tokenizes_numbers_as_unquoted); src/parser.rs:1343 (parses_integer_scalars)
   status: ✅
 - **S8.5** Embedded `true`/`false`/`null`/number become string content — §Unquoted strings (L266)
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
@@ -181,19 +181,19 @@ same item descriptions verbatim.
   - Path-element strict checks preserved (out of E8 scope): `parse_subst_body`'s segment-start `-` check (src/lexer.rs) and the per-segment check in `parse_key` (src/parser.rs) — these police path-element composition, not value-position unquoted strings. Tests `${-foo}` and `a.-foo = 1` still throw `ParseError`.
   - Known gap: us15 `a = 1e+x` concerns the `+` reservation enforced mid-token at the value-parser layer in Lightbend — a separate spec rule from S8.6's *begin-character* constraint. Lightbend errors here; rs.hocon's `is_unquoted_continue` only excludes `+` when followed by `=`, so `1e+x` lexes as a single unquoted token and falls back to a string scalar. Tracked as `#[should_panic]` tripwire in the conformance file.
 - **S8.7** No escape sequences in unquoted strings — §Unquoted strings (L253)
-  tests: src/lexer.rs:1181 (s8_7_backslash_is_rejected_in_unquoted_context)
+  tests: src/lexer.rs:1381 (s8_7_backslash_is_rejected_in_unquoted_context)
   status: ✅
 - **S8.8** Unquoted strings allow control characters except forbidden set — §Unquoted strings (L280)
-  tests: src/lexer.rs:1196 (s8_8_soh_allowed_in_unquoted_string); src/lexer.rs:1208 (s8_8_bel_allowed_in_unquoted_string)
+  tests: src/lexer.rs:1396 (s8_8_soh_allowed_in_unquoted_string); src/lexer.rs:1408 (s8_8_bel_allowed_in_unquoted_string)
   status: ✅
 
 ## S9. Multi-line strings
 
 - **S9.1** `"""..."""` triple-quoted string — §Multi-line strings (L291)
-  tests: src/lexer.rs:770 (tokenizes_triple_quoted_strings); tests/integration_test.rs:105 (parse_with_triple_quoted_string); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
+  tests: src/lexer.rs:1000 (tokenizes_triple_quoted_strings); tests/integration_test.rs:106 (parse_with_triple_quoted_string); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
   status: ✅
 - **S9.2** Newlines and whitespace preserved literally — §Multi-line strings (L293)
-  tests: src/lexer.rs:770 (tokenizes_triple_quoted_strings); tests/s9_s13_lightbend_conformance.rs (leading-newline case); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
+  tests: src/lexer.rs:1000 (tokenizes_triple_quoted_strings); tests/s9_s13_lightbend_conformance.rs (leading-newline case); tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
   status: ✅ — the lexer stripped a LEADING newline (spec deviation; Lightbend preserves every character between the quotes — probe 2026-08-18, surfaced by the py.hocon verification wave); fixed 2026-08-18. equiv05 has no leading-newline case, which is how the strip survived the fixture.
 - **S9.3** Unicode escapes NOT interpreted inside triple-quoted — §Multi-line strings (L294)
   tests: tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
@@ -202,19 +202,19 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv05/triple-quotes.conf (fixture)
   status: ✅
 - **S9.5** Unterminated `"""` raises an error — §Multi-line strings (L291-293, by analogy with quoted strings)
-  tests: src/lexer.rs:872 (throws_on_unterminated_triple_quoted_string); tests/integration_test.rs:501 (test_unterminated_triple_quoted_string_errors)
+  tests: src/lexer.rs:1105 (throws_on_unterminated_triple_quoted_string); tests/integration_test.rs:509 (test_unterminated_triple_quoted_string_errors)
   status: ✅
 
 ## S10. Value concatenation
 
 - **S10.1** Simple values + non-newline whitespace → string concat — §Value concatenation (L310)
-  tests: src/resolver/mod.rs:221 (resolves_string_concat_with_substitution); tests/integration_test.rs:34 (parse_with_substitutions); tests/testdata/hocon/equiv01/unquoted.conf (fixture)
+  tests: src/resolver/mod.rs:473 (resolves_string_concat_with_substitution); tests/integration_test.rs:35 (parse_with_substitutions); tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.2** All arrays → array concatenation — §Value concatenation (L312)
   tests: tests/spec_phase5.rs (s10_2_spec_array_concat)
   status: ✅
 - **S10.3** All objects → object merge (concatenation) — §Value concatenation (L314)
-  tests: tests/integration_test.rs:261 (test_object_concat_deep_merge); tests/integration_test.rs:158 (test_braced_root_object_concat)
+  tests: tests/integration_test.rs:270 (test_object_concat_deep_merge); tests/integration_test.rs:162 (test_braced_root_object_concat)
   status: ✅
 - **S10.4** Mixing arrays + objects in concat is an error — §Array and object concatenation (L385)
   tests: tests/integration_test.rs (s10_4_array_object_concat_is_error, s10_4_subst_obj_plus_array_is_error, s10_4_empty_edge_array_plus_empty_object_is_error, s10_4_optional_missing_mid_concat_is_error, s10_4_optional_missing_only_piece_ok, s10_4_numeric_obj_concat_still_works); tests/concat_errors_test.rs (ce01, ce02, ce07, ce08, ce10, ce11, ce14, ce15)
@@ -226,7 +226,7 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.7** Concatenation does not span a newline — §String value concatenation (L335)
-  tests: tests/integration_test.rs:689 (s10_7_concat_does_not_span_newline)
+  tests: tests/integration_test.rs:729 (s10_7_concat_does_not_span_newline)
   status: ✅
 - **S10.8** String concat allowed in field keys — §Value concatenation (L317)
   tests: tests/integration_test.rs (s10_8_* tests: quoted, basic, three-token, dotted-prefix concat, dotted-tail concat, quoted+unquoted, inline-object shorthand, leading-dot + S11.1 interaction, tab whitespace)
@@ -241,13 +241,13 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/equiv01/unquoted.conf (fixture)
   status: ✅
 - **S10.12** A single non-string value is NOT stringified (type preserved) — §String value concatenation (L376)
-  tests: src/parser.rs:674 (parses_boolean_and_null); src/parser.rs:697 (parses_integer_scalars)
+  tests: src/parser.rs:1320 (parses_boolean_and_null); src/parser.rs:1343 (parses_integer_scalars)
   status: ✅
 - **S10.13** Array/object appearing in string concat is an error — §String value concatenation (L373)
   tests: tests/integration_test.rs (s10_13_scalar_object_concat_is_error, s10_13_scalar_array_concat_is_error, s10_13_subst_resolved_array_plus_scalar_is_error, s10_13_subst_resolved_object_plus_scalar_is_error); tests/concat_errors_test.rs (ce03, ce04, ce05, ce06, ce12, ce13)
   status: ✅ (fixed in Phase 6 #3b, closes #67)
 - **S10.14** Whitespace around obj/array substitutions is ignored — §Concatenation with whitespace (L440)
-  tests: tests/integration_test.rs:786 (s10_14_whitespace_around_obj_subst_ignored); tests/integration_test.rs:798 (s10_14_whitespace_around_arr_subst_ignored)
+  tests: tests/integration_test.rs:1008 (s10_14_whitespace_around_obj_subst_ignored); tests/integration_test.rs:1020 (s10_14_whitespace_around_arr_subst_ignored)
   status: ✅
 - **S10.15** Quoted whitespace between obj/array substitutions is an error — §Concatenation with whitespace (L442)
   tests: tests/spec_phase5.rs (s10_15_quoted_ws_between_obj_substs_is_error; s10_15_quoted_ws_between_arr_substs_is_error)
@@ -259,7 +259,7 @@ same item descriptions verbatim.
   tests: tests/spec_phase5.rs (s10_17_spec_subst_array_concat)
   status: ✅
 - **S10.18** Substitution resolving to an object participates in object merge (`${obj} {x:1}`) — §Array and object concatenation (L388)
-  tests: src/resolver/mod.rs:248 (delayed_merge_object_with_substitution)
+  tests: src/resolver/mod.rs:500 (delayed_merge_object_with_substitution)
   status: ✅
 - **S10.19** Mixing a substitution-resolved object with a literal array (or vice versa) is an error — §Array and object concatenation (L385-389)
   tests: tests/integration_test.rs (s10_19_subst_obj_concat_literal_array_is_error, s10_19_subst_arr_concat_literal_obj_is_error); tests/concat_errors_test.rs (ce07, ce08)
@@ -268,43 +268,43 @@ same item descriptions verbatim.
 ## S11. Path expressions
 
 - **S11.1** `.` outside quoted is a path separator — §Path expressions (L483)
-  tests: src/parser.rs:644 (parses_dot_notation_keys); tests/integration_test.rs:144 (parse_dot_notation)
+  tests: src/parser.rs:1290 (parses_dot_notation_keys); tests/integration_test.rs:148 (parse_dot_notation)
   status: ✅
 - **S11.2** `.` inside quoted is literal — §Path expressions (L484)
-  tests: src/parser.rs:650 (does_not_split_quoted_keys); tests/integration_test.rs:182 (test_quoted_path_lookup)
+  tests: src/parser.rs:1296 (does_not_split_quoted_keys); tests/integration_test.rs:186 (test_quoted_path_lookup)
   status: ✅
 - **S11.3** Numbers retain original string representation in paths — §Path expressions (L489)
-  tests: tests/lightbend_test.rs:334 (lightbend_test11_numeric_string_keys); tests/lightbend_test.rs:348 (lightbend_test12_long_numeric_keys)
+  tests: tests/lightbend_test.rs:331 (lightbend_test11_numeric_string_keys); tests/lightbend_test.rs:345 (lightbend_test12_long_numeric_keys)
   status: ✅
 - **S11.4** `10.0foo` → path `[10, 0foo]` — §Path expressions (L496)
-  tests: tests/integration_test.rs:849 (s11_4_numeric_dot_unquoted_path)
+  tests: tests/integration_test.rs:1060 (s11_4_numeric_dot_unquoted_path)
   status: ✅
 - **S11.5** `foo10.0` → path `[foo10, 0]` — §Path expressions (L498)
-  tests: tests/integration_test.rs:866 (s11_5_unquoted_dot_numeric_path)
+  tests: tests/integration_test.rs:1077 (s11_5_unquoted_dot_numeric_path)
   status: ✅
 - **S11.6** Empty path element must be quoted (`a."".b` ok) — §Path expressions (L515)
-  tests: tests/lightbend_test.rs:200 (lightbend_test02_empty_keys_and_quoted_paths)
+  tests: tests/lightbend_test.rs:201 (lightbend_test02_empty_keys_and_quoted_paths)
   status: ✅
 - **S11.7** `a..b` and paths starting/ending with `.` are errors — §Path expressions (L517)
   tests: tests/testdata/hocon/subst-tokenize/st-err09-empty-segment-leading-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err10-empty-segment-trailing-dot.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err11-empty-segment-double-dot.conf (fixture); tests/issue68_path_empty_segment.rs (key position); tests/testdata/hocon/path-empty-segment/pe01–pe08 (fixtures)
   status: ✅ (the st-err* fixtures only covered substitution position; key position was broken until xx.hocon#68)
 - **S11.8** Path expression always stringifies (single `true` → `"true"`) — §Path expressions (L504)
-  tests: tests/integration_test.rs:884 (s11_8_path_expression_stringifies_boolean); tests/integration_test.rs:894 (s11_8_path_expression_stringifies_number)
+  tests: tests/integration_test.rs:1095 (s11_8_path_expression_stringifies_boolean); tests/integration_test.rs:1105 (s11_8_path_expression_stringifies_number)
   status: ✅
 - **S11.9** Substitutions not allowed inside path expressions — §Path expressions (L479)
-  tests: tests/integration_test.rs:908 (s11_9_subst_in_key_rejected)
+  tests: tests/integration_test.rs:1119 (s11_9_subst_in_key_rejected)
   status: ✅
 - **S11.10** Quoted path segments respected in getter API (e.g. `config.get("foo.\"bar.baz\"")`) — §Path expressions (L485)
-  tests: tests/integration_test.rs:182 (test_quoted_path_lookup); tests/integration_test.rs:189 (test_nested_quoted_path_lookup); tests/lightbend_test.rs:200 (lightbend_test02_empty_keys_and_quoted_paths)
+  tests: tests/integration_test.rs:186 (test_quoted_path_lookup); tests/integration_test.rs:193 (test_nested_quoted_path_lookup); tests/lightbend_test.rs:201 (lightbend_test02_empty_keys_and_quoted_paths)
   status: ✅
 
 ## S12. Paths as keys
 
 - **S12.1** `foo.bar : 42` expands to `foo { bar : 42 }` — §Paths as keys (L530)
-  tests: src/parser.rs:644 (parses_dot_notation_keys); tests/integration_test.rs:144 (parse_dot_notation); tests/testdata/hocon/equiv01/path-keys.conf (fixture)
+  tests: src/parser.rs:1290 (parses_dot_notation_keys); tests/integration_test.rs:148 (parse_dot_notation); tests/testdata/hocon/equiv01/path-keys.conf (fixture)
   status: ✅
 - **S12.2** Multi-element keys expand to nested objects — §Paths as keys (L538)
-  tests: tests/integration_test.rs:19 (parse_nested_config); tests/testdata/hocon/equiv02/path-keys.conf (fixture)
+  tests: tests/integration_test.rs:20 (parse_nested_config); tests/testdata/hocon/equiv02/path-keys.conf (fixture)
   status: ✅
 - **S12.3** Path keys merge per duplicate-key rules — §Paths as keys (L544)
   tests: tests/testdata/hocon/equiv02/path-keys.conf (fixture)
@@ -319,44 +319,44 @@ same item descriptions verbatim.
 ## S13. Substitutions
 
 - **S13.1** `${path}` is a required substitution — §Substitutions (L579)
-  tests: src/lexer.rs:799 (tokenizes_substitutions); src/parser.rs:730 (parses_substitutions); src/resolver/mod.rs:130 (resolves_substitution)
+  tests: src/lexer.rs:1032 (tokenizes_substitutions); src/parser.rs:1376 (parses_substitutions); src/resolver/mod.rs:382 (resolves_substitution)
   status: ✅
 - **S13.2** `${?path}` is an optional substitution — §Substitutions (L579)
-  tests: src/lexer.rs:806 (tokenizes_optional_substitutions); src/parser.rs:745 (parses_optional_substitutions); src/resolver/mod.rs:148 (resolves_optional_substitution_exists)
+  tests: src/lexer.rs:1039 (tokenizes_optional_substitutions); src/parser.rs:1391 (parses_optional_substitutions); src/resolver/mod.rs:400 (resolves_optional_substitution_exists)
   status: ✅
 - **S13.3** `${?` is exactly 3 chars (no whitespace before `?`) — §Substitutions (L584)
-  tests: tests/integration_test.rs:979 (s13_3_space_before_question_differs_from_optional)
+  tests: tests/integration_test.rs:1222 (s13_3_space_before_question_differs_from_optional)
   status: ✅
 - **S13.4** Resolver MAY consult external sources (env vars, system properties) for unresolved substitutions — §Substitutions (L588) (concrete env behavior → S26)
-  tests: src/resolver/mod.rs:190 (resolves_env_var_fallback); tests/integration_test.rs:46 (parse_with_env_fallback)
+  tests: src/resolver/mod.rs:442 (resolves_env_var_fallback); tests/integration_test.rs:47 (parse_with_env_fallback)
   status: ✅
 - **S13.5** Substitutions are NOT parsed inside quoted strings — §Substitutions (L593)
-  tests: tests/integration_test.rs:1000 (s13_5_no_subst_in_quoted_string)
+  tests: tests/integration_test.rs:1255 (s13_5_no_subst_in_quoted_string)
   status: ✅
 - **S13.6** Substitution paths are absolute (rooted at config root) — §Substitutions (L603)
-  tests: src/resolver/mod.rs:139 (resolves_nested_path_substitution); tests/testdata/hocon/equiv01/substitutions.conf (fixture)
+  tests: src/resolver/mod.rs:391 (resolves_nested_path_substitution); tests/testdata/hocon/equiv01/substitutions.conf (fixture)
   status: ✅
 - **S13.7** Substitution resolution is last step (can look forward) — §Substitutions (L607)
-  tests: src/resolver/mod.rs:239 (resolves_forward_reference)
+  tests: src/resolver/mod.rs:491 (resolves_forward_reference)
   status: ✅
 - **S13.8** Substitution sees the latest-assigned (merged) value — §Substitutions (L612)
-  tests: src/resolver/mod.rs:211 (resolves_last_assignment_wins_for_substitution); tests/lightbend_test.rs:275 (lightbend_test06_delayed_merge)
+  tests: src/resolver/mod.rs:463 (resolves_last_assignment_wins_for_substitution); tests/lightbend_test.rs:272 (lightbend_test06_delayed_merge)
   status: ✅
 - **S13.9** `null` in config blocks env var lookup — §Substitutions (L618)
   tests: tests/integration_test.rs (s13_9_null_in_config_blocks_env_var_and_stays_in_tree)
   status: ✅ — Lightbend-aligned per the xx.hocon `ProbeS13_9.java` ground-truth audit (2026-05-22): "null treated same as missing" (L630) is a getter-level statement; the resolved tree keeps the field as an explicit null scalar, the env value does not leak, and getter-level null rejection is covered by S17.6. [#74](https://github.com/o3co/rs.hocon/issues/74) closed as "not a spec violation"; the former `#[ignore]` spec test (which asserted tree-level erasure) was removed as canon-incorrect.
 
 - **S13.10** Required substitution undefined → error — §Substitutions (L627)
-  tests: src/resolver/mod.rs:183 (throws_on_unresolved_mandatory); tests/integration_test.rs:470 (resolve_error_is_hocon_error_resolve_variant); tests/testdata/hocon/cycle-expected-error.json (fixture)
+  tests: src/resolver/mod.rs:435 (throws_on_unresolved_mandatory); tests/integration_test.rs:478 (resolve_error_is_hocon_error_resolve_variant); tests/testdata/hocon/cycle-expected-error.json (fixture)
   status: ✅
 - **S13.11** Optional undefined in field value → field not created — §Substitutions (L632)
-  tests: src/resolver/mod.rs:157 (drops_field_for_optional_missing); tests/testdata/hocon/equiv04/missing-substitutions.conf (fixture)
+  tests: src/resolver/mod.rs:409 (drops_field_for_optional_missing); tests/testdata/hocon/equiv04/missing-substitutions.conf (fixture)
   status: ✅
 - **S13.12** Optional undefined in array element → element not added — §Substitutions (L635)
   tests: tests/s9_s13_lightbend_conformance.rs (element omitted; literal null kept; nested arrays; concat-element remainder)
   status: ✅ — the previous ✅ was a stale citation: equiv04/missing-substitutions.conf contains no array-element case, and the resolver actually null-filled the element ([1, null, 3]; Lightbend yields [1, 3] — probe 2026-08-18, surfaced by the py.hocon verification wave). Fixed 2026-08-18.
 - **S13.13** Optional undefined in string concat → empty string — §Substitutions (L636)
-  tests: tests/integration_test.rs:1041 (s13_13_optional_undefined_in_string_concat_is_empty)
+  tests: tests/integration_test.rs:1294 (s13_13_optional_undefined_in_string_concat_is_empty)
   status: ✅
 - **S13.14** Optional undefined in obj/array concat → empty obj/array — §Substitutions (L637)
   tests: tests/integration_test.rs (s13_14_optional_undefined_in_array_concat_spec, s13_14_optional_undefined_in_object_concat)
@@ -367,43 +367,43 @@ same item descriptions verbatim.
   status: ✅ — when both `${?bar}` and `${?baz}` are undefined, `foo` is dropped entirely; the single-defined sub-case produces `foo=hello`. The former field-created-with-null violation is fixed and the spec test runs un-ignored.
 
 - **S13.16** Substitutions only in field values / array elements — §Substitutions (L644)
-  tests: tests/integration_test.rs:1087 (s13_16_substitution_in_key_is_rejected)
+  tests: tests/integration_test.rs:1357 (s13_16_substitution_in_key_is_rejected)
   status: ✅
 - **S13.17** Single-substitution value preserves type — §Substitutions (L648)
-  tests: src/resolver/mod.rs:93 (resolves_arrays); src/resolver/mod.rs:68 (resolves_nested_objects)
+  tests: src/resolver/mod.rs:345 (resolves_arrays); src/resolver/mod.rs:319 (resolves_nested_objects)
   status: ✅
 - **S13.18** Substitution in multi-value concat becomes string — §Substitutions (L650)
-  tests: src/resolver/mod.rs:221 (resolves_string_concat_with_substitution); tests/integration_test.rs:34 (parse_with_substitutions)
+  tests: src/resolver/mod.rs:473 (resolves_string_concat_with_substitution); tests/integration_test.rs:35 (parse_with_substitutions)
   status: ✅
 - **S13.19** Unterminated `${...}` (missing closing `}`) is rejected — §Substitutions syntax requires closing `}` (L579)
-  tests: src/lexer.rs:867 (throws_on_unterminated_substitution); tests/testdata/hocon/subst-tokenize/st-err05-unterminated-subst.conf (fixture)
+  tests: src/lexer.rs:1100 (throws_on_unterminated_substitution); tests/testdata/hocon/subst-tokenize/st-err05-unterminated-subst.conf (fixture)
   status: ✅
 
 ### S13a. Self-referential substitutions
 
 - **S13a.1** `path : ${path}` resolves to prior `path` value — §Self-Referential (L666)
-  tests: src/resolver/mod.rs:201 (resolves_self_referential_substitution); tests/integration_test.rs:150 (parse_self_referential_substitution)
+  tests: src/resolver/mod.rs:453 (resolves_self_referential_substitution); tests/integration_test.rs:154 (parse_self_referential_substitution)
   status: ✅
 - **S13a.2** Self-ref to overridden field works in merge — §Self-Referential (L748)
-  tests: tests/lightbend_test.rs:365 (lightbend_test13_substitution_override)
+  tests: tests/lightbend_test.rs:362 (lightbend_test13_substitution_override)
   status: ✅
 - **S13a.3** Self-ref before any prior value → undefined → error — §Self-Referential (L767)
-  tests: tests/lightbend_test.rs:397 (lightbend_test13_bad_substitution)
+  tests: tests/lightbend_test.rs:394 (lightbend_test13_bad_substitution)
   status: ✅
 - **S13a.4** Optional self-ref `${?foo}` disappears silently — §Self-Referential (L776)
-  tests: src/resolver/mod.rs:157 (drops_field_for_optional_missing)
+  tests: src/resolver/mod.rs:409 (drops_field_for_optional_missing)
   status: ✅
 - **S13a.5** Substitution hidden by later non-object → no error — §Self-Referential (L780)
-  tests: src/resolver/mod.rs:163 (falls_back_to_prior_value)
+  tests: src/resolver/mod.rs:415 (falls_back_to_prior_value)
   status: ✅
 - **S13a.6** Cycle inside object `a : { b : ${a} }` → error — §Self-Referential (L688)
-  tests: src/resolver/mod.rs:232 (throws_on_circular_substitution); tests/testdata/hocon/cycle.conf (fixture)
+  tests: src/resolver/mod.rs:484 (throws_on_circular_substitution); tests/testdata/hocon/cycle.conf (fixture)
   status: ✅
 - **S13a.7** Cycle inside array `a : [${a}]` → error — §Self-Referential (L689)
-  tests: src/resolver/mod.rs:232 (throws_on_circular_substitution)
+  tests: src/resolver/mod.rs:484 (throws_on_circular_substitution)
   status: ✅
 - **S13a.8** Two-step cycle `bar : ${foo}; foo : ${bar}` → error — §Self-Referential (L857)
-  tests: src/resolver/mod.rs:232 (throws_on_circular_substitution)
+  tests: src/resolver/mod.rs:484 (throws_on_circular_substitution)
   status: ✅
 - **S13a.9** Multi-step cycle `a→b→c→a` → error — §Self-Referential (L862)
   tests: tests/spec_phase5.rs (s13a_9_multi_step_cycle_is_error)
@@ -413,7 +413,7 @@ same item descriptions verbatim.
   status: ✅
   notes: the spec-observable outcome is that `a` and `b` must end up equal in the ambiguous `a=1,b=2,a=${b},b=${a}` case. Both end up as 2, satisfying the constraint. Internal memoization is not directly observable from the parse API.
 - **S13a.11** Object can refer to its own descendant (`bar : { foo : 42, baz : ${bar.foo} }`) — §Self-Referential (L806)
-  tests: tests/lightbend_test.rs:303 (lightbend_test09_delayed_merge_object); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
+  tests: tests/lightbend_test.rs:300 (lightbend_test09_delayed_merge_object); tests/lightbend_test.rs:313 (lightbend_test10_nested_include)
   status: ✅
 - **S13a.12** Self-ref in path expression `${foo.a}` resolves to "below" — §Self-Referential (L791)
   tests: tests/s13a12_prefix_self_ref_test.rs
@@ -435,14 +435,14 @@ same item descriptions verbatim.
 ### S13b. `+=` field separator
 
 - **S13b.1** `a += b` expands to `a = ${?a} [b]` — §`+=` field separator (L725)
-  tests: src/resolver/mod.rs:103 (handles_plus_equals_on_existing_array); tests/integration_test.rs:84 (parse_with_plus_equals)
+  tests: src/resolver/mod.rs:355 (handles_plus_equals_on_existing_array); tests/integration_test.rs:85 (parse_with_plus_equals)
   status: ✅
 - **S13b.2** `+=` on non-array prior value → error — §`+=` field separator (L732)
   tests: tests/integration_test.rs (s13b_2_plus_eq_on_non_array_errors, s13b_2_plus_eq_on_object_errors, s13b_2_plus_eq_under_allow_unresolved_defers_on_unresolved_prior); tests/s13b_2_plus_equals_include_accumulation.rs
   status: ✅ — `+=` on a scalar or object prior errors instead of silently wrapping ([#72](https://github.com/o3co/rs.hocon/issues/72) fixed).
 
 - **S13b.3** `+=` works on first mention of key (no prior `=`) — §`+=` field separator (L734)
-  tests: src/resolver/mod.rs:113 (handles_plus_equals_on_missing_key)
+  tests: src/resolver/mod.rs:365 (handles_plus_equals_on_missing_key)
   status: ✅
 
 ### S13c. List values from environment variables
@@ -468,33 +468,33 @@ same item descriptions verbatim.
 ### S14a. Include syntax
 
 - **S14a.1** `include "filename"` (heuristic) — §Include syntax (L925)
-  tests: src/parser.rs:767 (parses_include_directive); tests/include_test.rs:14 (parse_file_simple); tests/include_test.rs:21 (include_merges_into_current)
+  tests: src/parser.rs:1413 (parses_include_directive); tests/include_test.rs:15 (parse_file_simple); tests/include_test.rs:22 (include_merges_into_current)
   status: ✅
 - **S14a.2** `include url("...")` — §Include syntax (L927)
   out-of-scope: URL fetching is unsupported by design; declared as a Known Limitation in each implementation's README. HOCON.md L1175-1177 permits this: "Implementations need not support files, Java resources, or URLs."
-  tests: tests/integration_test.rs:391 (test_include_url_not_supported)
+  tests: tests/integration_test.rs:399 (test_include_url_not_supported)
   status: ➖
 - **S14a.3** `include file("...")` — §Include syntax (L927)
-  tests: src/parser.rs:779 (parses_include_file_syntax); tests/include_test.rs:109 (file_include_resolves_from_cwd_not_including_dir)
+  tests: src/parser.rs:1425 (parses_include_file_syntax); tests/include_test.rs:110 (file_include_resolves_from_cwd_not_including_dir)
   status: ✅
 - **S14a.4** `include classpath("...")` — §Include syntax (L927)
   out-of-scope: classpath resources are a JVM-only concept; non-JVM implementations have no equivalent loader.
-  tests: tests/integration_test.rs:397 (test_include_classpath_not_supported)
+  tests: tests/integration_test.rs:405 (test_include_classpath_not_supported)
   status: ➖
 - **S14a.5** `include required(...)` — §Include syntax (L930)
-  tests: tests/integration_test.rs:297 (test_include_required_file_form); tests/integration_test.rs:325 (test_include_required_missing_file_errors); tests/integration_test.rs:343 (test_include_required_existing_file_ok)
+  tests: tests/integration_test.rs:305 (test_include_required_file_form); tests/integration_test.rs:333 (test_include_required_missing_file_errors); tests/integration_test.rs:351 (test_include_required_existing_file_ok)
   status: ✅
 - **S14a.6** Unquoted `include` at non-start-of-key is literal — §Include syntax (L962)
-  tests: tests/integration_test.rs:1126 (s14a_6_include_in_dotted_key_is_literal)
+  tests: tests/integration_test.rs:1385 (s14a_6_include_in_dotted_key_is_literal)
   status: ✅
 - **S14a.7** Whitespace allowed between `include` and resource name (incl. newlines) — §Include syntax (L952)
   tests: tests/spec_phase5.rs (s14a_7_whitespace_before_include_arg; s14a_7_newline_before_include_arg)
   status: ✅
 - **S14a.8** No value concatenation on include argument — §Include syntax (L957)
-  tests: tests/integration_test.rs:1137 (s14a_8_no_concatenation_on_include_arg)
+  tests: tests/integration_test.rs:1396 (s14a_8_no_concatenation_on_include_arg)
   status: ✅
 - **S14a.9** No substitutions in include argument — §Include syntax (L959)
-  tests: tests/integration_test.rs:1146 (s14a_9_no_substitution_in_include_arg)
+  tests: tests/integration_test.rs:1405 (s14a_9_no_substitution_in_include_arg)
   status: ✅
 - **S14a.10** Include argument must be quoted string — §Include syntax (L958)
   tests: tests/spec_phase5.rs (s14a_10_unquoted_include_arg_rejected)
@@ -506,52 +506,52 @@ same item descriptions verbatim.
 ### S14b. Include semantics: merging
 
 - **S14b.1** Included root must be an object (array → error) — §Include semantics: merging (L993)
-  tests: tests/integration_test.rs:1155 (s14b_1_array_root_include_is_error)
+  tests: tests/integration_test.rs:1414 (s14b_1_array_root_include_is_error)
   status: ✅ — Diagnostics improved with S3.5 (2026-07-23): the include loader raises
   `ResolveError` "included file has array at file root … (HOCON.md L993-994)" naming
   the included source (file path or `package(...)` descriptor) with the bracket
   position, instead of the parser's generic syntax error.
 - **S14b.2** Included keys merge per duplicate-key rules — §Include semantics: merging (L997)
-  tests: tests/include_test.rs:21 (include_merges_into_current)
+  tests: tests/include_test.rs:22 (include_merges_into_current)
   status: ✅
 - **S14b.3** Earlier-in-including value + included → merged/overridden — §Include semantics: merging (L1000)
-  tests: tests/include_test.rs:21 (include_merges_into_current)
+  tests: tests/include_test.rs:22 (include_merges_into_current)
   status: ✅
 - **S14b.4** Later-in-including value overrides included — §Include semantics: merging (L1004)
-  tests: tests/include_test.rs:29 (include_override_by_later_key)
+  tests: tests/include_test.rs:30 (include_override_by_later_key)
   status: ✅
 
 ### S14c. Include semantics: substitution
 
 - **S14c.1** Substitutions in included file are relativized to including scope — §Include semantics: substitution (L1019)
-  tests: tests/include_test.rs:74 (include_relativize_quoted_key_with_dots); tests/integration_test.rs:510 (nested_include_resolves_substitutions_in_scope); tests/lightbend_test.rs:316 (lightbend_test10_nested_include)
+  tests: tests/include_test.rs:75 (include_relativize_quoted_key_with_dots); tests/integration_test.rs:629 (nested_include_resolves_substitutions_in_scope); tests/lightbend_test.rs:313 (lightbend_test10_nested_include)
   status: ✅
 - **S14c.2** Original (non-relativized) path also tried as fallback — §Include semantics: substitution (L1048)
-  tests: tests/lightbend_test.rs:221 (lightbend_test03_includes_with_substitution_fallback); tests/include_test.rs (s14c_2_ancestor_scope_var_fallback_after_relativization, s14c_2_relativized_path_still_wins_when_both_exist, s14c_2_optional_substitution_falls_back_to_original, s14c_2_neither_path_resolves_still_errors)
+  tests: tests/lightbend_test.rs:222 (lightbend_test03_includes_with_substitution_fallback); tests/include_test.rs (s14c_2_ancestor_scope_var_fallback_after_relativization, s14c_2_relativized_path_still_wins_when_both_exist, s14c_2_optional_substitution_falls_back_to_original, s14c_2_neither_path_resolves_still_errors)
   status: ✅ — fixed in [#44](https://github.com/o3co/rs.hocon/issues/44); `resolve_subst_inner` falls back to `lookup_path(self.root, &s.segments[s.prefix_len..])` after the relativized lookup misses and before env-var fallback.
 
 ### S14d. Include semantics: missing / required
 
 - **S14d.1** Missing optional include silently ignored — §Include semantics: missing files (L1053)
-  tests: tests/include_test.rs:64 (include_missing_silently_ignored); tests/integration_test.rs:361 (test_include_optional_missing_file_ok)
+  tests: tests/include_test.rs:65 (include_missing_silently_ignored); tests/integration_test.rs:369 (test_include_optional_missing_file_ok)
   status: ✅
 - **S14d.2** Missing `required(...)` include → error — §Include semantics: missing files (L1057)
-  tests: tests/integration_test.rs:325 (test_include_required_missing_file_errors); tests/integration_test.rs:334 (test_include_required_file_form_missing_errors)
+  tests: tests/integration_test.rs:333 (test_include_required_missing_file_errors); tests/integration_test.rs:342 (test_include_required_file_form_missing_errors)
   status: ✅
 - **S14d.3** Non-missing IO errors NOT swallowed — §Include semantics: missing files (L1069)
-  tests: tests/integration_test.rs:373 (test_include_probing_propagates_parse_error)
+  tests: tests/integration_test.rs:381 (test_include_probing_propagates_parse_error)
   status: ✅
 
 ### S14e. Include semantics: file formats & extensions
 
 - **S14e.1** Extensionless basename probes multiple extensions — §Include semantics: file formats (L1080)
-  tests: tests/include_test.rs:49 (include_extension_probing)
+  tests: tests/include_test.rs:50 (include_extension_probing)
   status: ✅
 - **S14e.2** Multiple matching extensions all loaded — §Include semantics: file formats (L1088)
-  tests: tests/include_test.rs:56 (include_probe_order_conf_wins)
+  tests: tests/include_test.rs:57 (include_probe_order_conf_wins)
   status: ✅
 - **S14e.3** Load order: `.properties` → `.json` → `.conf` — §Include semantics: file formats (L1091)
-  tests: tests/include_test.rs:56 (include_probe_order_conf_wins)
+  tests: tests/include_test.rs:57 (include_probe_order_conf_wins)
   status: ✅
 - **S14e.4** URL include: no extension probing (exact URL only) — §Include semantics: file formats (L1103)
   out-of-scope: URL include unsupported; see S14a.2.
@@ -569,13 +569,13 @@ same item descriptions verbatim.
   tests: —
   status: ➖
 - **S14f.2** Otherwise treated as file/resource adjacent to including — §Include semantics: locating (L1117)
-  tests: tests/include_test.rs:36 (include_nested_directory)
+  tests: tests/include_test.rs:37 (include_nested_directory)
   status: ✅
 - **S14f.3** Filesystem: relative path = relative to including dir (NOT cwd) — §Include semantics: locating (L1154)
-  tests: tests/include_test.rs:109 (file_include_resolves_from_cwd_not_including_dir)
+  tests: tests/include_test.rs:110 (file_include_resolves_from_cwd_not_including_dir)
   status: ✅
 - **S14f.4** Filesystem: absolute path preserved — §Include semantics: locating (L1152)
-  tests: tests/integration_test.rs:297 (test_include_required_file_form)
+  tests: tests/integration_test.rs:305 (test_include_required_file_form)
   status: ✅
 - **S14f.5** Filesystem: fall back to classpath on not-found — §Include semantics: locating (L1158)
   out-of-scope: classpath is JVM-only; see S14a.4.
@@ -586,7 +586,7 @@ same item descriptions verbatim.
   tests: —
   status: ➖
 - **S14f.7** `url()`/`file()`/`classpath()` arguments NOT relativized — §Include semantics: locating (L1179)
-  tests: tests/include_test.rs:109 (file_include_resolves_from_cwd_not_including_dir)
+  tests: tests/include_test.rs:110 (file_include_resolves_from_cwd_not_including_dir)
   status: ✅
 - **S14f.8** `file:` URLs follow plain-filename filesystem semantics — §Include semantics: locating (L1171-1172)
   out-of-scope: URL include unsupported; see S14a.2. `file:` URLs are reachable only via `include url()`, which is not implemented.
@@ -634,19 +634,19 @@ same item descriptions verbatim.
 ## S17. Automatic type conversions
 
 - **S17.1** number → string (JSON-valid form) — §Automatic type conversions (L1235)
-  tests: src/config.rs:536 (get_string_coerces_int); src/config.rs:542 (get_string_coerces_float); tests/integration_test.rs:237 (test_get_string_coerces_int); tests/integration_test.rs:243 (test_get_string_coerces_float)
+  tests: src/config.rs:833 (get_string_coerces_int); src/config.rs:839 (get_string_coerces_float); tests/integration_test.rs:243 (test_get_string_coerces_int); tests/integration_test.rs:249 (test_get_string_coerces_float)
   status: ✅
 - **S17.2** boolean → string ("true" / "false") — §Automatic type conversions (L1237)
-  tests: src/config.rs:551 (get_string_coerces_bool); tests/integration_test.rs:249 (test_get_string_coerces_bool)
+  tests: src/config.rs:848 (get_string_coerces_bool); tests/integration_test.rs:255 (test_get_string_coerces_bool)
   status: ✅
 - **S17.3** string → number (JSON rules) — §Automatic type conversions (L1238)
-  tests: src/config.rs:577 (get_i64_coerces_numeric_string); src/config.rs:609 (get_f64_coerces_numeric_string)
+  tests: src/config.rs:875 (get_i64_coerces_numeric_string); src/config.rs:907 (get_f64_coerces_numeric_string)
   status: ✅
 - **S17.4** string → bool: `true`/`yes`/`on`/`false`/`no`/`off` — §Automatic type conversions (L1239)
-  tests: src/config.rs:621 (get_bool_coerces_string_true); src/config.rs:627 (get_bool_coerces_string_false); src/config.rs:633 (get_bool_coerces_yes_no_on_off); tests/integration_test.rs:118 (parse_bool_coercion)
+  tests: src/config.rs:919 (get_bool_coerces_string_true); src/config.rs:925 (get_bool_coerces_string_false); src/config.rs:931 (get_bool_coerces_yes_no_on_off); tests/integration_test.rs:122 (parse_bool_coercion)
   status: ✅
 - **S17.5** `"null"` → null when null requested — §Automatic type conversions (L1244)
-  tests: tests/integration_test.rs:1449 (s17_5_null_string_stored_as_string_not_null)
+  tests: tests/integration_test.rs:1581 (s17_5_null_string_stored_as_string_not_null)
   status: ➖
   note: rs.hocon has no `get_null()` typed getter — the "null requested" path does not exist in the API. Internally, quoted `"null"` is correctly stored as `ScalarType::String` (not `Null`), which is consistent with spec intent. Out-of-scope until a null-accessor is added.
 - **S17.6** null → other type: error — §Automatic type conversions (L1252)
@@ -654,21 +654,21 @@ same item descriptions verbatim.
   status: ✅ — all typed getters error on null, including `get_string` (fixed in `a7d7aea`, [#80](https://github.com/o3co/rs.hocon/issues/80)).
 
 - **S17.7** object → other type: error — §Automatic type conversions (L1254)
-  tests: src/config.rs:563 (get_string_error_on_object)
+  tests: src/config.rs:861 (get_string_error_on_object)
   status: ✅
 - **S17.8** array → other (except numeric-indexed): error — §Automatic type conversions (L1255)
-  tests: tests/integration_test.rs:1505 (s17_8_array_to_other_type_errors)
+  tests: tests/integration_test.rs:1624 (s17_8_array_to_other_type_errors)
   status: ✅
   note: `get_string`, `get_i64`, `get_bool` all error on array values. `get_list` on a plain array succeeds.
 
 ## S18. Units format
 
 - **S18.1** Number value taken as default unit — §Units format (L1279)
-  tests: src/config.rs:813 (get_bytes_plain); src/config.rs:720 (get_duration_nanoseconds)
+  tests: src/config.rs:1111 (get_bytes_plain); src/config.rs:1018 (get_duration_nanoseconds)
   status: ✅
   notes: A number value is read from the literal as written, exponent included, exactly (extra-spec E20): a duration truncates at the nanosecond, a byte size toward zero (`b = 1.5` is 1, `b = 1e3` is 1000, matching Lightbend's `longValue()`).
 - **S18.2** String parsed as: optional ws + number + ws + unit + ws — §Units format (L1281-1294)
-  tests: src/config.rs:783 (get_duration_no_space); src/config.rs:867 (get_bytes_no_space)
+  tests: src/config.rs:1081 (get_duration_no_space); src/config.rs:1165 (get_bytes_no_space)
   status: ✅
 - **S18.3** Unit name letters-only (Unicode L* / `isLetter`) — §Units format (L1287)
   tests: tests/spec_phase5.rs (s18_3_unit_with_digit_rejected; s18_3_unit_with_hyphen_rejected; s18_3_valid_letter_only_unit_accepted)
@@ -676,27 +676,27 @@ same item descriptions verbatim.
 - **S18.4** String with no unit → interpreted with default unit — §Units format (L1290)
   tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_spec_duration_string_no_unit_uses_default); tests/units_default_test.rs (ud01–ud13, up01–up05, ub01–ub08, un01–un03)
   status: ✅
-  notes: All three families (duration→ms, period→days, bytes→bytes) now treat a bare number string as the default unit. `parse_duration` and `parse_bytes` (src/units.rs) use HOCON_WS trim and compute the number × unit as an exact decimal, truncated toward zero (extra-spec E20: `1.001s` is 1001 ms; bytes match Lightbend `BigDecimal.toBigInteger()`). A duration past `std::time::Duration` is an error, however it is spelled (extra-spec E21). `get_bytes` rejects negative byte sizes at the accessor (positive-only invariant). `get_period`/`get_period_option` accessors added (net-new, return `(years: i32, months: i32, days: i32)`). rs-specific: `get_duration` returns `Err` for negative inputs (`std::time::Duration` is unsigned; see CHANGELOG).
+  notes: All three families (duration→ms, period→days, bytes→bytes) now treat a bare number string as the default unit. `parse_duration` and `parse_bytes` (src/units.rs) use HOCON_WS trim and compute the number × unit as an exact decimal, truncated toward zero (extra-spec E20: `1.001s` is 1001 ms; bytes match Lightbend `BigDecimal.toBigInteger()`). A duration past `std::time::Duration` is an error, however it is spelled (extra-spec E21). `get_bytes` rejects negative byte sizes at the accessor (positive-only invariant). `get_period`/`get_period_option` accessors added (net-new, return a `Period { years, months, days }` of `i32`s). rs-specific: `get_duration` returns `Err` for negative inputs (`std::time::Duration` is unsigned; see CHANGELOG).
 
 ## S19. Duration format
 
 - **S19.1** `ns` / `nano` / `nanos` / `nanosecond` / `nanoseconds` — §Duration format (L1307)
-  tests: src/config.rs:720 (get_duration_nanoseconds); tests/integration_test.rs:211 (test_duration_missing_units)
+  tests: src/config.rs:1018 (get_duration_nanoseconds); tests/integration_test.rs:218 (test_duration_missing_units)
   status: ✅
 - **S19.2** `us` / `micro` / `micros` / `microsecond` / `microseconds` — §Duration format (L1308)
-  tests: tests/integration_test.rs:211 (test_duration_missing_units)
+  tests: tests/integration_test.rs:218 (test_duration_missing_units)
   status: ✅
 - **S19.3** `ms` / `milli` / `millis` / `millisecond` / `milliseconds` — §Duration format (L1309)
-  tests: src/config.rs:729 (get_duration_milliseconds); src/config.rs:783 (get_duration_no_space); tests/integration_test.rs:211 (test_duration_missing_units)
+  tests: src/config.rs:1027 (get_duration_milliseconds); src/config.rs:1081 (get_duration_no_space); tests/integration_test.rs:218 (test_duration_missing_units)
   status: ✅
 - **S19.4** `s` / `second` / `seconds` — §Duration format (L1310)
-  tests: src/config.rs:738 (get_duration_seconds); src/config.rs:792 (get_duration_singular_unit)
+  tests: src/config.rs:1036 (get_duration_seconds); src/config.rs:1090 (get_duration_singular_unit)
   status: ✅
 - **S19.5** `m` / `minute` / `minutes` — §Duration format (L1311)
-  tests: src/config.rs:747 (get_duration_minutes)
+  tests: src/config.rs:1045 (get_duration_minutes)
   status: ✅
 - **S19.6** `h` / `hour` / `hours` — §Duration format (L1312)
-  tests: src/config.rs:756 (get_duration_hours); src/config.rs:774 (get_duration_fractional)
+  tests: src/config.rs:1054 (get_duration_hours); src/config.rs:1072 (get_duration_fractional)
   status: ✅
 - **S19.7** `d` / `day` / `days` — §Duration format (L1313)
   tests: src/config.rs (get_duration_days); tests/integration_test.rs (test_duration_missing_units); tests/spec_s21_lightbend_units.rs (week rejection)
@@ -728,7 +728,7 @@ xx.hocon#102; see the compliance matrix).
 ## S21. Size in bytes format
 
 - **S21.1** `B` / `b` / `byte` / `bytes` — §Size in bytes format (L1361)
-  tests: src/config.rs:813 (get_bytes_plain)
+  tests: src/config.rs:1111 (get_bytes_plain)
   status: ✅
 - **S21.2** Powers of 10 (kB, MB, GB, TB, PB, EB, ZB, YB + long forms) — §Size in bytes format (L1365)
   tests: src/config.rs (get_bytes_kilobytes and siblings); tests/spec_s21_lightbend_units.rs (PB–YB, case-sensitivity)
@@ -740,13 +740,13 @@ xx.hocon#102; see the compliance matrix).
   tests: tests/spec_s21_4_single_letter_bytes.rs (s21_4_1_k_uppercase_is_1024 through s21_4_12_kib_stays_binary); tests/conformance_bsl.rs (bsl01-bsl09); tests/units_default_test.rs (ub05_bytes_with_unit — updated to 1_048_576)
   status: ✅ (was ✅ mis-classified; prior ✅ cited get_bytes_no_space which exercised '512MB' multi-letter, never single-letter K/M/G/T; behavior corrected — BREAKING: K/M/G/T now binary per L1385 — Phase 6 #3h)
 - **S21.5** Fractional values supported (`0.5M`) — §Units format (L1281-1294) + §Size in bytes (L1335-1342)
-  tests: tests/integration_test.rs:196 (test_parse_bytes_fractional); tests/integration_test.rs:203 (test_parse_bytes_fractional_binary); src/config.rs:891 (get_bytes_fractional_rounds)
+  tests: tests/integration_test.rs:203 (test_parse_bytes_fractional); tests/integration_test.rs:210 (test_parse_bytes_fractional_binary); src/config.rs:1189 (get_bytes_fractional_rounds)
   status: ✅
 
 ## S22. Config object merging API
 
 - **S22.1** `merge(A, B)` semantics = duplicate-key behavior — §Config object merging (L1402)
-  tests: src/config.rs:702 (with_fallback_receiver_wins); tests/integration_test.rs:135 (parse_with_fallback)
+  tests: src/config.rs:1000 (with_fallback_receiver_wins); tests/integration_test.rs:139 (parse_with_fallback)
   status: ✅
 - **S22.2** Intermediate non-object hides earlier object across files — §Config object merging (L1406)
   tests: tests/spec_phase5.rs (s22_2_non_object_hides_earlier_object_across_merge)
@@ -758,17 +758,17 @@ xx.hocon#102; see the compliance matrix).
 ## S23. Java properties mapping
 
 - **S23.1** Split key on `.` preserving empty strings — §Java properties (L1450)
-  tests: src/properties.rs:91 (handles_dotted_keys)
+  tests: src/properties.rs:299 (handles_dotted_keys)
   status: ✅
 - **S23.2** Empty path elements (leading/trailing) preserved — §Java properties (L1456)
   tests: tests/spec_phase5.rs (s23_2_trailing_dot_creates_empty_key_segment; s23_2_leading_dot_creates_empty_key_segment)
   status: ✅
   notes: `"a."` creates path `["a",""]` (nested object with empty-string key inside `a`). `".a"` creates path `["","a"]` (empty-string root key containing `a`). The empty-string root key `""` is accessible via path `".a"` through `split_config_path`.
 - **S23.3** Properties values are always strings — §Java properties (L1471)
-  tests: src/properties.rs:109 (values_are_always_strings)
+  tests: src/properties.rs:381 (values_are_always_strings)
   status: ✅
 - **S23.4** Object wins over string on conflicting key — §Java properties (L1485)
-  tests: src/properties.rs (s23_4_forward_object_wins, s23_4_reverse_object_wins, s23_4_deep_forward_object_wins, s23_4_deep_reverse_object_wins); tests/conformance_properties_conflict.rs (pc01-pc04)
+  tests: tests/conformance_properties_conflict.rs (pc01_forward_object_wins, pc02_reverse_same_result, pc03_deep_forward_object_wins, pc04_deep_reverse_object_wins)
   status: ✅ (was ✅ mis-classified; prior ✅ cited converts_to_hocon_value which exercised 'a.b=1\nc=hello' — no conflict; set_nested had two bugs causing silent data-loss on conflict; corrected with object-wins rule + sorted-key processing — Phase 6 #3h)
 - **S23.5** Multi-line values (backslash continuation) — §Note on Java properties similarity (L1587)
   tests: src/properties.rs (joins_continuations, even_backslash_run_is_not_a_continuation, continuation_into_hash_is_value_text, whitespace_is_a_separator, value_keeps_trailing_whitespace); tests/conformance_properties_syntax.rs (ps01, ps03, ps04)
@@ -798,7 +798,7 @@ xx.hocon#102; see the compliance matrix).
 ## S26. Substitution fallback to environment variables
 
 - **S26.1** Env var lookup when substitution not in config tree — §Substitution fallback (L1536)
-  tests: src/resolver/mod.rs:190 (resolves_env_var_fallback); tests/integration_test.rs:46 (parse_with_env_fallback); tests/include_test.rs:85 (include_env_fallback_quoted_key_prefix)
+  tests: src/resolver/mod.rs:442 (resolves_env_var_fallback); tests/integration_test.rs:47 (parse_with_env_fallback); tests/include_test.rs:86 (include_env_fallback_quoted_key_prefix)
   status: ✅
 - **S26.2** Empty env var preserved as empty string (not undefined) — §Substitution fallback (L1558)
   tests: tests/spec_phase5.rs (s26_2_empty_env_var_preserved_as_empty_string)
@@ -808,7 +808,7 @@ xx.hocon#102; see the compliance matrix).
   tests: —
   status: ➖
 - **S26.4** Env vars always become strings (with auto type conversion) — §Substitution fallback (L1563)
-  tests: src/resolver/mod.rs:172 (uses_env_var_when_present)
+  tests: src/resolver/mod.rs:424 (uses_env_var_when_present)
   status: ✅
 
 ---
@@ -819,6 +819,15 @@ Cross-implementation behaviors not enumerated by the Lightbend HOCON spec, track
 [`xx.hocon/docs/extra-spec-conventions.md`](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md).
 rs.hocon status per-item:
 
+- **E19** A numeric literal whose magnitude overflows f64 (`1e999`) is a parse error; underflow (`1e-400`) reads as `0`
+  tests: tests/e19_float_overflow_test.rs
+  status: ✅ — deliberate divergence from Lightbend (which turns it into `Infinity`); the serde deserializers also refuse a non-finite `f64` (xx.hocon#97)
+- **E20** Unit arithmetic is exact decimal: number × unit from the source digits, truncated toward zero
+  tests: src/units/decimal.rs (unit tests); src/units.rs (exact_arithmetic_e20, number_value_reads_by_value_not_spelling, read_bytes_number_is_exact_and_truncated); tests/units_default_test.rs (ud09–ud11, ub07–ub08)
+  status: ✅ — duration and bytes, strings and number values, every unit including Z / Y (xx.hocon#103)
+- **E21** A duration the implementation cannot represent is an error, with one range for every spelling
+  tests: src/units.rs (parse_duration_range_is_all_of_duration, parse_duration_past_u64_nanos_is_a_value); tests/units_default_test.rs (ud12–ud13)
+  status: ✅ — rs's range is all of `std::time::Duration` (`u64::MAX` s + 999,999,999 ns) (xx.hocon#105)
 - **E6** `${X[]}` config-defined wins — `[]` suffix is a no-op when X is a config key
   tests: `tests/env_var_list_test.rs::s13c_ev05_config_defined_wins`
   status: ✅ — config lookup returns early before `list_suffix` branch; env vars `X_0`, `X_1`, … are not consulted (Phase 6 #3g, 2026-05-18)

@@ -916,23 +916,6 @@ Behaviour:
 
 - **CI: content-addressable testdata cache** (closes [#101](https://github.com/o3co/rs.hocon/issues/101)). `.github/workflows/test.yml` and `.github/workflows/publish.yml` previously used `actions/cache@v5` with `key: xx-hocon-expected-${{ hashFiles('.xx-hocon-version') }}`. The hash evaluated BEFORE the cache restore step ran, but `.xx-hocon-version` is gitignored and absent on fresh checkouts — so the key collapsed to a constant and cache entries shared the same slot. Split into `actions/cache/restore@v5` (matches via `restore-keys`) + `actions/cache/save@v5` (writes with the post-fetch hash, gated on `make testdata` success). No production code touched.
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.13.1...HEAD
-[1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
-[1.13.0]: https://github.com/o3co/rs.hocon/compare/v1.12.0...v1.13.0
-[1.12.0]: https://github.com/o3co/rs.hocon/compare/v1.11.0...v1.12.0
-[1.11.0]: https://github.com/o3co/rs.hocon/compare/v1.10.0...v1.11.0
-[1.10.0]: https://github.com/o3co/rs.hocon/compare/v1.9.0...v1.10.0
-[1.9.0]: https://github.com/o3co/rs.hocon/compare/v1.8.0...v1.9.0
-[1.8.0]: https://github.com/o3co/rs.hocon/compare/v1.7.1...v1.8.0
-[1.7.1]: https://github.com/o3co/rs.hocon/compare/v1.7.0...v1.7.1
-[1.7.0]: https://github.com/o3co/rs.hocon/compare/v1.6.1...v1.7.0
-[1.6.1]: https://github.com/o3co/rs.hocon/compare/v1.6.0...v1.6.1
-[1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
-[1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
-[1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
-[1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
-[1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
-
 ## [1.3.0] - 2026-05-21
 
 v1.3 is a spec-compliance bugfix release. The implementation has been corrected to match the HOCON spec and Lightbend typesafe-config reference behavior across several previously-divergent areas (E8 value-position lexing + leading-zero canonicalization, single-letter byte units, `include` key reservation, concat type-checking, empty-file rejection, `.properties` object-wins, duration/bytes default unit, S13c env-var list). The spec did not change; the parser was simply wrong in places.
@@ -1245,6 +1228,25 @@ A subset of these fixes change observable runtime behavior. The most likely user
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.13.1...HEAD
+[1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
+[1.13.0]: https://github.com/o3co/rs.hocon/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/o3co/rs.hocon/compare/v1.11.0...v1.12.0
+[1.11.0]: https://github.com/o3co/rs.hocon/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/o3co/rs.hocon/compare/v1.9.0...v1.10.0
+[1.9.0]: https://github.com/o3co/rs.hocon/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/o3co/rs.hocon/compare/v1.7.1...v1.8.0
+[1.7.1]: https://github.com/o3co/rs.hocon/compare/v1.7.0...v1.7.1
+[1.7.0]: https://github.com/o3co/rs.hocon/compare/v1.6.1...v1.7.0
+[1.6.1]: https://github.com/o3co/rs.hocon/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/o3co/rs.hocon/compare/v1.5.2...v1.6.0
+[1.5.2]: https://github.com/o3co/rs.hocon/compare/v1.5.0...v1.5.2
+[1.5.0]: https://github.com/o3co/rs.hocon/compare/v1.4.1...v1.5.0
+[1.4.1]: https://github.com/o3co/rs.hocon/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/o3co/rs.hocon/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/o3co/rs.hocon/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/o3co/rs.hocon/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/o3co/rs.hocon/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/o3co/rs.hocon/compare/v0.1.5...v1.0.0
 [0.1.2]: https://github.com/o3co/rs.hocon/releases/tag/v0.1.2
 [0.1.1]: https://github.com/o3co/rs.hocon/releases/tag/v0.1.1
