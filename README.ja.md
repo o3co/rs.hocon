@@ -6,14 +6,13 @@
 [![codecov](https://codecov.io/gh/o3co/rs.hocon/branch/develop/graph/badge.svg)](https://codecov.io/gh/o3co/rs.hocon)
 [![License](https://img.shields.io/crates/l/hocon-parser.svg)](LICENSE)
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) の Rust パーサー。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応。現在の準拠率は [仕様準拠](#仕様準拠) を参照。
-
-> **[Claude Code](https://claude.ai/claude-code)（Anthropic）による設計・実装。**
-> [GitHub Copilot](https://github.com/features/copilot) および [OpenAI Codex](https://openai.com/index/openai-codex/) によるレビュー。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) の Rust パーサーです。手書きレキサー、再帰下降パーサー、型付き `Config` API を備え、オプションで Serde 統合に対応しています。現在の準拠率は [仕様準拠](#仕様準拠) を参照してください。
 
 [English](README.md)
 
----
+**ライブラリの位置づけ** — このライブラリは HOCON の設定ローダーです。目的は `.hocon` 設定ファイルを読み込み、`Config` API（`get_string`、`get_i64`、`get_f64`、`get_bool`、`get_duration`、`get_bytes`、`get_period`、`serde` フィーチャー有効時は `get_as`）で型付きアクセスを提供することです。低レベルのパーサー API ではありません。`ScalarValue` などの内部型はマイナーバージョン間で変更される可能性があります。
+
+**言語横断の準拠テスト** — この実装は、[o3co/xx.hocon](https://github.com/o3co/xx.hocon) の共有 expected-JSON フィクスチャで [ts.hocon](https://github.com/o3co/ts.hocon)、[go.hocon](https://github.com/o3co/go.hocon)、[py.hocon](https://github.com/o3co/py.hocon) と並べてテストされており、4 つの実装すべてが同じ Lightbend HOCON 仕様を満たすことを保証しています。
 
 ## クイックスタート
 
@@ -70,7 +69,7 @@ struct Server {
     port: u16,
 }
 
-// テキスト → T の 1 ステップ
+// one step: text → T
 let app: App = hocon::from_str(r#"
     server {
         host = "localhost"
@@ -78,7 +77,7 @@ let app: App = hocon::from_str(r#"
     }
 "#)?;
 
-// ファイルからも同様
+// same, from a file
 let app: App = hocon::from_file("app.conf")?;
 ```
 
@@ -99,6 +98,70 @@ HOCON は単なるシリアライズ形式ではなく、**プログラムに注
 
 加えて HOCON は YAML の可読性と JSON の構造性を兼ね備えるため、フラットなキーバリュー設定を超えるユースケースには強い選択肢になります。
 
+## モジュールの中に閉じる設定
+
+大きなコードベースでは、設定は漏れ出しがちです。全チームが編集する 1 つの巨大なファイル、各サービスにコピーされたデフォルト値、互いのキーを読み合うモジュール。HOCON を使うと、各モジュールは自分のコードを持つのと同じように、自分の設定を持てます。
+
+- **各モジュールは名前空間を持ち、自分のデフォルト値を同梱します。** `auth` モジュールは、すべてのデフォルト値を埋めた `auth { … }` をコードの隣に置きます。アプリケーションはそのデフォルト値をコピーせず、`include` 1 行で取り込みます。
+- **アプリケーションは違う部分だけを上書きします。** 後のレイヤーが前のレイヤーにディープマージされるので、アプリケーションが書くのはブロック全体ではなく 2 つのキーだけです。
+- **各モジュールは自分のスキーマを通して、自分のサブツリーだけを読みます。** モジュールは `auth` を要求し、自分で定義した型にデシリアライズします。そのセクションの形がモジュールの契約であり、ファイルのそれ以外の部分はモジュールから見えません。
+- **モジュール間の配線はアプリケーションに置きます。** モジュールは自分が読むキー（`auth.db`）を宣言するだけで、アプリケーションが与えるべきキーにはデフォルト値を置きません。アプリケーションがそれを共有の値につなぎます（`auth.db = ${shared.db}`）。モジュールが互いのキーやアプリケーションのキーを参照することはないので、依存は一方向になります。
+
+```hocon
+# auth/reference.conf: shipped inside the auth package, owned by the auth team
+auth {
+  session { lifetime = 30m, max-body = 64KiB }
+  # db: no default; the application supplies auth.db
+}
+```
+
+```hocon
+# application.conf: owned by the application
+include package("github.com/acme/auth", "reference.conf")
+
+shared.db { host = db.internal, port = 5432 }
+auth.db = ${shared.db}       # wiring lives in the application
+auth.session.lifetime = 2h   # override what differs; the rest stays the module's default
+```
+
+auth モジュールの中では（`serde` と `include-package` フィーチャー）、モジュールが自分のデフォルト値を公開し、自分のサブツリーだけを読みます:
+
+```rust
+use serde::Deserialize;
+use std::time::Duration;
+
+pub fn register(parser: hocon::Parser) -> hocon::Parser {
+    parser.register_package("github.com/acme/auth", "reference.conf",
+                            include_str!("auth/reference.conf"))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Session {
+    #[serde(with = "hocon::serde::duration")]
+    pub lifetime: Duration,      // "2h"
+    #[serde(with = "hocon::serde::bytes")]
+    pub max_body: u64,           // "64KiB"
+}
+
+#[derive(Deserialize)]
+pub struct Db { pub host: String, pub port: u16 }
+
+#[derive(Deserialize)]
+pub struct Auth { pub session: Session, pub db: Db }
+
+pub fn load(config: &hocon::Config) -> Result<Auth, hocon::ConfigError> {
+    config.get_as::<Auth>("auth")
+}
+```
+
+アプリケーションは各モジュールを登録してから、自分のファイルをパースします:
+`let config = auth::register(hocon::Parser::new()).parse_file("application.conf")?;`。
+この例の全体は [`examples/module_config`](examples/module_config/main.rs) として実行できます
+（`cargo run --example module_config --features serde,include-package`）。
+
+`include package(...)` は HOCON.md の一部ではありません。o3co の実装が共有する規約（[E11](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md#e11)）で、`include classpath(...)` に相当する JVM 以外向けの仕組みです。アプリケーションがファイルの置き場所を知らなくても、モジュールが自分のデフォルト値を公開できるのはこの仕組みによります（[パッケージ include](#パッケージ-include-include-package) を参照）。JVM では Lightbend の `reference.conf` 規約が同じ役割を果たします。
+
 ## 特徴
 
 - 完全な HOCON 構文: オブジェクト、配列、コメント、複数行文字列、クォートなし文字列
@@ -106,14 +169,22 @@ HOCON は単なるシリアライズ形式ではなく、**プログラムに注
 - `include "file.conf"` / `include file("file.conf")` ディレクティブ + 相対パス解決
 - 仕様準拠のオブジェクトマージ・配列連結
 - 文字列・配列・オブジェクトの値連結
-- Duration・バイトサイズのパース（`10 seconds`、`512 MB`）
+- duration・バイトサイズ・period のパース（`10 seconds`、`512 MB`、`2w`）。10 進数の
+  厳密な演算で計算します（`1.001s` は正確に 1001 ms）
 - 環境変数の参照（`${HOME}`）
 - ドット区切りパス式（`server.host`）
 - フォールバック設定のマージ（`with_fallback`）
+- 遅延解決のライフサイクル: `parse_string_with_options` → `with_fallback` → `resolve()`。
+  Lightbend の `parseString` / `withFallback` / `resolve()` API に準拠（E12、v1.4.0）
 - HOCON エミッター: `Config::render_hocon()` が解決済み設定を HOCON テキストに
   逆変換（パースし直すと同じ値ツリーに戻るラウンドトリップ保証、E18）
 - オプションの Serde デシリアライゼーション: 1 ステップの `hocon::from_str::<T>()` /
-  `from_file::<T>()`、パス指定の `Config::get_as::<T>(path)`、`Config::deserialize::<T>()`
+  `from_file::<T>()`、パス指定の `Config::get_as::<T>(path)`、`Config::deserialize::<T>()`。
+  duration・バイトサイズ・period 用の `#[serde(with = ...)]` ヘルパー付き
+- 他のクレートに同梱された設定を読む `include package(...)`
+  （`include-package` フィーチャー。[パッケージ include](#パッケージ-include-include-package) を参照）
+- フォーマットアダプター: `.properties`、環境変数、JSON5、JSONC、TOML、YAML を
+  HOCON として読めます（[フォーマットアダプター](#フォーマットアダプター) を参照）
 - Lightbend 等価テスト合格（equiv01 - equiv05）
 
 ## API リファレンス
@@ -121,13 +192,13 @@ HOCON は単なるシリアライズ形式ではなく、**プログラムに注
 ### パース
 
 ```rust
-// HOCON 文字列をパース
+// Parse a HOCON string
 let config = hocon::parse(input)?;
 
-// HOCON ファイルをパース（include ディレクティブをファイル位置からの相対パスで解決）
+// Parse a HOCON file (resolves include directives relative to file location)
 let config = hocon::parse_file("application.conf")?;
 
-// カスタム環境変数でパース
+// Parse with custom environment variables
 use std::collections::HashMap;
 let env: HashMap<String, String> = HashMap::new();
 let config = hocon::parse_with_env(input, &env)?;
@@ -136,20 +207,20 @@ let config = hocon::parse_file_with_env("application.conf", &env)?;
 
 ### 型付きゲッター
 
-すべての型付きゲッターは `Result<T, ConfigError>` を返します。パスはドット記法を使用。
+すべての型付きゲッターは `Result<T, ConfigError>` を返します。パスはドット記法を使用します。
 
 ```rust
 let host: String    = config.get_string("server.host")?;
 let port: i64       = config.get_i64("server.port")?;
 let rate: f64       = config.get_f64("rate")?;
-let debug: bool     = config.get_bool("debug")?;        // "yes"/"no"、"on"/"off" も可
-let sub: Config     = config.get_config("database")?;    // サブオブジェクトを Config として取得
+let debug: bool     = config.get_bool("debug")?;        // also accepts "yes"/"no", "on"/"off"
+let sub: Config     = config.get_config("database")?;    // sub-object as Config
 let items: Vec<HoconValue> = config.get_list("items")?;
 ```
 
 ### Option バリアント
 
-`Result` の代わりに `Option<T>` を返す。キーが存在しないか型が一致しない場合は `None`。
+`Result` の代わりに `Option<T>` を返します。キーが存在しないか型が一致しない場合は `None` を返します。
 
 ```rust
 let host: Option<String> = config.get_string_option("server.host");
@@ -163,18 +234,28 @@ let debug: Option<bool>  = config.get_bool_option("debug");
 ```rust
 use std::time::Duration;
 
-// 対応: ns, us, ms, s/seconds, m/minutes, h/hours, d/days
+// Supports: ns, us, ms, s/seconds, m/minutes, h/hours, d/days (and long forms)
 let timeout: Duration = config.get_duration("server.timeout")?;
 
-// 対応: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB（長い形式も可）
+// Supports: B; kB, MB, GB, TB, PB, EB, ZB, YB (powers of 10);
+// Ki/KiB … Yi/YiB and the single letters K, M, G, T, P, E, Z, Y (powers of 2);
+// and long forms (kilobytes, mebibytes, …)
 let max_size: i64 = config.get_bytes("upload.max-size")?;
+
+// Supports: d/days, w/weeks, m/mo/months, y/years (integer amounts)
+let retention: hocon::Period = config.get_period("retention")?;
 ```
+
+単位名は大文字と小文字を区別します。`KB` や `100 MS` はエラーです（キロの 10 進表記は
+`kB`）。数値だけの値はデフォルトの単位（ミリ秒、バイト、日）で読みます。小数の値は厳密に
+計算してからゼロ方向に切り捨てます（`1.001s` は 1001 ms、`1.0009kB` は 1000 バイト）。
+`std::time::Duration` で表せる範囲を超える duration はエラーです。
 
 ### 検査
 
 ```rust
 let exists: bool     = config.has("server.host");
-let keys: Vec<&str>  = config.keys();           // トップレベルキー（挿入順）
+let keys: Vec<&str>  = config.keys();           // top-level keys in insertion order
 let raw: Option<&HoconValue> = config.get("server.host");
 ```
 
@@ -194,13 +275,75 @@ let text: String = config.render_hocon()?;
 ### フォールバックマージ
 
 ```rust
-// レシーバが優先。フォールバックが不足キーを補完。オブジェクトはディープマージ。
+// Receiver wins; fallback fills missing keys. Objects are deep-merged.
 let merged = app_config.with_fallback(&defaults);
+```
+
+### パッケージ include (`include package`)
+
+`include-package` フィーチャーが必要です。設定を同梱するクレートは、その設定を
+[`hocon::Parser`](https://docs.rs/hocon-parser/latest/hocon/struct.Parser.html) に登録します。
+そのパーサーでパースされるドキュメントは、ファイルの置き場所を知らなくても、パッケージ識別子と
+ファイル名で設定を include できます（クロス実装規約
+[E11](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md#e11)）:
+
+```rust
+let config = hocon::Parser::new()
+    .register_package("github.com/acme/auth", "reference.conf",
+                      include_str!("../conf/reference.conf"))
+    .parse_file("application.conf")?;
+```
+
+```hocon
+include package("github.com/acme/auth", "reference.conf")
+include required(package("github.com/acme/auth", "reference.conf"))  # same; required
+```
+
+- 識別子は Go のモジュールパス形式（`host/org/name`）に従います。これにより、1 つの
+  ドキュメントが o3co のすべての実装で動きます。
+- 他のパッケージに依存するパッケージは、`register(parser: hocon::Parser) -> hocon::Parser`
+  関数を公開します。この関数は自分のファイルを登録してから、依存先の `register` を呼びます
+  （カスケード規約）。
+- 同じ `(identifier, file)` に異なる内容を登録すると panic します。バイト単位で同一の内容を
+  再登録しても何も起きません。登録されていないパッケージの include はパースエラーです。
+
+### 遅延解決 (v1.4.0)
+
+解決せずにパースし、実行時のフォールバックを追加してから、1 回のパスで解決します:
+
+```rust
+use hocon::{parse_string_with_options, ParseOptions, ResolveOptions};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = parse_string_with_options(
+        r#"version = ${shortversion}-${CI_RUN_NUMBER}
+           variables { shortversion = "1.2.3" }"#,
+        ParseOptions::defaults().with_resolve_substitutions(false),
+    )?;
+    assert!(!cfg.is_resolved());
+
+    let runtime = hocon::empty(None); // or from_map with runtime values
+    let vars = cfg.get_config("variables")?;
+    let resolved = cfg
+        .with_fallback(&runtime)
+        .with_fallback(&vars)
+        .resolve(ResolveOptions::defaults())?;
+
+    println!("{}", resolved.get_string("version")?); // e.g. "1.2.3-42"
+    Ok(())
+}
+```
+
+`resolve_with` を使うと、解決済みのソースを変数参照の参照先として与えつつ、そのキーを
+結果にマージしないようにできます:
+
+```rust
+let resolved = cfg.resolve_with(&source_config, ResolveOptions::defaults())?;
 ```
 
 ### Serde デシリアライゼーション
 
-`serde` フィーチャーが必要。
+`serde` フィーチャーが必要です。
 
 ```rust
 use serde::Deserialize;
@@ -211,20 +354,20 @@ struct ServerConfig {
     port: u16,
 }
 
-// テキスト (またはファイル) → T の 1 ステップ — serde_json::from_str と同型:
+// One step, text (or file) → T — like serde_json::from_str:
 let server: ServerConfig = hocon::from_str("host = localhost, port = 8080")?;
 let server: ServerConfig = hocon::from_file("server.conf")?;
 
-// パス指定: パス上の任意ノード (オブジェクト・配列・スカラー) をデシリアライズ:
+// Path-scoped: deserialize any node (object, array, or scalar) at a path:
 let config = hocon::parse(input)?;
 let server: ServerConfig = config.get_as("server")?;
 let ports: Vec<u16> = config.get_as("ports")?;
 
-// Config 全体からも (with_fallback / resolve の後などに):
+// Or the whole Config, e.g. after with_fallback / resolve:
 let server: ServerConfig = config.deserialize()?;
 ```
 
-単位付きの値（期間・バイトサイズ・ピリオド）は、単位ごとの `with` モジュールで
+単位付きの値（duration・バイトサイズ・period）は、単位ごとの `with` モジュールを通して
 `get_duration` / `get_bytes` / `get_period` と同じ規則で読めます。範囲の制約はフィールドの型に任せます:
 
 ```rust
@@ -235,36 +378,41 @@ struct Session {
     #[serde(with = "hocon::serde::duration")]
     lifetime: Duration,          // lifetime = 30m
     #[serde(with = "hocon::serde::bytes")]
-    max_body: u64,               // max_body = 64KiB (T: TryFrom<i64> なら何でも)
+    max_body: u64,               // max_body = 64KiB (any T: TryFrom<i64>)
     #[serde(with = "hocon::serde::period")]
     retention: hocon::Period,    // retention = 2w
     #[serde(default, with = "hocon::serde::duration::option")]
-    idle_timeout: Option<Duration>,  // null または欠落 → None
+    idle_timeout: Option<Duration>,  // null or missing → None
 }
 ```
 
-デコードエラーには失敗したキーのパスが入ります: `DeserializeError::path`（`from_str` / `get_as` では
-`ConfigError::path`）が `session.lifetime`、`servers[0].port` などになります。helper は HOCON の値を
-getter と同じに読みます。serde が入力をバッファする `#[serde(flatten)]`・untagged / internally tagged enum の内側でも、
-getter と同じ値を読みます（例外は 2 つです。i64 の整数ではなく有効数字が 15 桁を超える数値リテラルは、最も近い double としてバッファされます。double でアンダーフローする負の数（`-1e-400`）は `-0.0` としてバッファされ、duration では 0 になります）。
-ただし、エラーのパスはバッファされたオブジェクトで止まります。
-ほかの自己記述的な Deserializer（serde_json など）では数値を値として受け取り、整数は整数として、浮動小数点数は
-浮動小数点数として読みます。
+デコードエラーには失敗したキーのパスが入ります: `DeserializeError::path`（および `get_as` の
+`ConfigError::path`、`from_str` / `from_file` では `HoconError::Config` の `ConfigError::path`）が
+`session.lifetime`、`servers[0].port` などになります。ヘルパーは HOCON の値をゲッターとまったく同じに読みます。
+serde が値をバッファする場所（`#[serde(flatten)]`、untagged / internally tagged enum）でも同じ値を読みます。
+例外は、i64 の整数ではなく有効数字が 15 桁を超える数値リテラル（最も近い double としてバッファされます）と、
+double でアンダーフローする負の数（`-1e-400`。`-0.0` としてバッファされます）です。また、エラーのパスは
+バッファされたオブジェクトで止まります。ほかの自己記述的な Deserializer（serde_json など）では数値をその値から
+読み、整数は整数として、浮動小数点数は浮動小数点数として読みます。自己記述的でないフォーマット
+（bincode、postcard）ではヘルパーを使えません。
 
 ## エラー型
 
 | 型 | 発生条件 |
 |------|------|
+| `HoconError` | パース関数、`from_str` / `from_file`、`Config::resolve` が返します。以下のいずれかのエラー（`Parse`、`Resolve`、`Io`、`NotResolved`、`Config`）を包みます |
 | `ParseError` | レキシング/パース時の構文エラー（行・列番号を含む） |
 | `ResolveError` | 変数参照の失敗、循環参照、必須変数の欠落 |
+| `NotResolvedError` | 未解決の変数参照が残っているソース設定に対して `resolve_with` を呼んだ |
 | `ConfigError` | 値アクセス時のキー欠落・型不一致 |
-| `ConfigError`（未解決の置換プレースホルダーを含むパスへのゲッター呼び出し時は `.is_not_resolved()` で検出、v1.4.0） | 未解決の置換プレースホルダーを含むパスへのゲッター呼び出し |
-| `DeserializeError` | Serde デシリアライゼーション失敗（`serde` フィーチャー使用時） |
+| `ConfigError`（「値がまだ解決されていない」は `.is_not_resolved()` で検出） | 未解決の置換プレースホルダーを含むパスへのゲッター呼び出し（v1.4.0） |
+| `DeserializeError` | Serde デシリアライゼーション失敗。失敗したキーの `path` を含む（`serde` フィーチャー使用時） |
+| `AdapterError` | フォーマットアダプターが入力を読めなかった（`adapters-*` フィーチャー使用時） |
 
 ## HOCON の例
 
 ```hocon
-# コメントは // または #
+# Comments start with // or #
 server {
     host = "0.0.0.0"
     port = 8080
@@ -272,46 +420,106 @@ server {
     max-upload = 512 MB
 }
 
-# 変数参照
+# Substitutions
 app {
     name = "my-app"
     title = "Welcome to "${app.name}
 }
 
-# 配列連結
+# Array concatenation
 base-tags = ["production"]
 tags = ${base-tags} ["v2"]
 
-# 他のファイルをインクルード
+# Include other files
 include "defaults.conf"
 
-# クォートなし文字列
+# Unquoted strings
 path = /usr/local/bin
 
-# 複数行文字列
+# Multi-line strings
 description = """
     This is a multi-line
     string value.
 """
 
-# オブジェクトマージ
+# Object merging
 defaults { color = "blue", size = 10 }
-defaults { size = 20 }  # マージ: color は保持、size は更新
+defaults { size = 20 }  # merges: color stays, size updated
 ```
+
+## パフォーマンス
+
+[Criterion](https://github.com/bheisler/criterion.rs) で計測しています。各イテレーションにはパースと 1 回の `get_string` 参照が含まれます。再現するには `cargo bench` を実行してください。
+
+| シナリオ | ops/sec | 1 回あたりの時間 |
+|---|---|---|
+| 小規模設定（10 キー） | ~62,000 | ~16 µs |
+| 中規模設定（100 キー） | ~19,000 | ~52 µs |
+| 大規模設定（1,000 キー） | ~2,400 | ~408 µs |
+| 変数参照 10 個 | ~37,000 | ~27 µs |
+| 変数参照 50 個 | ~12,000 | ~86 µs |
+| 変数参照 100 個 | ~6,400 | ~156 µs |
+| ネスト深度 5 | ~58,000 | ~17 µs |
+| ネスト深度 10 | ~50,000 | ~20 µs |
+| ネスト深度 20 | ~39,000 | ~26 µs |
+
+一般的なアプリケーション設定（起動時に 1 回だけ読み込む）では、パースのコストは無視できます — 1,000 キーの設定でも 0.5 ms 未満でパースできます。
+
+## 比較
+
+✅ 完全対応 / ⚠️ 部分対応 / ❌ 非対応
+
+### HOCON 実装
+
+| 機能 | rs.hocon | [hocon-rs](https://github.com/mockersf/hocon.rs) |
+|---|:---:|:---:|
+| 変数参照（`${path}`） | ✅ | ✅ |
+| オプショナルな変数参照（`${?path}`） | ✅ | ✅ |
+| Include | ✅ | ✅ |
+| `include required(file(...))` | ✅ | ❌ |
+| オブジェクト/配列の連結 | ✅ | ✅ |
+| 型変換 | ✅ | ⚠️ |
+| Duration のパース | ✅ | ✅ |
+| バイトサイズのパース | ✅ | ✅ |
+| `+=` 追記 | ✅ | ❌ |
+| Serde デシリアライゼーション | ✅ | ✅ |
+| 環境変数へのフォールバック | ✅ | ❌ |
+| 循環 include の検出 | ✅ | ❌ |
+
+### 設定フレームワーク
+
+| | rs.hocon | [config-rs](https://github.com/mehcode/config-rs) |
+|---|:---:|:---:|
+| **フォーマット** | | |
+| HOCON | ✅ | ❌ |
+| JSON | ✅ | ✅ |
+| JSON5 | ✅ (adapter) | ✅ |
+| JSONC | ✅ (adapter) | ⚠️ (via JSON5) |
+| YAML | ✅ (adapter) | ✅ |
+| TOML | ✅ (adapter) | ✅ |
+| 環境変数 | ✅ (adapter, and `${VAR}` fallback) | ✅ |
+| .properties | ✅ (adapter, and `include`) | ❌ |
+| **機能** | | |
+| 変数参照 | ✅ | ❌ |
+| ファイル include | ✅ | ❌ |
+| 型変換 | ✅ | ✅ |
+| Serde サポート | ✅ | ✅ |
+| 監視/リロード | ❌ | ❌ |
+| レイヤー構成 | ✅ (`include`, `with_fallback`) | ✅ |
 
 ## 仕様準拠
 
-[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記載しています。以下の表は 2026-05-13 時点のスナップショットです — 最新値は [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
+[Lightbend HOCON 仕様](https://github.com/lightbend/config/blob/main/HOCON.md) への準拠状況は [`docs/spec-compliance.md`](docs/spec-compliance.md) に項目単位で記録しており、以下の準拠率はこのファイルから計算しています — `tests/docs.rs` が準拠率を再計算し、README.md の表がずれるとビルドを失敗させます。実装横断のロールアップは [`xx.hocon/docs/compliance-matrix.md`](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 | 指標                                  | 状況         |
 | ------------------------------------- | ------------ |
-| 仕様全体（out-of-scope を含む）       | **75.6%**    |
-| In-scope のみ                         | **84.0%**    |
+| 仕様全体（out-of-scope を含む）       | **92.9%**    |
+| In-scope のみ                         | **100.0%**   |
 | Lightbend `equiv01`–`equiv05` テスト  | 5/5 合格     |
 
 ## Minimum Supported Rust Version
 
-MSRV は **1.82** です。5 つの adapter を含むすべての feature の組み合わせで同じです。
+MSRV は **1.82** です。6 つの adapter を含むすべての feature の組み合わせで同じです。
 CI は 1.82 で `--all-features` のテストスイート全体を実行するため、これは主張ではなく
 検証済みです。
 
@@ -321,9 +529,10 @@ CI は 1.82 で `--all-features` のテストスイート全体を実行する�
 |---------|----------|----------|-------------|
 | [ts.hocon](https://github.com/o3co/ts.hocon) | TypeScript | [npm](https://www.npmjs.com/package/@o3co/ts.hocon) | TypeScript/Node.js 向け HOCON パーサー |
 | [go.hocon](https://github.com/o3co/go.hocon) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/go.hocon) | Go 向け HOCON パーサー |
+| [py.hocon](https://github.com/o3co/py.hocon) | Python | [PyPI](https://pypi.org/project/hocon-parser/) | Python 向け HOCON パーサー |
 | [hocon2](https://github.com/o3co/hocon2) | Go | [pkg.go.dev](https://pkg.go.dev/github.com/o3co/hocon2) | HOCON → JSON/YAML/TOML/Properties 変換 CLI |
 
-3 つのパーサー実装（[ts.hocon](https://github.com/o3co/ts.hocon)、[rs.hocon](https://github.com/o3co/rs.hocon)、[go.hocon](https://github.com/o3co/go.hocon)）はすべて同じ Lightbend HOCON 仕様で追跡されています — 実装ごとの準拠率は [横断ロールアップ](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
+4 つのパーサー実装（[ts.hocon](https://github.com/o3co/ts.hocon)、[rs.hocon](https://github.com/o3co/rs.hocon)、[go.hocon](https://github.com/o3co/go.hocon)、[py.hocon](https://github.com/o3co/py.hocon)）はすべて同じ Lightbend HOCON 仕様で追跡されています — 実装ごとの準拠率は [横断ロールアップ](https://github.com/o3co/xx.hocon/blob/main/docs/compliance-matrix.md) を参照してください。
 
 ## ベストプラクティス
 
@@ -360,14 +569,14 @@ UTF-8 でない環境変数エントリは、このクレートが `${...}` を�
 
 ```text
 config/
-├── application.conf    # 共有デフォルト
-├── dev.conf            # include "application.conf" + 開発用オーバーライド
-└── prod.conf           # include "application.conf" + 本番用オーバーライド
+├── application.conf    # shared defaults
+├── dev.conf            # include "application.conf" + dev overrides
+└── prod.conf           # include "application.conf" + prod overrides
 ```
 
 ### バリデーション
 
-- 設定のバリデーションは常にアプリケーション起動時に行い、使用時ではなく早期に検出しましょう
+- 設定のバリデーションは使用時ではなく、常にアプリケーション起動時に行いましょう
 - スキーマバリデーション（TypeScript は Zod、Go は struct Unmarshal、Rust は Serde）を使って早期にエラーをキャッチしましょう
 
 ```rust
@@ -385,8 +594,8 @@ struct AppConfig {
     debug: bool,
 }
 
-// `serde` フィーチャーが必要
-let cfg: AppConfig = config.deserialize()?; // 起動時に即座に失敗
+// requires the `serde` feature
+let cfg: AppConfig = config.deserialize()?; // fails fast on startup
 ```
 
 ## フォーマットアダプター
@@ -412,17 +621,18 @@ let merged = cfg.with_fallback(&base).resolve(hocon::ResolveOptions::defaults())
 | --- | --- | --- |
 | `adapters-properties` | `java.util.Properties`（`include` 構文レイヤーを共有） | — |
 | `adapters-env` | プレフィックス付き名前空間の一括マウント。`.env` も読めます | — |
+| `adapters-json5` | JSON5 ドキュメント（JSON5 1.0.0、手書きスキャナー） | — |
 | `adapters-jsonc` | コメントと末尾カンマを許容する JSON | `serde_json` |
 | `adapters-toml` | TOML ドキュメント | `toml` |
 | `adapters-yaml` | YAML ドキュメント | `yaml-rust2` |
 
-`adapters` は 5 つすべてを有効にします。いずれもオプトインなので、デフォルトビルドの
+`adapters` は 6 つすべてを有効にします。いずれもオプトインなので、デフォルトビルドの
 依存は `indexmap` だけのままです。プレーンな JSON にアダプターは不要です — HOCON は
 JSON のスーパーセットなので、`hocon::parse` がそのまま受け付けます。
 
 ```sh
-cargo add hocon-parser --features adapters        # 5 つすべて
-cargo add hocon-parser --features adapters-env    # 必要なものだけでも可
+cargo add hocon-parser --features adapters        # all six
+cargo add hocon-parser --features adapters-env    # or just the one you need
 ```
 
 外部データはデータのままです: マウントされた値の中の `${a.b}` はリテラルなテキストで
@@ -435,8 +645,8 @@ cargo add hocon-parser --features adapters-env    # 必要なものだけでも�
 リテラルな `.` はセパレーターではなくキーの *文字* として扱われます:
 
 ```text
-APP_DB__MAX_CONN=10   ->  db.max_conn      （ネスト: "db" が "max_conn" を含む）
-APP_FOO.BAR=flat      ->  "foo.bar"        （ドットを含む 1 つのトップレベルキー）
+APP_DB__MAX_CONN=10   ->  db.max_conn      (nested: "db" contains "max_conn")
+APP_FOO.BAR=flat      ->  "foo.bar"        (one top-level key that contains a dot)
 ```
 
 後者は単一のキーなので、クォート付きパス `cfg.get_string("\"foo.bar\"")` で読みます。
@@ -460,8 +670,18 @@ last-wins ではなくエラーになります。環境変数の列挙順は決�
 しまうことはありません:
 
 ```jsonc
-{"a": 1/*x*/2}   // 構文エラー — 数値 12 にはなりません
+{"a": 1/*x*/2}   // syntax error — NOT the number 12
 ```
+
+### JSON5 は前処理ではなくスキャンします
+
+JSON5 はトークンの文法そのものを変えます — クォートなしの識別子キー、シングルクォート、
+16 進整数、行継続。そのため `adapters::json5` は JSON デコーダーの前段に置くプリプロセッサーでは
+なく、手書きのスキャナーと再帰下降パーサーであり、追加の依存も不要です。受け付ける文法は、
+リファレンス実装（npm の json5 パッケージ）が定義する JSON5 1.0.0 です。マッピング仕様が JSON5
+より厳しい箇所では仕様が優先します: 整数は `i64` に収まる必要があり（F0.5）、`Infinity` / `NaN`
+はエラー（F0.6）、対になっていない `\uXXXX` サロゲートはエラー（F3.5）、重複キーは HOCON の
+意味論に従います — オブジェクトはマージされ、それ以外は後の値が優先されます（F0.7）。
 
 ### YAML のスカラー解決はライブラリの答えです
 
@@ -476,9 +696,8 @@ YAML については、スカラーの解決はこのクレートではなくラ
 - **`include classpath(...)`** は未対応です。これは JVM 固有の include 形式で、Java ランタイム外には同等の仕組みがありません。
 - **監視/リロード機能なし** — 設定はロード時に解析されます。ライブリロードには、変更時に `parse()` や `parse_file()` を再度呼び出してください。
 - **ストリーミングパーサーなし** — 入力全体がメモリに読み込まれます。
-- **`.properties` include** — 基本的な `key=value` 形式のみ対応。複数行値（バックスラッシュ継続）、Unicode エスケープ、キーエスケープには対応していません。
 
-API の詳細ドキュメントは [docs.rs](https://docs.rs/hocon-parser)（クレート公開後に利用可能）を参照してください。
+API の詳細ドキュメントは [docs.rs](https://docs.rs/hocon-parser) を参照してください。
 
 ## セキュリティに関する注意
 
@@ -486,10 +705,18 @@ API の詳細ドキュメントは [docs.rs](https://docs.rs/hocon-parser)（ク
 
 - **include のパストラバーサル:** `include "../../../etc/passwd"` は `base_dir` からの相対パスで解決されます。信頼できない入力を解析する場合は、include パスを検証してください。
 - **入力サイズ:** パーサーには入力サイズの制限がありません。信頼できない入力の場合は、`parse()` を呼ぶ前にサイズを検証してください。
+- **ドキュメントのネスト深度:** オブジェクトと配列のネストは 128 段までに制限されており、
+  `parse` と `from_map` の両方で強制されます。ランタイム自身の再帰エラーを捕捉する兄弟実装と
+  異なり、Rust でスタックを使い切ると `SIGABRT` になります — 呼び出し元のプロセスごと落ち、
+  `catch_unwind` でも止められないため、制限はオーバーフローの後ではなく前に置く必要があります。
+  128 は `serde_json` の制限で、`jsonc` アダプターが以前から強制しているものであり、spawn した
+  スレッドが得る 2 MiB のスタックでも保たれます。
+- **マッピングされるパスの深さ:** 環境変数の `__` セグメントと `.properties` のドット区切りキーは
+  64 セグメントまでに制限されます。ts.hocon と py.hocon と同じです。
 
 ## ライセンス
 
-Apache License 2.0 — [LICENSE](LICENSE) を参照。
+[Apache License, Version 2.0](LICENSE) の下でライセンスされています。
 
 ## 帰属
 
