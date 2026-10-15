@@ -363,6 +363,18 @@ fn plus_and_number_lex_match_lightbend() {
         parse("1.5 = [1]\n1.5+= 2").is_err(),
         "1.5+= 2 must be rejected"
     );
+    assert!(
+        parse("1e+5 = [1]\n1e+5+= 2").is_err(),
+        "1e+5+= 2 must be rejected"
+    );
+    assert_eq!(
+        parse("1e+5 = [1]\n1e+5 += 2")
+            .unwrap()
+            .get_list("\"1e+5\"")
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(
         parse("1 = [1]\n1 += 2")
             .unwrap()
