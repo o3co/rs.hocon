@@ -788,9 +788,18 @@ impl Config {
         if value_contains_placeholder(node) {
             return Err(not_resolved(path));
         }
-        crate::serde::from_value(node).map_err(|e| ConfigError {
-            message: e.message,
-            path: path.to_string(),
+        crate::serde::from_value(node).map_err(|e| {
+            // Re-render the lookup path in the same form as the decode path,
+            // so a key such as `"servers[0]"` is not misread as an index.
+            let prefix = split_config_path(path)
+                .iter()
+                .map(|k| crate::render_hocon::render_path_key(k))
+                .collect::<Vec<_>>()
+                .join(".");
+            ConfigError {
+                message: e.message,
+                path: crate::serde::join_path(&prefix, &e.path),
+            }
         })
     }
 }
