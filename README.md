@@ -263,6 +263,36 @@ let ports: Vec<u16> = config.get_as("ports")?;
 let server: ServerConfig = config.deserialize()?;
 ```
 
+Unit values — durations, byte sizes and periods — read with the same rules as
+`get_duration` / `get_bytes` / `get_period`, through a `with` module per unit.
+Range limits stay with the field's type:
+
+```rust
+use std::time::Duration;
+
+#[derive(Deserialize)]
+struct Session {
+    #[serde(with = "hocon::serde::duration")]
+    lifetime: Duration,          // lifetime = 30m
+    #[serde(with = "hocon::serde::bytes")]
+    max_body: u64,               // max_body = 64KiB (any T: TryFrom<i64>)
+    #[serde(with = "hocon::serde::period")]
+    retention: hocon::Period,    // retention = 2w
+    #[serde(default, with = "hocon::serde::duration::option")]
+    idle_timeout: Option<Duration>,  // null or missing → None
+}
+```
+
+A decode error names the failing key: `DeserializeError::path` (and
+`ConfigError::path` from `from_str` / `get_as`) is `session.lifetime`,
+`servers[0].port`, … The helpers read a HOCON value exactly as the getters do.
+Where serde buffers it (`#[serde(flatten)]`, untagged and internally tagged
+enums) they accept and reject the same values, a number-valued duration can come
+out a rounding step apart (typically 1 ns, up to ~1 µs near 10^13 ms), and the
+error path stops at the buffered object. With another self-describing
+deserializer (serde_json, …) a number is read from its value — an integer as an
+integer, a float as a float.
+
 ## Error Types
 
 | Type | When |

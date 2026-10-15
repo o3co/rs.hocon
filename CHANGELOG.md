@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Serde helpers for HOCON unit values** (xx.hocon#102):
+  `hocon::serde::duration`, `hocon::serde::bytes` and `hocon::serde::period`,
+  for `#[serde(with = "...")]`, each with an `::option` variant (`null` →
+  `None`; add `#[serde(default)]` for a missing key). They read `30m`,
+  `64KiB` and `2w` with the same rules as `get_duration` / `get_bytes` /
+  `get_period` — both go through one reader — so bare numbers keep the
+  getters' meaning (ms / bytes / days), byte sizes are non-negative and
+  periods integer-only. `bytes` reads into any `T: TryFrom<i64>`, so the
+  field type sets the range (`u8` rejects `1k`). A HOCON value reads exactly
+  as through the getter: the HOCON deserializers hand the helpers a number's
+  source text. Where serde buffers the input (`#[serde(flatten)]`, untagged
+  and internally tagged enums) the helpers accept and reject the same values
+  as the getter, but a number-valued duration can come out a rounding step
+  apart — typically 1 ns, up to ~1 µs near 10^13 ms (the reader rounds
+  exponent and decimal spellings differently) — and the error path stops at
+  the buffered object. With another self-describing deserializer
+  (serde_json, …) a number is read from its value: an integer as an
+  integer, a float as a float (`1.0` is not a byte count).
+
 ### Changed
 
 - **Serde decode errors now name the failing key** (xx.hocon#102).
