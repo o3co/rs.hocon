@@ -159,7 +159,9 @@ const MAX_DURATION_NANOS: u128 = u64::MAX as u128 * 1_000_000_000 + 999_999_999;
 /// (possibly empty), the number is what precedes it, without surrounding
 /// HOCON whitespace. Taking the unit from the end is what tells an exponent
 /// from a unit: `1e3` is the number 1e3 with no unit, `2E2KiB` is 2E2 KiB,
-/// and `1E` is one exabyte.
+/// and `1E` is one exabyte. "Letter" is `char::is_alphabetic`, a superset of
+/// Java's `isLetter`; every unit and every number character is ASCII, so the
+/// difference only changes which branch rejects an already invalid string.
 fn split_number_unit(s: &str) -> (&str, &str) {
     let s = trim_hocon_ws(s);
     let unit_start = s
@@ -207,8 +209,8 @@ fn duration_from(value: &Decimal, nanos_per_unit: u128) -> Result<Duration, Unit
 
 /// Parse a HOCON duration string into a [`Duration`].
 ///
-/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
-/// exponent, read exactly (E20: `1.001s` is 1001 ms, not the binary-float
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal, exponent
+/// included (`Decimal::parse`), read exactly (E20: `1.001s` is 1001 ms, not the binary-float
 /// 1000.999999 ms). `std::time::Duration` is unsigned, so a negative value is
 /// an error (rs-specific; the ud06 conformance test asserts it).
 fn parse_duration(s: &str) -> Result<Duration, UnitError> {
@@ -311,8 +313,8 @@ fn bytes_unit_multiplier(unit: &str) -> Option<u128> {
 
 /// Parse a HOCON byte-size string into a byte count.
 ///
-/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
-/// exponent. The product is exact and then truncated toward zero, as
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal, exponent
+/// included (`Decimal::parse`). The product is exact and then truncated toward zero, as
 /// Lightbend's `BigDecimal.toBigInteger()` does (E20: `1.001kB` is 1001,
 /// `1.0009kB` is 1000). `None` past the `i64` range.
 ///

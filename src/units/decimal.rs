@@ -30,7 +30,9 @@ impl Decimal {
     /// Parse a number in Java's `double` grammar, as Lightbend reads the
     /// number part of a unit value: `[+-]? (digits [. digits?] | . digits)`
     /// with an optional `[eE] [+-]? digits` exponent (`1e+5`, `1.e3`, `.5`).
-    /// Returns `None` for anything else (`1e3.5`, `1e`, `inf`).
+    /// Returns `None` for anything else (`1e3.5`, `1e`, `inf`, hex). The JVM's
+    /// `d` / `f` type suffix (`Double.parseDouble("1e2d")`) is not adopted
+    /// (E20): there it would be a unit.
     pub(super) fn parse(s: &str) -> Option<Decimal> {
         let (negative, rest) = match s.as_bytes().first() {
             Some(b'-') => (true, &s[1..]),

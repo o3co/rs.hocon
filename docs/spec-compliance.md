@@ -830,8 +830,8 @@ rs.hocon status per-item:
   tests: tests/e19_float_overflow_test.rs
   status: ✅ — deliberate divergence from Lightbend (which turns it into `Infinity`); the serde deserializers also refuse a non-finite `f64` (xx.hocon#97)
 - **E20** Unit arithmetic is exact decimal: number × unit from the source digits, truncated toward zero
-  tests: src/units/decimal.rs (unit tests); src/units.rs (exact_arithmetic_e20, number_value_reads_by_value_not_spelling, read_bytes_number_is_exact_and_truncated); tests/units_default_test.rs (ud09–ud11, ub07–ub08)
-  status: ✅ — duration and bytes, strings and number values, every unit including Z / Y (xx.hocon#103)
+  tests: src/units/decimal.rs (unit tests); src/units.rs (exact_arithmetic_e20, number_value_reads_by_value_not_spelling, read_bytes_number_is_exact_and_truncated, exponent_forms_in_unit_values, huge_exponents_end_fast); tests/units_default_test.rs (ud09–ud11, ub07–ub08, ud14–ud20, ub09–ub13)
+  status: ✅ — duration and bytes, strings and number values, every unit including Z / Y (xx.hocon#103); exponent forms in unit values (xx.hocon#111)
 - **E21** A duration the implementation cannot represent is an error, with one range for every spelling
   tests: src/units.rs (parse_duration_range_is_all_of_duration, parse_duration_past_u64_nanos_is_a_value); tests/units_default_test.rs (ud12–ud13)
   status: ✅ — rs's range is all of `std::time::Duration` (`u64::MAX` s + 999,999,999 ns) (xx.hocon#105)
