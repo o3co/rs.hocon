@@ -46,8 +46,8 @@ pub(crate) enum UnitError {
     InvalidDuration,
     NegativeDuration,
     DurationTooLarge,
-    /// A number scalar that is not an integer (`1.5`, `1e3`): a bare byte
-    /// count must be a whole number of bytes.
+    /// A number scalar whose text is not a number (only a scalar built in
+    /// code can be one).
     ExpectedBytes,
     InvalidBytes,
     NegativeBytes,
@@ -90,13 +90,24 @@ pub(crate) fn read_duration(raw: &str, ty: ScalarType) -> Result<Duration, UnitE
     parse_duration(raw)
 }
 
-/// Read a scalar as a byte count. A number scalar must be a whole number of
-/// bytes; a string goes through the byte-size grammar (`512 MB`, `1.5 KiB`).
+/// Read a scalar as a byte count. A number scalar is bytes (`1e3` is 1000,
+/// `1.5` is 1); a string goes through the byte-size grammar (`512 MB`,
+/// `1.5 KiB`). Either way the product is exact and truncated toward zero (E20).
 /// The result is never negative (ub04: Lightbend `getBytesBigInteger` rejects
 /// negative sizes on both paths).
 pub(crate) fn read_bytes(raw: &str, ty: ScalarType) -> Result<i64, UnitError> {
     let n = if ty == ScalarType::Number {
-        raw.parse::<i64>().map_err(|_| UnitError::ExpectedBytes)?
+        // A number value is bytes, read from the literal as written, exponent
+        // included, exactly and truncated toward zero (S18.1, E20): `1.5` is 1.
+        let value = Decimal::parse(trim_hocon_ws(raw), true).ok_or(UnitError::ExpectedBytes)?;
+        let magnitude = i128::try_from(value.mul_trunc(1).ok_or(UnitError::InvalidBytes)?)
+            .map_err(|_| UnitError::InvalidBytes)?;
+        i64::try_from(if value.is_negative() {
+            -magnitude
+        } else {
+            magnitude
+        })
+        .map_err(|_| UnitError::InvalidBytes)?
     } else {
         parse_bytes(raw).ok_or(UnitError::InvalidBytes)?
     };
@@ -584,18 +595,29 @@ mod tests {
     }
 
     #[test]
-    fn read_bytes_number_must_be_integer() {
+    fn read_bytes_number_is_exact_and_truncated() {
+        // E20 for number values (S18.1); Lightbend `longValue()` agrees.
         assert_eq!(read_bytes("1024", ScalarType::Number), Ok(1024));
-        assert_eq!(
-            read_bytes("1.5", ScalarType::Number),
-            Err(UnitError::ExpectedBytes)
-        );
-        assert_eq!(
-            read_bytes("1e3", ScalarType::Number),
-            Err(UnitError::ExpectedBytes)
-        );
-        // The same text as a string goes through the grammar (truncates).
+        assert_eq!(read_bytes("1.5", ScalarType::Number), Ok(1));
+        assert_eq!(read_bytes("1e3", ScalarType::Number), Ok(1000));
+        assert_eq!(read_bytes("1.999", ScalarType::Number), Ok(1));
         assert_eq!(read_bytes("1.5", ScalarType::String), Ok(1));
+        assert_eq!(
+            read_bytes("9223372036854775808", ScalarType::Number),
+            Err(UnitError::InvalidBytes)
+        );
+        // Truncation first: -0.5 is 0 bytes (as the string path and Lightbend
+        // read it); -1.5 is -1, which is negative.
+        assert_eq!(read_bytes("-0.5", ScalarType::Number), Ok(0));
+        assert_eq!(
+            read_bytes("-1.5", ScalarType::Number),
+            Err(UnitError::NegativeBytes)
+        );
+        // Text no number literal has (a number scalar built in code).
+        assert_eq!(
+            read_bytes("512 MB", ScalarType::Number),
+            Err(UnitError::ExpectedBytes)
+        );
     }
 
     #[test]

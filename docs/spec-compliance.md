@@ -666,7 +666,7 @@ same item descriptions verbatim.
 - **S18.1** Number value taken as default unit — §Units format (L1279)
   tests: src/config.rs:813 (get_bytes_plain); src/config.rs:720 (get_duration_nanoseconds)
   status: ✅
-  notes: A number-valued duration is read from the literal as written, exponent included, exactly (extra-spec E20). rs-specific: a bare byte-size number must be an integer (`b = 1.5` and `b = 1e3` are errors, where Lightbend's `longValue()` reads 1 and 1000).
+  notes: A number value is read from the literal as written, exponent included, exactly (extra-spec E20): a duration truncates at the nanosecond, a byte size toward zero (`b = 1.5` is 1, `b = 1e3` is 1000, matching Lightbend's `longValue()`).
 - **S18.2** String parsed as: optional ws + number + ws + unit + ws — §Units format (L1281-1294)
   tests: src/config.rs:783 (get_duration_no_space); src/config.rs:867 (get_bytes_no_space)
   status: ✅

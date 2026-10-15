@@ -12,8 +12,8 @@
 //! # Getting the source text
 //!
 //! A getter reads a scalar's source text, and the text matters for numbers:
-//! `1e3` is 1000 ms as a duration but not a byte count (a bare byte count must
-//! be written as an integer). A helper only sees a `Deserializer`, so it asks
+//! `0.99999999999999999` ms is exactly 999999 ns, while the nearest double
+//! is 1.0 (1 ms). A helper only sees a `Deserializer`, so it asks
 //! for the text with a private `deserialize_newtype_struct` name that the HOCON
 //! deserializers answer with the scalar's text and type; the result is then
 //! exactly the getter's.
@@ -306,8 +306,8 @@ pub mod duration {
 
 /// Read a HOCON byte size (`64KiB`, `512 MB`, `1.5G`) into any integer type
 /// `T: TryFrom<i64>`, with the rules of
-/// [`Config::get_bytes`](crate::Config::get_bytes): a bare number is bytes
-/// and must be an integer, byte sizes are non-negative. The field's type sets
+/// [`Config::get_bytes`](crate::Config::get_bytes): a bare number is bytes,
+/// fractions truncate toward zero, byte sizes are non-negative. The field's type sets
 /// the range — a size that does not fit `T` is an error.
 ///
 /// ```

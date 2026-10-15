@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   getter can accept what the buffered helper rejects. The error path stops
   at the buffered object. With another self-describing deserializer
   (serde_json, …) a number is read from its value: an integer as an
-  integer, a float as a float (`1.0` is not a byte count).
+  integer, a float as a float.
 
 ### Changed
 
@@ -38,9 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration). `1.001s` is now exactly 1001 ms (Lightbend, and rs until now:
   1000999999 ns), `2.3h` exactly 8280000 ms, `1.001kB` 1001 bytes (was 1000;
   Lightbend parity). It applies to strings with and without a unit (S18.4),
-  to number-valued durations (S18.1), and to every byte unit including
-  Z / Y. A bare byte-size number stays integer-only, as before (`b = 1.5` is
-  an error; E20 and Lightbend would read 1) — a deliberate rs rule. A
+  to number values (S18.1), and to every byte unit including Z / Y. A
+  number-valued byte size is no longer integer-only: `b = 1.5` reads 1 and
+  `b = 1e3` 1000 (both were errors; Lightbend `longValue()` agrees). A
   number value now reads by its value, not its spelling: `2.05e0` and `2.05`
   give the same duration (they could differ by a nanosecond), so a buffered
   serde helper reads what the getter reads. A negative number value that is
