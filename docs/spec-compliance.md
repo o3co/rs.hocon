@@ -666,6 +666,7 @@ same item descriptions verbatim.
 - **S18.1** Number value taken as default unit — §Units format (L1279)
   tests: src/config.rs:813 (get_bytes_plain); src/config.rs:720 (get_duration_nanoseconds)
   status: ✅
+  notes: A number-valued duration is read from the literal as written, exponent included, exactly (extra-spec E20). rs-specific: a bare byte-size number must be an integer (`b = 1.5` and `b = 1e3` are errors, where Lightbend's `longValue()` reads 1 and 1000).
 - **S18.2** String parsed as: optional ws + number + ws + unit + ws — §Units format (L1281-1294)
   tests: src/config.rs:783 (get_duration_no_space); src/config.rs:867 (get_bytes_no_space)
   status: ✅
@@ -673,9 +674,9 @@ same item descriptions verbatim.
   tests: tests/spec_phase5.rs (s18_3_unit_with_digit_rejected; s18_3_unit_with_hyphen_rejected; s18_3_valid_letter_only_unit_accepted)
   status: ✅
 - **S18.4** String with no unit → interpreted with default unit — §Units format (L1290)
-  tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_spec_duration_string_no_unit_uses_default); tests/units_default_test.rs (ud01–ud08, up01–up05, ub01–ub06, un01–un03)
+  tests: tests/spec_phase5.rs (s18_4_bytes_string_no_unit_uses_default; s18_4_spec_duration_string_no_unit_uses_default); tests/units_default_test.rs (ud01–ud13, up01–up05, ub01–ub08, un01–un03)
   status: ✅
-  notes: All three families (duration→ms, period→days, bytes→bytes) now treat a bare number string as the default unit. `parse_duration` and `parse_bytes` use HOCON_WS trim and integer pre-classification. `parse_bytes` truncates fractional values per Lightbend `BigDecimal.toBigInteger()`. `get_bytes` rejects negative byte sizes at the accessor (positive-only invariant). `get_period`/`get_period_option` accessors added (net-new, return `(years: i32, months: i32, days: i32)`). rs-specific: `get_duration` returns `Err` for negative inputs (`std::time::Duration` is unsigned; see CHANGELOG).
+  notes: All three families (duration→ms, period→days, bytes→bytes) now treat a bare number string as the default unit. `parse_duration` and `parse_bytes` (src/units.rs) use HOCON_WS trim and compute the number × unit as an exact decimal, truncated toward zero (extra-spec E20: `1.001s` is 1001 ms; bytes match Lightbend `BigDecimal.toBigInteger()`). A duration past `std::time::Duration` is an error, however it is spelled (extra-spec E21). `get_bytes` rejects negative byte sizes at the accessor (positive-only invariant). `get_period`/`get_period_option` accessors added (net-new, return `(years: i32, months: i32, days: i32)`). rs-specific: `get_duration` returns `Err` for negative inputs (`std::time::Duration` is unsigned; see CHANGELOG).
 
 ## S19. Duration format
 
@@ -708,20 +709,21 @@ same item descriptions verbatim.
 ## S20. Period format
 
 rs.hocon exposes `get_period` / `get_period_option` returning a `Period { years, months, days }`
-struct. ts and go remain ➖ (no period accessor).
+struct. All four implementations read periods (ts and go flipped ➖ → ✅ in
+xx.hocon#102; see the compliance matrix).
 
 - **S20.1** `d` / `day` / `days` — §Period Format (L1327)
-  tests: src/config.rs (parse_period_days_explicit, parse_period_bare_integer_uses_days_default); tests/units_default_test.rs (up01_period_bare, up02_period_leading_trailing_ws)
-  status: ✅ (rs.hocon) / ➖ (ts, go)
+  tests: src/units.rs (parse_period_days_explicit, parse_period_bare_integer_uses_days_default); tests/units_default_test.rs (up01_period_bare, up02_period_leading_trailing_ws)
+  status: ✅
 - **S20.2** `w` / `week` / `weeks` — §Period Format (L1328)
-  tests: src/config.rs (parse_period_weeks_unit); tests/units_default_test.rs (up05_period_with_unit)
-  status: ✅ (rs.hocon) / ➖ (ts, go)
+  tests: src/units.rs (parse_period_weeks_unit); tests/units_default_test.rs (up05_period_with_unit)
+  status: ✅
 - **S20.3** `m` / `mo` / `month` / `months` — §Period Format (L1329)
-  tests: src/config.rs (parse_period_months_unit)
-  status: ✅ (rs.hocon) / ➖ (ts, go)
+  tests: src/units.rs (parse_period_months_unit)
+  status: ✅
 - **S20.4** `y` / `year` / `years` — §Period Format (L1333)
-  tests: src/config.rs (parse_period_years_unit)
-  status: ✅ (rs.hocon) / ➖ (ts, go)
+  tests: src/units.rs (parse_period_years_unit)
+  status: ✅
 
 ## S21. Size in bytes format
 
@@ -730,7 +732,7 @@ struct. ts and go remain ➖ (no period accessor).
   status: ✅
 - **S21.2** Powers of 10 (kB, MB, GB, TB, PB, EB, ZB, YB + long forms) — §Size in bytes format (L1365)
   tests: src/config.rs (get_bytes_kilobytes and siblings); tests/spec_s21_lightbend_units.rs (PB–YB, case-sensitivity)
-  status: ✅ — the prior ✅ over-claimed: the table stopped at TB and was keyed `KB`, which Lightbend rejects (its kilo-decimal spelling is `kB` — probe 2026-08-18, four-impl units audit). Aligned to the exact case-sensitive reference set; ZB/YB (multipliers past i64) route through the float path, where any count ≥ 1 overflows exactly as it does in Lightbend.
+  status: ✅ — the prior ✅ over-claimed: the table stopped at TB and was keyed `KB`, which Lightbend rejects (its kilo-decimal spelling is `kB` — probe 2026-08-18, four-impl units audit). Aligned to the exact case-sensitive reference set; ZB/YB (multipliers past i64) take the same exact-decimal path as every unit (E20), where any count ≥ 1 overflows exactly as it does in Lightbend.
 - **S21.3** Powers of 2 (K/Ki/KiB, M/Mi/MiB, ...) — §Size in bytes format (L1376)
   tests: src/config.rs (get_bytes_kibibytes and siblings); tests/spec_s21_lightbend_units.rs (Pi–Yi, `kiB`/`ki` rejected)
   status: ✅ — extended 2026-08-18 through `Yi`/`YiB` + long forms, capital-first exactly per Lightbend.
