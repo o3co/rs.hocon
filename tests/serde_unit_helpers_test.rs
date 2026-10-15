@@ -422,3 +422,31 @@ fn buffered_number_beyond_double_precision_reads_the_double() {
         assert_ne!(getter, buffered, "literal {}", lit);
     }
 }
+
+#[test]
+fn buffered_negative_underflow_reads_as_zero() {
+    // Pinned exception: `-1e-400` underflows the double to `-0.0`, which
+    // cannot be told from a literal `-0` (zero, accepted by the getter), so a
+    // buffered duration reads zero where the getter reports a negative value.
+    let src = "v = -1e-400";
+    let err = parse(src).unwrap().get_duration("v").unwrap_err();
+    assert!(
+        err.message.starts_with("negative duration"),
+        "{}",
+        err.message
+    );
+    let buffered = hocon::from_str::<Flat<D>>(src).unwrap().inner.v;
+    assert_eq!(buffered, Duration::ZERO);
+    // The literal `-0` reads as zero both ways.
+    assert_eq!(
+        parse("v = -0").unwrap().get_duration("v").unwrap(),
+        Duration::ZERO
+    );
+    assert_eq!(
+        hocon::from_str::<Flat<D>>("v = -0").unwrap().inner.v,
+        Duration::ZERO
+    );
+    // Bytes truncate first, so the two agree: zero.
+    assert_eq!(parse(src).unwrap().get_bytes("v").unwrap(), 0);
+    assert_eq!(hocon::from_str::<Flat<B>>(src).unwrap().inner.v, 0);
+}

@@ -289,7 +289,8 @@ A decode error names the failing key: `DeserializeError::path` (and
 Where serde buffers it (`#[serde(flatten)]`, untagged and internally tagged
 enums) they read the same values — except a number literal that is not an i64
 integer and has more than 15 significant digits, which is buffered as the
-nearest double — and the error path stops at the buffered object. With another self-describing
+nearest double, and a negative number that underflows the double (`-1e-400`),
+buffered as `-0.0` — and the error path stops at the buffered object. With another self-describing
 deserializer (serde_json, …) a number is read from its value — an integer as an
 integer, a float as a float.
 

@@ -28,6 +28,9 @@
 //! i64 integer and has more than 15 significant digits: it is buffered as
 //! the nearest double and reads as that — slightly differently, and near the
 //! top of the range the getter can accept what the buffered helper rejects.
+//! Likewise a negative number that underflows the double (`-1e-400`) is
+//! buffered as `-0.0`, which a duration reads as zero; the getter reports a
+//! negative duration.
 //!
 //! Formats that are not self-describing (bincode, postcard) cannot use the
 //! helpers, and serde_json built with `arbitrary_precision` hands over floats
