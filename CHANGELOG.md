@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serde helper reads what the getter reads. A negative number value that is
   not an i64 integer (`-1.5`, `-2e-14`) now reports `negative duration`
   (was `invalid duration`).
+- **One duration range** (extra-spec E21, xx.hocon#105; deliberate
+  divergence from Lightbend, which saturates). A duration is accepted up to
+  what `std::time::Duration` holds (`u64::MAX` seconds + 999,999,999 ns),
+  however it is spelled, and is an error past it — never saturated or
+  wrapped. Before, a string stopped at `u64::MAX` nanoseconds (~584 years)
+  while a number reached further; strings past 584 years now read. An
+  overflowing string reports `duration too large` (was `invalid duration`).
 - **Serde decode errors now name the failing key** (xx.hocon#102).
   `DeserializeError` gains a `path` field — a HOCON path relative to the
   deserialized value (`server.port`, `servers[0].host`, `m."web.api"`; empty

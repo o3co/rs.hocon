@@ -73,7 +73,7 @@ impl std::fmt::Display for UnitError {
 /// Read a scalar as a [`Duration`]. `raw` is the scalar's source text and `ty`
 /// its type: a string goes through the duration grammar (`30m`, `100 ms`), a
 /// number is milliseconds and may use an exponent (`1e3`). Either way the
-/// arithmetic is exact (E20).
+/// arithmetic is exact (E20) and the range is [`MAX_DURATION_NANOS`] (E21).
 pub(crate) fn read_duration(raw: &str, ty: ScalarType) -> Result<Duration, UnitError> {
     if ty == ScalarType::Number {
         // A number value is milliseconds, read from the literal as written,
@@ -84,7 +84,7 @@ pub(crate) fn read_duration(raw: &str, ty: ScalarType) -> Result<Duration, UnitE
             if value.is_negative() {
                 return Err(UnitError::NegativeDuration);
             }
-            return duration_from(&value, 1_000_000, MAX_DURATION_NANOS);
+            return duration_from(&value, 1_000_000);
         }
     }
     parse_duration(raw)
@@ -137,7 +137,10 @@ fn is_integer_str(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
-/// The longest duration `std::time::Duration` holds, in nanoseconds.
+/// The longest duration `std::time::Duration` holds, in nanoseconds. This is
+/// rs's one duration range (E21): every spelling of a duration — quoted or
+/// not, integer or fractional, any unit — is accepted up to here and is an
+/// error past it, never saturated or wrapped.
 const MAX_DURATION_NANOS: u128 = u64::MAX as u128 * 1_000_000_000 + 999_999_999;
 
 /// Split `[ws] number [ws] [unit] [ws]` into the number and the unit. The
@@ -172,16 +175,12 @@ fn duration_unit_nanos(unit: &str) -> Option<u128> {
 }
 
 /// `value × nanos_per_unit` as a [`Duration`]: the exact product, truncated
-/// toward zero at the nanosecond (E20), or an error past `max_nanos`.
-/// `value` must not be negative.
-fn duration_from(
-    value: &Decimal,
-    nanos_per_unit: u128,
-    max_nanos: u128,
-) -> Result<Duration, UnitError> {
+/// toward zero at the nanosecond (E20), or an error past
+/// [`MAX_DURATION_NANOS`] (E21). `value` must not be negative.
+fn duration_from(value: &Decimal, nanos_per_unit: u128) -> Result<Duration, UnitError> {
     let nanos = value
         .mul_trunc(nanos_per_unit)
-        .filter(|&n| n <= max_nanos)
+        .filter(|&n| n <= MAX_DURATION_NANOS)
         .ok_or(UnitError::DurationTooLarge)?;
     Ok(Duration::new(
         (nanos / 1_000_000_000) as u64,
@@ -202,8 +201,7 @@ fn parse_duration(s: &str) -> Result<Duration, UnitError> {
     if value.is_negative() {
         return Err(UnitError::InvalidDuration);
     }
-    // A string stops at u64 nanoseconds.
-    duration_from(&value, nanos_per_unit, u64::MAX as u128).map_err(|_| UnitError::InvalidDuration)
+    duration_from(&value, nanos_per_unit)
 }
 
 /// Parse a HOCON period string into a `(years, months, days)` tuple.
@@ -403,9 +401,38 @@ mod tests {
     }
 
     #[test]
-    fn parse_duration_fractional_above_u64_max_is_none() {
-        // 2^64 nanos exactly — just past the string range.
-        assert!(parse_duration("18446744073709551616ns").ok().is_none());
+    fn parse_duration_past_u64_nanos_is_a_value() {
+        // E21: rs's range is all of std::time::Duration, so 2^64 ns (past u64
+        // nanoseconds) is still a duration, as it always was for a number.
+        let d = parse_duration("18446744073709551616ns").unwrap();
+        assert_eq!(d.as_nanos(), 1u128 << 64);
+    }
+
+    #[test]
+    fn parse_duration_range_is_all_of_duration() {
+        assert_eq!(
+            parse_duration("1000000000000000000000 d"),
+            Err(UnitError::DurationTooLarge)
+        );
+        let max = Duration::new(u64::MAX, 999_999_999);
+        assert_eq!(parse_duration("18446744073709551615999999999ns"), Ok(max));
+        assert_eq!(
+            parse_duration("18446744073709551616000000000ns"),
+            Err(UnitError::DurationTooLarge)
+        );
+        // Quoted and unquoted forms of one value share the range (E21).
+        assert_eq!(
+            read_duration("18446744073709551615999.999999", ScalarType::Number),
+            Ok(max)
+        );
+        assert_eq!(
+            read_duration("18446744073709551616000", ScalarType::Number),
+            Err(UnitError::DurationTooLarge)
+        );
+        assert_eq!(
+            read_duration("18446744073709551616000", ScalarType::String),
+            Err(UnitError::DurationTooLarge)
+        );
     }
 
     #[test]
