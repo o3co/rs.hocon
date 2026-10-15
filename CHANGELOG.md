@@ -24,8 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   getter, except for a number literal that is not an i64 integer and has
   more than 15 significant digits: it is buffered as the nearest double, so
   it can read slightly differently, and near the top of the range the
-  getter can accept what the buffered helper rejects. The error path stops
-  at the buffered object. With another self-describing deserializer
+  getter can accept what the buffered helper rejects; and a negative number
+  that underflows the double (`-1e-400`) is buffered as `-0.0`, so a
+  duration reads it as zero where the getter reports a negative duration.
+  The error path stops at the buffered object. With another self-describing deserializer
   (serde_json, …) a number is read from its value: an integer as an
   integer, a float as a float.
 
