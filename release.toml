@@ -1,7 +1,6 @@
-# cargo-release configuration
-# Release flow: cargo release patch|minor|major
-# This bumps Cargo.toml, commits, tags (v*), and pushes.
-# CI handles `cargo publish` on tag push.
+# cargo-release configuration (legacy). The release flow no longer uses
+# cargo-release: see "Releasing" in CONTRIBUTING.md — a `chore(release)`
+# CHANGELOG commit, then a `v*` tag; publish.yml sets the version from the tag.
 
 publish = false
 push-remote = "origin"
