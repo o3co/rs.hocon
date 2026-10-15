@@ -605,7 +605,14 @@ mod tests {
         assert_eq!(parse_bytes("1e3e"), None); // 1000 exabytes: past i64
         assert_eq!(parse_bytes("2E2KiB"), Some(204_800));
         assert_eq!(parse_bytes("1.0005e3B"), Some(1000));
-        // Periods stay integer-only.
+        // A trailing `e` / `E` after an exponent is the exabyte unit
+        // (Lightbend `getUnits` takes the trailing letters).
+        assert_eq!(parse_bytes("1e-3e"), Some(1_152_921_504_606_846));
+        assert_eq!(parse_bytes("1e-3E"), Some(1_152_921_504_606_846));
+        assert_eq!(parse_bytes("1E"), Some(1_152_921_504_606_846_976));
+        assert_eq!(parse_bytes("2e1E"), None); // 20 EiB: past i64
+        assert_eq!(parse_bytes("1e3e3"), None); // invalid number part
+                                                // Periods stay integer-only.
         assert!(parse_period("1e2d").is_none());
         assert!(parse_period("1e2").is_none());
     }
