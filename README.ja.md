@@ -246,8 +246,8 @@ struct Session {
 デコードエラーには失敗したキーのパスが入ります: `DeserializeError::path`（`from_str` / `get_as` では
 `ConfigError::path`）が `session.lifetime`、`servers[0].port` などになります。helper は HOCON の値を
 getter と同じに読みます。serde が入力をバッファする `#[serde(flatten)]`・untagged / internally tagged enum の内側でも、
-受け付ける値と拒否する値は同じです。ただし、数値で書いた duration は丸めの分だけ（通常 1 ns、10^13 ms 付近では最大 ~1 µs）
-ずれることがあり、エラーのパスはバッファされたオブジェクトで止まります。
+getter と同じ値を読みます（i64 の整数ではなく、有効数字が 15 桁を超える数値リテラルだけは、最も近い double としてバッファされます）。
+ただし、エラーのパスはバッファされたオブジェクトで止まります。
 ほかの自己記述的な Deserializer（serde_json など）では数値を値として受け取り、整数は整数として、浮動小数点数は
 浮動小数点数として読みます。
 

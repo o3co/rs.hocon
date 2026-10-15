@@ -20,23 +20,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field type sets the range (`u8` rejects `1k`). A HOCON value reads exactly
   as through the getter: the HOCON deserializers hand the helpers a number's
   source text. Where serde buffers the input (`#[serde(flatten)]`, untagged
-  and internally tagged enums) the helpers accept and reject the same values
-  as the getter, but a number-valued duration can come out a rounding step
-  apart — typically 1 ns, up to ~1 µs near 10^13 ms (the reader rounds
-  exponent and decimal spellings differently) — and the error path stops at
-  the buffered object. With another self-describing deserializer
+  and internally tagged enums) the helpers read the same values as the
+  getter, except for a number literal that is not an i64 integer and has
+  more than 15 significant digits: it is buffered as the nearest double, so
+  it can read slightly differently, and near the top of the range the
+  getter can accept what the buffered helper rejects. The error path stops
+  at the buffered object. With another self-describing deserializer
   (serde_json, …) a number is read from its value: an integer as an
   integer, a float as a float (`1.0` is not a byte count).
 
 ### Changed
 
+- **Unit arithmetic is exact decimal** (extra-spec E20, xx.hocon#103;
+  deliberate divergence from Lightbend for durations). The number of a unit
+  value is read from its source text as an exact decimal and multiplied by
+  the unit exactly, then truncated toward zero (at the nanosecond for a
+  duration). `1.001s` is now exactly 1001 ms (Lightbend, and rs until now:
+  1000999999 ns), `2.3h` exactly 8280000 ms, `1.001kB` 1001 bytes (was 1000;
+  Lightbend parity). It applies to strings with and without a unit (S18.4),
+  to number-valued durations (S18.1), and to every byte unit including
+  Z / Y. A bare byte-size number stays integer-only, as before (`b = 1.5` is
+  an error; E20 and Lightbend would read 1) — a deliberate rs rule. A
+  number value now reads by its value, not its spelling: `2.05e0` and `2.05`
+  give the same duration (they could differ by a nanosecond), so a buffered
+  serde helper reads what the getter reads. A negative number value that is
+  not an i64 integer (`-1.5`, `-2e-14`) now reports `negative duration`
+  (was `invalid duration`).
 - **Serde decode errors now name the failing key** (xx.hocon#102).
   `DeserializeError` gains a `path` field — a HOCON path relative to the
   deserialized value (`server.port`, `servers[0].host`, `m."web.api"`; empty
   when the failure concerns the value itself) — and its `Display` reads
   `HOCON deserialization error at server.port: …`. `Config::get_as` joins it
-  onto its lookup path, rendered in the same form (`ConfigError.path` = `app.servers[0].port` instead of
-  `app.servers`), and `from_str` / `from_file` report it in `ConfigError.path`
+  onto its lookup path, rendered in the same form (`ConfigError.path` =
+  `app.servers[0].port` instead of `app.servers`), and `from_str` / `from_file` report it in `ConfigError.path`
   instead of an empty string. Code that compared `ConfigError.path` from
   these calls against the looked-up path, or matched on the `Display` text,
   sees the longer path. Where serde buffers the input (`#[serde(flatten)]`,

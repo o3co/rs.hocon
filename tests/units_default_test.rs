@@ -1,6 +1,6 @@
 //! S18.4 — string value with no unit → default unit — conformance tests.
 //!
-//! Fixtures: xx.hocon testdata/hocon/units-default/ (22 fixtures).
+//! Fixtures: xx.hocon testdata/hocon/units-default/ (27 fixtures).
 //! No expected sidecars — per-impl assertions carry the assertion burden (the xx.hocon
 //! generator does not yet support accessor-time output capture; see spec §Test strategy).
 //!
@@ -9,6 +9,7 @@
 //!   up01-up05  Period family  (bare int, WS, fractional-rejected, negative, regression)
 //!   ub01-ub06  Bytes family   (bare int, WS, fractional-truncated, negative-accessor, unit, empty)
 //!   un01-un03  Cross-family negative edge cases (empty, WS-only, unit-only)
+//!   ud09-ud11, ub07-ub08  E20 exact decimal unit arithmetic
 
 use std::path::PathBuf;
 
@@ -282,5 +283,64 @@ fn un03_unit_only_duration() {
     assert!(
         cfg.get_duration("t").is_err(),
         "un03: unit-only 'ms' must Err for getDuration (number required)"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E20 — unit arithmetic is exact decimal (ud09–ud11, ub07–ub08)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// ud09: `"1.001s"` → exactly 1001 ms (float path gives 1000999999 ns).
+#[test]
+fn ud09_duration_fractional_exact() {
+    let cfg = load("ud09-duration-fractional-exact.conf");
+    assert_eq!(
+        cfg.get_duration("t").unwrap(),
+        std::time::Duration::from_nanos(1_001_000_000),
+        "ud09 (E20): 1.001s must be exactly 1001 ms"
+    );
+}
+
+/// ud10: `"2.3h"` → exactly 8280000 ms.
+#[test]
+fn ud10_duration_fractional_exact_hours() {
+    let cfg = load("ud10-duration-fractional-exact-hours.conf");
+    assert_eq!(
+        cfg.get_duration("t").unwrap(),
+        std::time::Duration::from_millis(8_280_000),
+        "ud10 (E20): 2.3h must be exactly 8280000 ms"
+    );
+}
+
+/// ud11: `"1.001"` (no unit = ms) → exactly 1001000 ns.
+#[test]
+fn ud11_duration_fractional_exact_no_unit() {
+    let cfg = load("ud11-duration-fractional-exact-no-unit.conf");
+    assert_eq!(
+        cfg.get_duration("t").unwrap(),
+        std::time::Duration::from_nanos(1_001_000),
+        "ud11 (E20): 1.001 (ms) must be exactly 1001000 ns"
+    );
+}
+
+/// ub07: `"1.0009kB"` → 1000 (truncation toward zero, not rounding).
+#[test]
+fn ub07_bytes_fractional_unit_truncated() {
+    let cfg = load("ub07-bytes-fractional-unit-truncated.conf");
+    assert_eq!(
+        cfg.get_bytes("b").unwrap(),
+        1000,
+        "ub07 (E20): 1.0009kB must truncate to 1000"
+    );
+}
+
+/// ub08: `"1.001kB"` → 1001 (exact before truncation; float gives 1000).
+#[test]
+fn ub08_bytes_fractional_unit_exact() {
+    let cfg = load("ub08-bytes-fractional-unit-exact.conf");
+    assert_eq!(
+        cfg.get_bytes("b").unwrap(),
+        1001,
+        "ub08 (E20): 1.001kB must be exactly 1001"
     );
 }

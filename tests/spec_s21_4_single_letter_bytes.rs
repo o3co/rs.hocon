@@ -156,7 +156,7 @@ fn s21_4_f4_7e_succeeds() {
         result.is_ok(),
         "S21.4: '7.0E' must succeed — 7 × 2^60 = 8_070_450_532_247_928_832 < i64::MAX"
     );
-    // f64 truncation: 7.0 * 2^60 is exact in f64 (7 * 2^60 < 2^63 and 7 has only 3 bits)
+    // Exact decimal (E20): 7.0 × 2^60, truncated toward zero.
     assert_eq!(
         result.unwrap(),
         7 * 1_152_921_504_606_846_976_i64,

@@ -457,6 +457,9 @@ impl Config {
     /// Unit names are case-sensitive and must be lowercase (HOCON spec,
     /// S19.8): `"100 MS"` and `"100 Seconds"` are errors. This also applies
     /// to [`get_duration_option`](Self::get_duration_option).
+    ///
+    /// The arithmetic is exact (extra-spec E20): `"1.001s"` is exactly
+    /// 1001 ms, truncated toward zero at the nanosecond.
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),

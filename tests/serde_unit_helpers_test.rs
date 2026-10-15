@@ -347,18 +347,19 @@ const NUMBER_LITERALS: &[&str] = &[
     "9223372036854775808",
     "12345678901234567890",
     "18446744073709551616000",
-    // Spelling-sensitive for durations (see below): exponent vs decimal.
+    // Spelled differently from their buffered form (exponent vs decimal);
+    // E20 makes a number read by value, so they read alike.
     "2.05e0",
     "0.157e-1",
     "0.00000051",
     "0.0000999",
 ];
 
-/// Literals whose duration a buffered helper reads a nanosecond apart
-/// from the getter: the reader rounds a number written in exponent form
-/// (`from_secs_f64`) and one written as a decimal (`f * 1e6`, truncated)
-/// differently, and buffering re-spells the value.
-const DURATION_SPELLING_SENSITIVE: &[&str] = &["2.05e0", "0.157e-1", "0.00000051", "0.0000999"];
+/// Number literals whose nearest double differs from the digits written
+/// (more than 15 significant digits, not an i64 integer). A buffered helper
+/// sees the double, so a duration (whose arithmetic is exact, E20) reads the
+/// double's value. Bytes and period reject these either way.
+const BEYOND_DOUBLE_PRECISION: &[&str] = &["9223372036854775808", "12345678901234567890"];
 
 #[test]
 fn buffered_parity_with_the_getters() {
@@ -366,7 +367,7 @@ fn buffered_parity_with_the_getters() {
         .iter()
         .chain(&["30m", "\"64KiB\"", "2w", "null", "true"])
     {
-        if !DURATION_SPELLING_SENSITIVE.contains(lit) {
+        if !BEYOND_DOUBLE_PRECISION.contains(lit) {
             assert_buffered_parity(lit, |c| c.get_duration("v"), |w: D| w.v);
         }
         assert_buffered_parity(lit, |c| c.get_bytes("v"), |w: B| w.v);
@@ -401,15 +402,19 @@ fn unresolved_substitution_is_reported() {
 }
 
 #[test]
-fn buffered_duration_known_rounding_difference() {
-    // Pinned so the difference is visible: a buffered number-valued duration
-    // is re-spelled, and the reader's rounding depends on the spelling.
-    for lit in DURATION_SPELLING_SENSITIVE {
+fn buffered_number_beyond_double_precision_reads_the_double() {
+    // Pinned: the only buffered difference left after E20. The getter reads
+    // the 19–20 digits written; the buffered helper reads the nearest double.
+    for lit in BEYOND_DOUBLE_PRECISION {
         let src = format!("v = {}", lit);
         let getter = parse(&src).unwrap().get_duration("v").unwrap();
         let buffered = hocon::from_str::<Flat<D>>(&src).unwrap().inner.v;
+        let nearest_double: f64 = lit.parse().unwrap();
+        let expected = parse(&format!("v = {:?}", nearest_double))
+            .unwrap()
+            .get_duration("v")
+            .unwrap();
+        assert_eq!(buffered, expected, "literal {}", lit);
         assert_ne!(getter, buffered, "literal {}", lit);
-        let gap = getter.abs_diff(buffered);
-        assert!(gap <= Duration::from_nanos(1), "literal {}: {:?}", lit, gap);
     }
 }

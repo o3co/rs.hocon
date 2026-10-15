@@ -22,12 +22,12 @@
 //! internally tagged enums), and with any other self-describing deserializer
 //! (serde_json, …), the request falls back to the value: a string is read as
 //! it is, an integer as an integer and a float as a float (`1.0`, `1e21`), so
-//! the helpers accept and reject the same values as the getter. One
-//! difference remains for a buffered number-valued duration: the reader
-//! rounds a number written in exponent form differently from the same number
-//! written as a decimal, so the re-spelled value can come out a rounding step
-//! apart (a nanosecond for everyday values, up to about a microsecond near
-//! 10^13 ms).
+//! the helpers accept and reject the same values as the getter. A number
+//! reads by its value, not its spelling (E20), so a buffered number reads as
+//! the getter reads it. The exception is a number literal that is not an
+//! i64 integer and has more than 15 significant digits: it is buffered as
+//! the nearest double and reads as that — slightly differently, and near the
+//! top of the range the getter can accept what the buffered helper rejects.
 //!
 //! Formats that are not self-describing (bincode, postcard) cannot use the
 //! helpers, and serde_json built with `arbitrary_precision` hands over floats

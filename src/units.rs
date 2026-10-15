@@ -8,7 +8,10 @@
 
 use crate::lexer::is_hocon_whitespace;
 use crate::value::ScalarType;
+use decimal::Decimal;
 use std::time::Duration;
+
+mod decimal;
 
 /// A calendar period with year, month, and day components.
 ///
@@ -68,33 +71,23 @@ impl std::fmt::Display for UnitError {
 }
 
 /// Read a scalar as a [`Duration`]. `raw` is the scalar's source text and `ty`
-/// its type: a number scalar is also read as a bare number of milliseconds,
-/// including the forms the unit grammar does not cover (`1e3`).
+/// its type: a string goes through the duration grammar (`30m`, `100 ms`), a
+/// number is milliseconds and may use an exponent (`1e3`). Either way the
+/// arithmetic is exact (E20).
 pub(crate) fn read_duration(raw: &str, ty: ScalarType) -> Result<Duration, UnitError> {
-    if let Some(d) = parse_duration(raw) {
-        return Ok(d);
-    }
     if ty == ScalarType::Number {
-        if let Ok(n) = raw.parse::<i64>() {
-            if n < 0 {
+        // A number value is milliseconds, read from the literal as written,
+        // exponent included (S18.1, E20): `1e3` and `1000` are the same value.
+        // A number scalar built in code may carry text the parser never
+        // produces (`30s`); that still goes through the grammar below.
+        if let Some(value) = Decimal::parse(trim_hocon_ws(raw), true) {
+            if value.is_negative() {
                 return Err(UnitError::NegativeDuration);
             }
-            return Ok(Duration::from_millis(n as u64));
-        }
-        if let Ok(f) = raw.parse::<f64>() {
-            if f < 0.0 || !f.is_finite() {
-                return Err(UnitError::InvalidDuration);
-            }
-            let secs = f / 1000.0;
-            // `Duration::from_secs_f64` panics at 2^64 seconds and above;
-            // `u64::MAX as f64` rounds up to exactly 2^64, so the bound is `>=`.
-            if secs >= u64::MAX as f64 {
-                return Err(UnitError::DurationTooLarge);
-            }
-            return Ok(Duration::from_secs_f64(secs));
+            return duration_from(&value, 1_000_000, MAX_DURATION_NANOS);
         }
     }
-    Err(UnitError::InvalidDuration)
+    parse_duration(raw)
 }
 
 /// Read a scalar as a byte count. A number scalar must be a whole number of
@@ -137,99 +130,80 @@ fn trim_hocon_ws(s: &str) -> &str {
 
 /// Returns `true` if `s` matches `[+-]?[0-9]+` (integer pre-classification).
 ///
-/// Mirrors Lightbend `SimpleConfig.isWholeNumber`. Used to choose the integer fast-path
-/// vs fractional fallback in `parse_duration` and `parse_bytes`.
+/// Mirrors Lightbend `SimpleConfig.isWholeNumber`. Used by `parse_period`, which is
+/// integer-only.
 fn is_integer_str(s: &str) -> bool {
     let s = s.strip_prefix(['+', '-']).unwrap_or(s);
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
-/// Parse a HOCON duration string into a [`std::time::Duration`].
-///
-/// Accepts `[ws] number [ws] [unit] [ws]` where `unit` is one of the HOCON duration
-/// units (HOCON.md L1304-1313). When no unit is present the default is **milliseconds**
-/// (HOCON.md L1301: "bare numbers are taken to be in milliseconds already").
-///
-/// # Fractional values (Lightbend-faithful per-family)
-///
-/// - Integer form `[+-]?[0-9]+`: parsed as `i64` milliseconds → scaled to nanos.
-/// - Fractional form: parsed as `f64`, multiplied by `nanos_per_unit`.
-///
-/// # Negative values (rs-specific limitation)
-///
-/// `std::time::Duration` is unsigned; this function returns `None` for negative inputs.
-/// Callers that need signed duration semantics should inspect the raw string first.
-/// `get_duration` documents this constraint; ud06 conformance test asserts `is_err()`.
-fn parse_duration(s: &str) -> Option<Duration> {
-    let s = trim_hocon_ws(s);
-    if s.is_empty() {
-        return None;
-    }
+/// The longest duration `std::time::Duration` holds, in nanoseconds.
+const MAX_DURATION_NANOS: u128 = u64::MAX as u128 * 1_000_000_000 + 999_999_999;
 
-    // Scan to end of the numeric prefix (digits, optional leading sign, optional decimal).
+/// Split `[ws] number [ws] [unit] [ws]` into the number and the unit. The
+/// number is the leading run of digits, signs and points; the rest, without
+/// surrounding HOCON whitespace, is the unit (possibly empty).
+fn split_number_unit(s: &str) -> (&str, &str) {
+    let s = trim_hocon_ws(s);
     let num_end = s
         .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
         .unwrap_or(s.len());
-    let num_str = s[..num_end].trim();
-    // Trim HOCON whitespace between number and unit. The unit match below is
-    // case-sensitive per HOCON.md L1304 (S19.8): only lowercase unit names are valid.
-    let unit_str = trim_hocon_ws(&s[num_end..]);
+    (&s[..num_end], trim_hocon_ws(&s[num_end..]))
+}
 
-    if num_str.is_empty() {
-        return None;
-    }
-
-    let nanos_per_unit: f64 = match unit_str {
-        // Default: milliseconds (HOCON.md L1301).
-        "" | "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000.0,
-        "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1.0,
-        "us" | "micro" | "micros" | "microsecond" | "microseconds" => 1_000.0,
-        "s" | "second" | "seconds" => 1_000_000_000.0,
-        "m" | "minute" | "minutes" => 60_000_000_000.0,
-        "h" | "hour" | "hours" => 3_600_000_000_000.0,
-        "d" | "day" | "days" => 86_400_000_000_000.0,
+/// Nanoseconds per duration unit (HOCON.md L1304-1313). Unit names are
+/// case-sensitive and lowercase (S19.8). No unit means milliseconds
+/// (HOCON.md L1301).
+fn duration_unit_nanos(unit: &str) -> Option<u128> {
+    Some(match unit {
+        "" | "ms" | "milli" | "millis" | "millisecond" | "milliseconds" => 1_000_000,
+        "ns" | "nano" | "nanos" | "nanosecond" | "nanoseconds" => 1,
+        "us" | "micro" | "micros" | "microsecond" | "microseconds" => 1_000,
+        "s" | "second" | "seconds" => 1_000_000_000,
+        "m" | "minute" | "minutes" => 60_000_000_000,
+        "h" | "hour" | "hours" => 3_600_000_000_000,
+        "d" | "day" | "days" => 86_400_000_000_000,
         // NOTE: no week arm — HOCON's duration list ends at days, and the
         // Lightbend reference rejects "1w" (probe 2026-08-18). Period (S20)
         // is different: Lightbend's parsePeriod DOES accept weeks, and the
         // period parser below keeps them.
         _ => return None,
-    };
+    })
+}
 
-    // Integer fast-path (matches Lightbend `Long.parseLong`).
-    if is_integer_str(num_str) {
-        // Parse as i128 so we can range-check both negatives (rejected per rs's
-        // unsigned-Duration limitation) AND values in [i64::MAX, u64::MAX] before
-        // narrowing to u64. The prior i64 parse rejected the entire upper half of
-        // the representable nanos range as "parse error" rather than overflow.
-        let n_i128: i128 = num_str.parse().ok()?;
-        if n_i128 < 0 {
-            return None;
-        }
-        let n_u64: u64 = n_i128.try_into().ok()?;
-        // Overflow guard via checked_mul on u64. The table values are exact small
-        // integers (max = 604_800_000_000_000 for weeks), so the f64 → u64 cast
-        // is lossless. The prior `(n as f64 * nanos_per_unit) as u64` lost precision
-        // for large n (~2^53+) and silently saturated on overflow.
-        let unit_u64 = nanos_per_unit as u64;
-        let nanos = n_u64.checked_mul(unit_u64)?;
-        return Some(Duration::from_nanos(nanos));
-    }
+/// `value × nanos_per_unit` as a [`Duration`]: the exact product, truncated
+/// toward zero at the nanosecond (E20), or an error past `max_nanos`.
+/// `value` must not be negative.
+fn duration_from(
+    value: &Decimal,
+    nanos_per_unit: u128,
+    max_nanos: u128,
+) -> Result<Duration, UnitError> {
+    let nanos = value
+        .mul_trunc(nanos_per_unit)
+        .filter(|&n| n <= max_nanos)
+        .ok_or(UnitError::DurationTooLarge)?;
+    Ok(Duration::new(
+        (nanos / 1_000_000_000) as u64,
+        (nanos % 1_000_000_000) as u32,
+    ))
+}
 
-    // Fractional fallback (matches Lightbend `Double.parseDouble`).
-    let f: f64 = num_str.parse().ok()?;
-    if f < 0.0 || !f.is_finite() {
-        return None;
+/// Parse a HOCON duration string into a [`Duration`].
+///
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
+/// exponent, read exactly (E20: `1.001s` is 1001 ms, not the binary-float
+/// 1000.999999 ms). `std::time::Duration` is unsigned, so a negative value is
+/// an error (rs-specific; the ud06 conformance test asserts it).
+fn parse_duration(s: &str) -> Result<Duration, UnitError> {
+    let (num, unit) = split_number_unit(s);
+    let nanos_per_unit = duration_unit_nanos(unit).ok_or(UnitError::InvalidDuration)?;
+    let value = Decimal::parse(num, false).ok_or(UnitError::InvalidDuration)?;
+    if value.is_negative() {
+        return Err(UnitError::InvalidDuration);
     }
-    // Precision-safe upper bound: u64::MAX = 2^64 - 1 cannot be represented exactly
-    // in f64 (rounds up to 2^64). Compare against `2f64.powi(64)` — the exact float64
-    // value of 2^64 — so the boundary check fires for any value that would saturate
-    // the subsequent `as u64` cast. Same approach as the cluster #3h fractional byte
-    // overflow fix (rs `parse_bytes` 2^63, go `math.Exp2(63)`).
-    let product = f * nanos_per_unit;
-    if !product.is_finite() || product >= 2f64.powi(64) {
-        return None;
-    }
-    Some(Duration::from_nanos(product as u64))
+    // A string stops at u64 nanoseconds.
+    duration_from(&value, nanos_per_unit, u64::MAX as u128).map_err(|_| UnitError::InvalidDuration)
 }
 
 /// Parse a HOCON period string into a `(years, months, days)` tuple.
@@ -280,98 +254,67 @@ fn parse_period(s: &str) -> Option<(i32, i32, i32)> {
     }
 }
 
+/// Bytes per byte-size unit. S21.1–S21.4 — the EXACT Lightbend unit set
+/// (typesafe-config 1.4.6 probe, 2026-08-18). Multi-letter units are
+/// case-sensitive: the kilo-decimal spelling is `kB` (KB/kb are errors),
+/// binary prefixes are capital-first (`Ki`, never `ki`), long forms are
+/// lowercase only. Only the bare byte unit (B/b) and the single-letter -Xmx
+/// forms accept both cases. Single-letter abbreviations map to **powers of
+/// two** per HOCON.md L1385 (java -Xmx convention), BREAKING since 1.3.0 for
+/// K/M/G/T — see CHANGELOG.md. No unit means bytes (HOCON.md L1341).
+fn bytes_unit_multiplier(unit: &str) -> Option<u128> {
+    Some(match unit {
+        "" | "B" | "b" | "byte" | "bytes" => 1,
+        "K" | "k" => 1 << 10,
+        "M" | "m" => 1 << 20,
+        "G" | "g" => 1 << 30,
+        "T" | "t" => 1 << 40,
+        "P" | "p" => 1 << 50,
+        "E" | "e" => 1 << 60,
+        "Z" | "z" => 1 << 70,
+        "Y" | "y" => 1 << 80,
+        "kB" | "kilobyte" | "kilobytes" => 1_000,
+        "Ki" | "KiB" | "kibibyte" | "kibibytes" => 1 << 10,
+        "MB" | "megabyte" | "megabytes" => 1_000_000,
+        "Mi" | "MiB" | "mebibyte" | "mebibytes" => 1 << 20,
+        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
+        "Gi" | "GiB" | "gibibyte" | "gibibytes" => 1 << 30,
+        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
+        "Ti" | "TiB" | "tebibyte" | "tebibytes" => 1 << 40,
+        "PB" | "petabyte" | "petabytes" => 1_000_000_000_000_000,
+        "Pi" | "PiB" | "pebibyte" | "pebibytes" => 1 << 50,
+        "EB" | "exabyte" | "exabytes" => 1_000_000_000_000_000_000,
+        "Ei" | "EiB" | "exbibyte" | "exbibytes" => 1 << 60,
+        // Past i64 on their own: only a fractional count can fit (`0.001ZB`).
+        "ZB" | "zettabyte" | "zettabytes" => 1_000_000_000_000_000_000_000,
+        "Zi" | "ZiB" | "zebibyte" | "zebibytes" => 1 << 70,
+        "YB" | "yottabyte" | "yottabytes" => 1_000_000_000_000_000_000_000_000,
+        "Yi" | "YiB" | "yobibyte" | "yobibytes" => 1 << 80,
+        _ => return None,
+    })
+}
+
 /// Parse a HOCON byte-size string into a byte count.
 ///
-/// Accepts `[ws] number [ws] [unit] [ws]`. When no unit is present the default is
-/// **bytes** (HOCON.md L1341: "bare numbers are taken to be in bytes").
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
+/// exponent. The product is exact and then truncated toward zero, as
+/// Lightbend's `BigDecimal.toBigInteger()` does (E20: `1.001kB` is 1001,
+/// `1.0009kB` is 1000). `None` past the `i64` range.
 ///
-/// Fractional values are accepted and **truncated** (not rounded) per Lightbend's
-/// `BigDecimal.toBigInteger()` semantics (e.g. `"1024.5"` → 1024 bytes).
-///
-/// Note: `get_bytes` rejects negative results at the accessor level (ub04 / Lightbend
-/// `getBytesBigInteger` positive-only invariant). `parse_bytes` itself allows negative
-/// integer inputs.
+/// Note: `read_bytes` rejects negative results (ub04 / Lightbend
+/// `getBytesBigInteger` positive-only invariant); this function keeps the
+/// sign so it can.
 fn parse_bytes(s: &str) -> Option<i64> {
-    let s = trim_hocon_ws(s);
-    let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
-        .unwrap_or(s.len());
-    let num_str = s[..num_end].trim();
-    let unit_str = trim_hocon_ws(&s[num_end..]);
-
-    if num_str.is_empty() {
-        return None;
-    }
-
-    // S21.1–S21.4 — the EXACT Lightbend unit set (typesafe-config 1.4.6
-    // probe, 2026-08-18). Multi-letter units are case-sensitive: the
-    // kilo-decimal spelling is `kB` (KB/kb are errors), binary prefixes are
-    // capital-first (`Ki`, never `ki`), long forms are lowercase only. Only
-    // the bare byte unit (B/b) and the single-letter -Xmx forms accept both
-    // cases.
-    //
-    // Single-letter abbreviations map to **powers of two** per HOCON.md
-    // L1385 (java -Xmx convention), BREAKING since 1.3.0 for K/M/G/T — see
-    // CHANGELOG.md.
-    let multiplier: i64 = match unit_str {
-        "" | "B" | "b" | "byte" | "bytes" => 1,
-        // Single-letter → powers of two (HOCON.md L1385). Z/z/Y/y are in the
-        // big-unit arm below (their multipliers exceed i64).
-        "K" | "k" => 1_024,
-        "M" | "m" => 1_048_576,
-        "G" | "g" => 1_073_741_824,
-        "T" | "t" => 1_099_511_627_776,
-        "P" | "p" => 1_125_899_906_842_624,
-        "E" | "e" => 1_152_921_504_606_846_976,
-        // Multi-letter forms: SI decimal + IEC binary, through E/Ei.
-        "kB" | "kilobyte" | "kilobytes" => 1_000,
-        "Ki" | "KiB" | "kibibyte" | "kibibytes" => 1_024,
-        "MB" | "megabyte" | "megabytes" => 1_000_000,
-        "Mi" | "MiB" | "mebibyte" | "mebibytes" => 1_048_576,
-        "GB" | "gigabyte" | "gigabytes" => 1_000_000_000,
-        "Gi" | "GiB" | "gibibyte" | "gibibytes" => 1_073_741_824,
-        "TB" | "terabyte" | "terabytes" => 1_000_000_000_000,
-        "Ti" | "TiB" | "tebibyte" | "tebibytes" => 1_099_511_627_776,
-        "PB" | "petabyte" | "petabytes" => 1_000_000_000_000_000,
-        "Pi" | "PiB" | "pebibyte" | "pebibytes" => 1_125_899_906_842_624,
-        "EB" | "exabyte" | "exabytes" => 1_000_000_000_000_000_000,
-        "Ei" | "EiB" | "exbibyte" | "exbibytes" => 1_152_921_504_606_846_976,
-        _ => {
-            // Units whose multiplier exceeds i64 (ZB=10^21, YB=10^24,
-            // Zi=2^70, Yi=2^80). Lightbend recognises them and range-errors
-            // on any result past the long ceiling, so an integer count ≥ 1
-            // can never survive — every valid use is fractional and goes
-            // through the float path with its overflow guard.
-            let big: f64 = match unit_str {
-                "ZB" | "zettabyte" | "zettabytes" => 1e21,
-                "Zi" | "ZiB" | "zebibyte" | "zebibytes" | "Z" | "z" => 2f64.powi(70),
-                "YB" | "yottabyte" | "yottabytes" => 1e24,
-                "Yi" | "YiB" | "yobibyte" | "yobibytes" | "Y" | "y" => 2f64.powi(80),
-                _ => return None,
-            };
-            let f: f64 = num_str.parse().ok()?;
-            if !f.is_finite() || f.abs() * big >= 2f64.powi(63) {
-                return None;
-            }
-            return Some((f * big) as i64);
-        }
-    };
-
-    // Integer fast-path: lossless, avoids any floating-point rounding.
-    if is_integer_str(num_str) {
-        let n: i64 = num_str.parse().ok()?;
-        return n.checked_mul(multiplier);
-    }
-
-    // Fractional fallback: truncate toward zero per Lightbend `BigDecimal.toBigInteger()`.
-    let f: f64 = num_str.parse().ok()?;
-    // Overflow guard BEFORE the cast: `i64::MAX as f64` rounds up to exactly 2^63 in IEEE-754,
-    // so `> i64::MAX as f64` misses the boundary (8.0E == 2^63 passes the `>` test but saturates).
-    // Use `>= 2f64.powi(63)` to catch the exact boundary and all values above it.
-    if !f.is_finite() || f.abs() * multiplier as f64 >= 2f64.powi(63) {
-        return None;
-    }
-    Some((f * multiplier as f64) as i64)
+    let (num, unit) = split_number_unit(s);
+    let multiplier = bytes_unit_multiplier(unit)?;
+    let value = Decimal::parse(num, false)?;
+    let magnitude = i128::try_from(value.mul_trunc(multiplier)?).ok()?;
+    i64::try_from(if value.is_negative() {
+        -magnitude
+    } else {
+        magnitude
+    })
+    .ok()
 }
 
 #[cfg(test)]
@@ -384,85 +327,150 @@ mod tests {
 
     #[test]
     fn parse_duration_bare_integer_uses_ms_default() {
-        assert_eq!(parse_duration("500"), Some(Duration::from_millis(500)));
+        assert_eq!(parse_duration("500").ok(), Some(Duration::from_millis(500)));
     }
     #[test]
     fn parse_duration_leading_ws_bare() {
-        assert_eq!(parse_duration(" 500"), Some(Duration::from_millis(500)));
+        assert_eq!(
+            parse_duration(" 500").ok(),
+            Some(Duration::from_millis(500))
+        );
     }
     #[test]
     fn parse_duration_trailing_ws_bare() {
-        assert_eq!(parse_duration("500 "), Some(Duration::from_millis(500)));
+        assert_eq!(
+            parse_duration("500 ").ok(),
+            Some(Duration::from_millis(500))
+        );
     }
     #[test]
     fn parse_duration_both_ws_bare() {
-        assert_eq!(parse_duration(" 500 "), Some(Duration::from_millis(500)));
+        assert_eq!(
+            parse_duration(" 500 ").ok(),
+            Some(Duration::from_millis(500))
+        );
     }
     #[test]
     fn parse_duration_fractional_bare_uses_nanos() {
-        let d = parse_duration("500.5").unwrap();
+        let d = parse_duration("500.5").ok().unwrap();
         assert_eq!(d.as_nanos(), 500_500_000);
     }
     #[test]
     fn parse_duration_empty_is_none() {
-        assert!(parse_duration("").is_none());
+        assert!(parse_duration("").ok().is_none());
     }
     #[test]
     fn parse_duration_ws_only_is_none() {
-        assert!(parse_duration("   ").is_none());
+        assert!(parse_duration("   ").ok().is_none());
     }
     #[test]
     fn parse_duration_unit_only_is_none() {
-        assert!(parse_duration("ms").is_none());
+        assert!(parse_duration("ms").ok().is_none());
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Issue #95 — parse_duration overflow guards (integer + fractional)
-    //
-    // Pre-fix: `(n as f64 * nanos_per_unit) as u64` silently saturated for
-    // large n; `(f * nanos_per_unit) as u64` silently saturated for fractional
-    // overflow. Lightbend errors in both cases — we now match.
+    // Overflow (issue #95, then E21): a duration past the range is an
+    // error, never a saturated or wrapped value.
     // ──────────────────────────────────────────────────────────────
 
     #[test]
     fn parse_duration_weeks_rejected() {
         // No week unit in HOCON durations: the Lightbend reference rejects
         // "1w" (probe 2026-08-18); weeks exist only in the Period format.
-        assert!(parse_duration("1w").is_none());
-        assert!(parse_duration("1week").is_none());
-        assert!(parse_duration("1 weeks").is_none());
+        assert!(parse_duration("1w").ok().is_none());
+        assert!(parse_duration("1week").ok().is_none());
+        assert!(parse_duration("1 weeks").ok().is_none());
     }
 
     #[test]
     fn parse_duration_integer_overflow_days_is_none() {
         // i64::MAX days × 86_400_000_000_000 ns/day overflows u64 (2^64 ≈ 1.8e19).
-        assert!(parse_duration("9223372036854775807 days").is_none());
+        assert!(parse_duration("9223372036854775807 days").ok().is_none());
     }
 
     #[test]
     fn parse_duration_integer_max_u64_nanos_succeeds() {
-        // u64::MAX nanos should be representable (boundary success).
-        let d = parse_duration("18446744073709551615ns").unwrap();
+        // u64::MAX nanos is well inside the range.
+        let d = parse_duration("18446744073709551615ns").ok().unwrap();
         assert_eq!(d.as_nanos(), u64::MAX as u128);
     }
 
     #[test]
-    fn parse_duration_fractional_overflow_is_none() {
-        // 1e30 days is wildly past u64::MAX nanos.
-        assert!(parse_duration("1e30 d").is_none());
+    fn parse_duration_overflow_is_an_error() {
+        // 10^21 days is far past the range, integer or fractional.
+        assert!(parse_duration("1000000000000000000000 d").is_err());
+        assert!(parse_duration("1000000000000000000000.5 d").is_err());
     }
 
     #[test]
     fn parse_duration_fractional_above_u64_max_is_none() {
-        // 2^64 nanos exactly — boundary just past representable range.
-        // f64 rounds u64::MAX up to 2^64, so the strict-< check at 2^64 catches both.
-        assert!(parse_duration("18446744073709551616ns").is_none());
+        // 2^64 nanos exactly — just past the string range.
+        assert!(parse_duration("18446744073709551616ns").ok().is_none());
+    }
+
+    #[test]
+    fn exact_arithmetic_e20() {
+        assert_eq!(parse_duration("1.001s"), Ok(Duration::from_millis(1001)));
+        assert_eq!(parse_duration("2.3h"), Ok(Duration::from_millis(8_280_000)));
+        assert_eq!(parse_duration("1.001"), Ok(Duration::from_nanos(1_001_000)));
+        assert_eq!(parse_duration("1.5ns"), Ok(Duration::from_nanos(1)));
+        assert_eq!(parse_bytes("1.001kB"), Some(1001));
+        assert_eq!(parse_bytes("1.0009kB"), Some(1000));
+        assert_eq!(parse_bytes("0.001ZB"), Some(1_000_000_000_000_000_000));
+        // 2^79 is past i64.
+        assert_eq!(parse_bytes("0.5Y"), None);
+        // Big units take the exact path too: 2^80 × 10^-6, truncated.
+        assert_eq!(parse_bytes("0.000001Yi"), Some(1_208_925_819_614_629_174));
+    }
+
+    #[test]
+    fn number_scalar_built_in_code_keeps_the_grammar() {
+        // `ScalarValue` is public: a number scalar with unit text still reads.
+        assert_eq!(
+            read_duration("30s", ScalarType::Number),
+            Ok(Duration::from_secs(30))
+        );
+        assert_eq!(
+            read_duration("5 ms", ScalarType::Number),
+            Ok(Duration::from_millis(5))
+        );
+    }
+
+    #[test]
+    fn bytes_keep_i64_min_as_negative() {
+        assert_eq!(parse_bytes("-9223372036854775808"), Some(i64::MIN));
+        assert_eq!(parse_bytes("-8E"), Some(i64::MIN));
+        assert_eq!(
+            read_bytes("-8E", ScalarType::String),
+            Err(UnitError::NegativeBytes)
+        );
+    }
+
+    #[test]
+    fn number_value_reads_by_value_not_spelling() {
+        // E20 for numbers (S18.1): a value reads the same however it is spelled,
+        // so a buffered (re-spelled) number reads as the getter does.
+        for (a, b) in [
+            ("2.05e0", "2.05"),
+            ("0.157e-1", "0.0157"),
+            ("5.1e-7", "0.00000051"),
+            ("9.99e-5", "0.0000999"),
+            ("1e3", "1000"),
+        ] {
+            assert_eq!(
+                read_duration(a, ScalarType::Number),
+                read_duration(b, ScalarType::Number),
+                "{} vs {}",
+                a,
+                b
+            );
+        }
     }
 
     #[test]
     fn parse_duration_fractional_succeeds_below_boundary() {
         // 10.5 days = 907_200_000_000_000 ns, well within u64.
-        let d = parse_duration("10.5d").unwrap();
+        let d = parse_duration("10.5d").ok().unwrap();
         assert_eq!(d.as_nanos(), 907_200_000_000_000u128);
     }
 
