@@ -70,6 +70,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **BREAKING (S8.1 + extra-spec E8 step 4, `us15`): outside quotes, `+` is
+  accepted only as the exponent sign of a number literal; anywhere else it
+  is a parse error** pointing at the `+`, as in Lightbend 1.4.6 ("Reserved
+  character '+'"). rs accepted `a = 1e+x`, `a = 1+2`, `a = abc+1`,
+  `a+b = 1`, `a.1e+5 = 1` as strings / keys — and with them unquoted
+  semver build metadata (`1.0.0+build`) or offsets (`2026-10-16+09:00`). Still accepted: numbers
+  (`1e+5`, `-1.5e+3`), a number followed by text (`1e+5ms` → the string
+  `"1e+5ms"`), a number key (`1e+5 = 1`), the `+=` operator and
+  quoted text. Workaround: quote the value or key (`a = "1e+x"`,
+  `"a+b" = 1`). A number key written right against `+=` (`1+= 2`) is an
+  error too, as in Lightbend (the number run takes the `+`); write
+  `1 += 2`.
+- Number-lex also starts at `-.` followed by a digit, as in Lightbend:
+  `a = -.5` is now the number -0.5 (was the string `"-.5"`; its raw text and
+  `get_string` are unchanged), and `-.5e+3` the number -500.
 - **BREAKING (extra-spec E19, xx.hocon#97): a numeric literal whose magnitude
   overflows the f64 range (`1e999`) is now a parse error** instead of silently
   becoming `inf` — a value HOCON cannot render or re-parse as a number
