@@ -214,27 +214,195 @@ fn s8_6_success_fixtures_parse_and_resolve() {
     );
 }
 
-// ── Known gap tripwire ───────────────────────────────────────────────────────
+// ── Every fixture against its sidecar ───────────────────────────────────────
 //
-// us15 (`a = 1e+x`) carries an `.error` sidecar from Lightbend (Reserved
-// character `+` outside quotes). Lightbend's error fires at its value-parser
-// layer; the `+` reservation is enforced in both value-start and concat-
-// continuation positions per E8. rs.hocon currently does NOT reject `+` when
-// it appears mid-unquoted-run with a non-`=` follower (e.g. `1e+x`). The
-// #[should_panic] tripwire surfaces this gap automatically when it closes:
-// the assertion currently panics (parse is Ok → assert! fails) and the
-// attribute consumes the panic. If rs.hocon ever starts rejecting `1e+x`,
-// the assertion passes → no panic → test FAILS.
+// xx.hocon generates one sidecar per fixture from Lightbend: `-expected.json`
+// (must parse to that JSON) or `.error` (must fail). Walking the directory
+// keeps new fixtures (us31–us67: the `+` rule and the number-lex boundaries)
+// asserted without editing a list.
 
 #[test]
-#[should_panic(expected = "us15-incomplete-exp")]
-fn s8_6_us15_known_gap_tripwire() {
+fn s8_6_every_fixture_matches_its_sidecar() {
     let env: HashMap<String, String> = HashMap::new();
-    let result = hocon::parse_file_with_env(fixture_path("us15-incomplete-exp"), &env);
+    let mut stems: Vec<String> = std::fs::read_dir(fixture_dir())
+        .expect("fixture dir — run `make testdata`")
+        .filter_map(|e| {
+            let name = e.ok()?.file_name().into_string().ok()?;
+            name.strip_suffix(".conf").map(str::to_string)
+        })
+        .collect();
+    stems.sort();
+    let mut failures = Vec::new();
+    for stem in &stems {
+        let is_error = expected_dir().join(format!("{stem}.error")).exists();
+        let has_json = expected_json_path(stem).exists();
+        if is_error {
+            if let Ok(cfg) = hocon::parse_file_with_env(fixture_path(stem), &env) {
+                failures.push(format!(
+                    "{stem}: expected an error, got {:?}",
+                    config_to_json(&cfg)
+                ));
+            }
+        } else if has_json {
+            if let Err(e) = std::panic::catch_unwind(|| run_fixture(stem)) {
+                let msg = e
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .unwrap_or_else(|| "<panic>".into());
+                failures.push(format!("{stem}: {msg}"));
+            }
+        } else {
+            failures.push(format!("{stem}: no sidecar"));
+        }
+    }
     assert!(
-        result.is_err(),
-        "us15-incomplete-exp: Lightbend requires reject ('+' reservation mid-token), but rs.hocon currently parses (gap)"
+        stems.len() >= 67,
+        "expected at least us01–us67, found {}",
+        stems.len()
     );
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+// ── us15: `+` in a number-lex run is a reserved character (E8 step 4) ──────
+//
+// us15 (`a = 1e+x`) carries an `.error` sidecar from Lightbend ("Reserved
+// character '+'"). Number-lex greedily consumes `[0-9.eE+-]` (`1e+x` →
+// `1e+`); when that run does not parse as a number and contains `+`, E8
+// step 4 makes it an error rather than an unquoted string.
+
+#[test]
+fn s8_6_us15_plus_in_failed_number_lex_is_rejected() {
+    let env: HashMap<String, String> = HashMap::new();
+    let err = hocon::parse_file_with_env(fixture_path("us15-incomplete-exp"), &env)
+        .expect_err("us15-incomplete-exp: `1e+x` must be rejected (E8 step 4)");
+    assert!(
+        err.to_string().contains("reserved character '+'"),
+        "unexpected error: {err}"
+    );
+}
+
+/// The `+` rule (S8.1 + E8 step 4) and the number-lex boundaries, pinned on
+/// the table measured against Lightbend 1.4.6 (2026-10-16). Outside quotes,
+/// `+` is accepted only as the exponent sign of a number literal: a token
+/// that starts like a number has its greedy `[0-9.eE+-]` run read as a number;
+/// a `+` in a run that is not a number, or anywhere else, is an error.
+#[test]
+fn plus_and_number_lex_match_lightbend() {
+    use hocon::ScalarType::{Number, String as Str};
+    let env: HashMap<String, String> = HashMap::new();
+    let parse = |doc: &str| hocon::parse_with_env(doc, &env);
+
+    // Value position: errors.
+    for v in [
+        "1e+x",
+        "1+2",
+        "1.2.3+build",
+        "1.0.0+abc",
+        "+1",
+        "1x+2",
+        "abc+1",
+        "abc+",
+        "a+b",
+        "x1e+5",
+        ".5e+3",
+        "1e+5.5",
+        "1e+5.2",
+        "1e+5e5",
+        "1e+5-",
+    ] {
+        assert!(
+            parse(&format!("a = {v}")).is_err(),
+            "a = {v} must be rejected"
+        );
+    }
+    // Value position: numbers and strings (raw text kept as written).
+    for (v, ty) in [
+        ("1e+5", Number),
+        ("-1.5e+3", Number),
+        ("1.e+5", Number),
+        ("1.", Number),
+        ("1.e5", Number),
+        ("-1.", Number),
+        ("-.5", Number),
+        ("-.5e+3", Number),
+        ("1e+5ms", Str),
+        ("1e+5 ms", Str),
+        ("1.5e+3s", Str),
+        ("1e+5x", Str),
+        ("1e-x", Str),
+        ("1e-5e5", Str),
+        ("1.5.", Str),
+        (".5", Str),
+        ("-.", Str),
+        ("1.e", Str),
+    ] {
+        let cfg = parse(&format!("a = {v}")).unwrap_or_else(|e| panic!("a = {v} must parse: {e}"));
+        let sv = get_scalar(&cfg, "a");
+        assert_eq!(sv.value_type, ty, "a = {v}");
+        assert_eq!(sv.raw, v, "a = {v}");
+    }
+    let cfg = parse("a = 1.e+5, b = -.5e+3, c = -.5").unwrap();
+    assert_eq!(cfg.get_f64("a").unwrap(), 100000.0);
+    assert_eq!(cfg.get_f64("b").unwrap(), -500.0);
+    assert_eq!(cfg.get_f64("c").unwrap(), -0.5);
+
+    // Key position.
+    assert_eq!(parse("1e+5 = 1").unwrap().get_i64("\"1e+5\"").unwrap(), 1);
+    assert_eq!(parse("1e+5x = 1").unwrap().get_i64("\"1e+5x\"").unwrap(), 1);
+    assert!(parse("a+b = 1").is_err(), "a+b = 1 must be rejected");
+    assert!(parse("a.1e+5 = 1").is_err(), "a.1e+5 = 1 must be rejected");
+
+    // A number key written against `+=`: the greedy run takes the `+`.
+    assert!(parse("1 = [1]\n1+= 2").is_err(), "1+= 2 must be rejected");
+    assert!(
+        parse("1.5 = [1]\n1.5+= 2").is_err(),
+        "1.5+= 2 must be rejected"
+    );
+    assert_eq!(
+        parse("1 = [1]\n1 += 2")
+            .unwrap()
+            .get_list("\"1\"")
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        parse("a = [1]\na+= 2")
+            .unwrap()
+            .get_list("a")
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // The error points at the offending `+`.
+    for (doc, col) in [
+        ("a = 1e+x", 7),
+        ("a = 1+2", 6),
+        ("a = abc+1", 8),
+        ("a = 0x+1", 7),
+        ("a = 1.2.3+b", 10),
+        ("a+b = 1", 2),
+        ("a.1e+5 = 1", 5),
+    ] {
+        match parse(doc) {
+            Err(hocon::HoconError::Parse(e)) => {
+                assert_eq!((e.line, e.col), (1, col), "{doc}: {}", e.message)
+            }
+            other => panic!("{doc}: expected a parse error, got {other:?}"),
+        }
+    }
+
+    // Not affected: the `+=` operator and quoted text.
+    let cfg = parse("x = [1]\nx += 2\nq = \"1e+x\"\nk { \"a+b\" = 1 }").unwrap();
+    assert_eq!(cfg.get_list("x").unwrap().len(), 2);
+    assert_eq!(cfg.get_string("q").unwrap(), "1e+x");
+    assert_eq!(cfg.get_i64("k.\"a+b\"").unwrap(), 1);
 }
 
 // ── E8 amendment explicit value-position tests ───────────────────────────────

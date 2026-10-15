@@ -334,6 +334,31 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
                 TokenKind::PlusEquals => {
+                    // E8 step 4: a key that is all number-lex characters,
+                    // written right against `+=` (`1+= 2`), has its `+`
+                    // swallowed by the greedy number run (`1+`), which is not
+                    // a number — an error in Lightbend. `1 += 2` is fine.
+                    if self.peek_preceding_whitespace().is_empty() {
+                        if let Some(prev) = self.pos.checked_sub(1).and_then(|i| self.tokens.get(i))
+                        {
+                            if prev.kind == TokenKind::Unquoted
+                                && starts_like_number(&prev.value)
+                                && prev
+                                    .value
+                                    .chars()
+                                    .all(|c| matches!(c, '0'..='9' | '.' | 'e' | 'E' | '-'))
+                            {
+                                return Err(ParseError {
+                                    message: format!(
+                                        "reserved character '+' in \"{}+\" (write `{} += …` with a space)",
+                                        prev.value, prev.value
+                                    ),
+                                    line: self.peek_line(),
+                                    col: self.peek_col(),
+                                });
+                            }
+                        }
+                    }
                     self.advance();
                     append = true;
                 }
@@ -496,6 +521,16 @@ impl<'a> Parser<'a> {
                         ),
                         line: val_line,
                         col: val_col + dot_offset,
+                    });
+                }
+                // S8.1: `+` is reserved in keys too, except as the exponent
+                // sign of a key that is a number literal (`1e+5 = 1`, as in
+                // Lightbend); `a+b = 1` and `a.1e+5 = 1` are errors.
+                if let Some(offset) = reserved_plus_offset(&val) {
+                    return Err(ParseError {
+                        message: reserved_plus(&val),
+                        line: val_line,
+                        col: val_col + offset,
                     });
                 }
                 // Split unquoted key at dots. Only the legitimate leading /
@@ -1023,10 +1058,12 @@ impl<'a> Parser<'a> {
                 TokenKind::Unquoted => {
                     let (_, val, line, col) = self.advance_get();
                     AstNode::Scalar {
-                        value: parse_scalar_value(&val).map_err(|message| ParseError {
-                            message,
-                            line,
-                            col,
+                        value: parse_scalar_value(&val).map_err(|(message, offset)| {
+                            ParseError {
+                                message,
+                                line,
+                                col: col + offset,
+                            }
                         })?,
                         pos: Pos { line, col },
                         separator: false,
@@ -1189,7 +1226,45 @@ fn validate_package_file_arg(file: &str, line: usize, col: usize) -> Result<(), 
     Ok(())
 }
 
-fn parse_scalar_value(raw: &str) -> Result<ScalarValue, String> {
+/// Whether `raw` begins a JSON-number-shaped literal, which number-lex
+/// attempts (E8): a digit, `-` then a digit, or `-.` then a digit (`-.5`, as
+/// Lightbend reads it). This excludes Rust-only float literals like
+/// `-inf`/`-nan` that `f64::parse` would accept but Lightbend's `parseDouble`
+/// rejects, and `.5` / `-foo`, which stay unquoted text.
+fn starts_like_number(raw: &str) -> bool {
+    matches!(
+        raw.as_bytes(),
+        [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..] | [b'-', b'.', b'0'..=b'9', ..]
+    )
+}
+
+/// Error for a `+` outside quotes that is not a number's exponent sign.
+fn reserved_plus(raw: &str) -> String {
+    format!("reserved character '+' in \"{raw}\" (quote it to use it as text)")
+}
+
+/// The char offset of the first `+` in `raw` that is not the exponent sign
+/// of a leading number literal, if any. A `+` is fine only when `raw` starts
+/// like a number and the `+` lies in its greedy `[0-9.eE+-]` run, which
+/// parses as a number.
+fn reserved_plus_offset(raw: &str) -> Option<usize> {
+    let first_plus = |text: &str| text.find('+').map(|i| text[..i].chars().count());
+    if !starts_like_number(raw) {
+        return first_plus(raw);
+    }
+    let run_end = raw
+        .find(|c: char| !matches!(c, '0'..='9' | '.' | 'e' | 'E' | '+' | '-'))
+        .unwrap_or(raw.len());
+    let run = &raw[..run_end];
+    if !(run.parse::<i64>().is_ok() || run.parse::<f64>().is_ok()) {
+        return first_plus(run).or_else(|| first_plus(&raw[run_end..]).map(|i| i + run_end));
+    }
+    first_plus(&raw[run_end..]).map(|i| i + run[..].chars().count())
+}
+
+/// Classify an unquoted value token. An error carries its message and the
+/// char offset within `raw` it points at.
+fn parse_scalar_value(raw: &str) -> Result<ScalarValue, (String, usize)> {
     match raw {
         "true" | "false" => {
             return Ok(ScalarValue::new(raw.to_string(), ScalarType::Boolean));
@@ -1198,12 +1273,20 @@ fn parse_scalar_value(raw: &str) -> Result<ScalarValue, String> {
         _ => {}
     }
 
-    // Number detection per E8 (xx.hocon#31): greedy Java numeric semantics.
-    // The run must be JSON-number-shaped to enter the numeric coercion path:
-    // first char is `0-9`, OR `-` followed by `0-9`. This excludes Rust-only
-    // float literals like `-inf`/`-nan` that `f64::parse` would otherwise
-    // accept but that Lightbend's `parseDouble` rejects.
-    let starts_like_number = matches!(raw.as_bytes(), [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..]);
+    // S8.1 + E8 step 4 (us15): outside quotes `+` is a reserved character,
+    // accepted only as the exponent sign of a number literal (`1e+5`).
+    // Number-lex greedily consumes `[0-9.eE+-]` (Lightbend
+    // `Tokenizer.pullNumber`); a `+` is fine only inside such a run that
+    // parses as a number. Text may follow the number (`1e+5ms` is the number
+    // `1e+5` concatenated with `ms`, a string), but a `+` anywhere else is an
+    // error: `1e+x`, `1+2`, `1.2.3+build`, `abc+1`, `a+b`.
+    if let Some(offset) = reserved_plus_offset(raw) {
+        return Err((reserved_plus(raw), offset));
+    }
+
+    // Number detection per E8 (xx.hocon#31): greedy Java numeric semantics,
+    // for runs that start like a JSON number (see `starts_like_number`).
+    let starts_like_number = starts_like_number(raw);
 
     if starts_like_number {
         // S10.11 (go.hocon#133): a numeric value stringifies "as written in the
@@ -1231,7 +1314,7 @@ fn parse_scalar_value(raw: &str) -> Result<ScalarValue, String> {
             // — a number-shaped raw can never yield NaN, so only the infinite
             // case is checked.
             if f.is_infinite() {
-                return Err(format!("invalid float \"{raw}\""));
+                return Err((format!("invalid float \"{raw}\""), 0));
             }
             return Ok(ScalarValue::number(raw.to_string()));
         }
