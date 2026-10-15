@@ -146,6 +146,7 @@ mod render_hocon;
 #[doc(hidden)]
 pub mod resolver;
 pub(crate) mod sysenv;
+pub(crate) mod units;
 pub mod value;
 mod value_factory;
 
