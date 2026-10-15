@@ -478,20 +478,26 @@ defaults { size = 20 }  # merges: color stays, size updated
 
 ### HOCON 実装
 
-| 機能 | rs.hocon | [hocon-rs](https://github.com/mockersf/hocon.rs) |
+[`hocon`](https://github.com/mockersf/hocon.rs)（mockersf）**v0.9.0** と 2026-10-16 に照合しました。v0.9.0 は最新リリースで、公開日は 2022-04-25 です。
+
+| 機能 | rs.hocon | [`hocon`](https://github.com/mockersf/hocon.rs) v0.9.0 |
 |---|:---:|:---:|
 | 変数参照（`${path}`） | ✅ | ✅ |
 | オプショナルな変数参照（`${?path}`） | ✅ | ✅ |
-| Include | ✅ | ✅ |
-| `include required(file(...))` | ✅ | ❌ |
+| Include（`"..."` / `file(...)`） | ✅ | ✅（`load_str` の入力からは不可） |
+| `include required(...)` | ✅ | ❌ |
+| `include url(...)` | ❌（設計上の判断 — [既知の制約](#既知の制約) を参照） | ✅（`url-support` feature、デフォルトで有効） |
 | オブジェクト/配列の連結 | ✅ | ✅ |
-| 型変換 | ✅ | ⚠️ |
+| 型変換 | ✅ | ⚠️（`5.0` のような整数値の浮動小数点数を整数に変換しない） |
 | Duration のパース | ✅ | ✅ |
 | バイトサイズのパース | ✅ | ✅ |
-| `+=` 追記 | ✅ | ❌ |
+| Period のパース | ✅（`get_period`） | ⚠️（Period 型なし。`as_months` / `as_years` は 30 日 / 365 日固定で duration を換算） |
+| `+=` 追記 | ✅ | ✅ |
 | Serde デシリアライゼーション | ✅ | ✅ |
-| 環境変数へのフォールバック | ✅ | ❌ |
-| 循環 include の検出 | ✅ | ❌ |
+| 環境変数へのフォールバック | ✅ | ✅（`no_system()` で無効化できる） |
+| 循環 include の検出 | ⚠️（`..` を経由する循環は検出しない — [#192](https://github.com/o3co/rs.hocon/issues/192)） | ⚠️（循環は検出しない。ファイルの include は深さ上限で止まる。上限のデフォルトは 10） |
+| 複数のソースを 1 つの config に読み込む | ✅（未解決のまま parse + `with_fallback` + `resolve`） | ✅（`HoconLoader` で `load_str` / `load_file` をつなげる） |
+| 寛容モード（エラーを値として残し、ドキュメントは返す） | ❌（厳格のみ。`allow_unresolved` は未解決の変数参照をプレースホルダのまま残すだけ） | ✅（`Hocon::BadValue`。`strict()` で最初のエラーで止める） |
 
 ### 設定フレームワーク
 

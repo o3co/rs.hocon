@@ -489,20 +489,26 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 
 ### HOCON Implementation
 
-| Feature | rs.hocon | [hocon-rs](https://github.com/mockersf/hocon.rs) |
+Verified against [`hocon`](https://github.com/mockersf/hocon.rs) (mockersf) **v0.9.0** on 2026-10-16. v0.9.0 is its latest release, published 2022-04-25.
+
+| Feature | rs.hocon | [`hocon`](https://github.com/mockersf/hocon.rs) v0.9.0 |
 |---|:---:|:---:|
 | Substitutions (`${path}`) | ✅ | ✅ |
 | Optional substitutions (`${?path}`) | ✅ | ✅ |
-| Include | ✅ | ✅ |
-| `include required(file(...))` | ✅ | ❌ |
+| Include (`"..."` / `file(...)`) | ✅ | ✅ (not from `load_str` input) |
+| `include required(...)` | ✅ | ❌ |
+| `include url(...)` | ❌ (by design — see [Known Limitations](#known-limitations)) | ✅ (`url-support` feature, on by default) |
 | Object/Array concatenation | ✅ | ✅ |
-| Type coercion | ✅ | ⚠️ |
+| Type coercion | ✅ | ⚠️ (does not convert a whole-number float such as `5.0` to an integer) |
 | Duration parsing | ✅ | ✅ |
 | Byte size parsing | ✅ | ✅ |
-| `+=` append | ✅ | ❌ |
+| Period parsing | ✅ (`get_period`) | ⚠️ (no Period type; `as_months` / `as_years` convert durations using fixed 30 d / 365 d) |
+| `+=` append | ✅ | ✅ |
 | Serde deserialization | ✅ | ✅ |
-| Env variable fallback | ✅ | ❌ |
-| Circular include detection | ✅ | ❌ |
+| Env variable fallback | ✅ | ✅ (can be turned off with `no_system()`) |
+| Circular include detection | ⚠️ (cycles through `..` paths are not detected — [#192](https://github.com/o3co/rs.hocon/issues/192)) | ⚠️ (no cycle detection; file includes stop at a depth limit, 10 by default) |
+| Loading several sources into one config | ✅ (unresolved parse + `with_fallback` + `resolve`) | ✅ (`HoconLoader` chains `load_str` / `load_file`) |
+| Lenient mode (errors kept as values, document still returned) | ❌ (strict; `allow_unresolved` only leaves unresolved substitutions as placeholders) | ✅ (`Hocon::BadValue`; `strict()` to fail fast) |
 
 ### Config Framework
 
