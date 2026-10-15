@@ -24,7 +24,7 @@
 //!
 //! One divergence this implementation adds, shared with the crate's core
 //! parser rather than with the go adapter: nesting is capped at
-//! [`MAX_DOCUMENT_DEPTH`] levels, because a Rust stack overflow is `SIGABRT`
+//! 128 levels (the crate-wide document depth limit), because a Rust stack overflow is `SIGABRT`
 //! and cannot be converted into an `Err` after the fact.
 //!
 //! See the F3.x items in the format-ingestion mapping spec:

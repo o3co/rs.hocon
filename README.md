@@ -13,7 +13,7 @@ conformance rate.
 
 [日本語](README.ja.md)
 
-**Library stance** — This library is a HOCON config loader. Its purpose is reading `.hocon` config files and providing typed access via the `Config` API (`get_string`, `get_i64`, `get_f64`, `get_bool`, `get_duration`, `get_bytes`). It is not a low-level parser API; internal types like `ScalarValue` may change between minor versions.
+**Library stance** — This library is a HOCON config loader. Its purpose is reading `.hocon` config files and providing typed access via the `Config` API (`get_string`, `get_i64`, `get_f64`, `get_bool`, `get_duration`, `get_bytes`, `get_period`, and with the `serde` feature `get_as`). It is not a low-level parser API; internal types like `ScalarValue` may change between minor versions.
 
 **Cross-language conformance** — This implementation is tested against shared expected-JSON fixtures from [o3co/xx.hocon](https://github.com/o3co/xx.hocon) alongside [ts.hocon](https://github.com/o3co/ts.hocon), [go.hocon](https://github.com/o3co/go.hocon), and [py.hocon](https://github.com/o3co/py.hocon), ensuring all four implementations meet the same Lightbend HOCON specification.
 
@@ -101,6 +101,70 @@ HOCON isn't just a serialization format — it's a **config-injection language**
 
 On top of that, HOCON combines the readability of YAML with the structure of JSON — making it a strong fit for anything beyond flat key-value config.
 
+## Configuration that stays inside its module
+
+In a large codebase, configuration tends to leak: one big file that every team edits, defaults copied into each service, and modules that read each other's keys. HOCON lets each module own its configuration the way it owns its code.
+
+- **Each module owns a namespace and ships its own defaults.** The `auth` module keeps `auth { … }` next to its code, with every default filled in. The application never copies those defaults; it brings them in with one `include`.
+- **The application overrides only what differs.** Later layers deep-merge over earlier ones, so the application states two keys, not the whole block.
+- **Each module reads only its own subtree, through its own schema.** The module asks for `auth` and deserializes it into the types it defines. The shape of that section is the module's contract; nothing else in the file is visible to it.
+- **Wiring between modules lives in the application.** The module only declares the keys it reads (`auth.db`) and leaves them without a default when the application must supply them. The application connects them to shared values (`auth.db = ${shared.db}`). Modules never reference each other or the application's keys, so dependencies run one way.
+
+```hocon
+# auth/reference.conf: shipped inside the auth package, owned by the auth team
+auth {
+  session { lifetime = 30m, max-body = 64KiB }
+  # db: no default; the application supplies auth.db
+}
+```
+
+```hocon
+# application.conf: owned by the application
+include package("github.com/acme/auth", "reference.conf")
+
+shared.db { host = db.internal, port = 5432 }
+auth.db = ${shared.db}       # wiring lives in the application
+auth.session.lifetime = 2h   # override what differs; the rest stays the module's default
+```
+
+Inside the auth module (features `serde` and `include-package`), the module publishes its defaults and reads only its own subtree:
+
+```rust
+use serde::Deserialize;
+use std::time::Duration;
+
+pub fn register(parser: hocon::Parser) -> hocon::Parser {
+    parser.register_package("github.com/acme/auth", "reference.conf",
+                            include_str!("auth/reference.conf"))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Session {
+    #[serde(with = "hocon::serde::duration")]
+    pub lifetime: Duration,      // "2h"
+    #[serde(with = "hocon::serde::bytes")]
+    pub max_body: u64,           // "64KiB"
+}
+
+#[derive(Deserialize)]
+pub struct Db { pub host: String, pub port: u16 }
+
+#[derive(Deserialize)]
+pub struct Auth { pub session: Session, pub db: Db }
+
+pub fn load(config: &hocon::Config) -> Result<Auth, hocon::ConfigError> {
+    config.get_as::<Auth>("auth")
+}
+```
+
+The application registers each module and parses its own file:
+`let config = auth::register(hocon::Parser::new()).parse_file("application.conf")?;`.
+The whole example runs as [`examples/module_config`](examples/module_config/main.rs)
+(`cargo run --example module_config --features serde,include-package`).
+
+`include package(...)` is not part of HOCON.md: it is a convention shared by the o3co implementations ([E11](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md#e11)), a non-JVM counterpart to `include classpath(...)`. It is how a module publishes its defaults without the application knowing where its files live (see [Package includes](#package-includes-include-package)). On the JVM, Lightbend's `reference.conf` convention plays the same role.
+
 ## Features
 
 - Complete HOCON syntax: objects, arrays, comments, multi-line strings, unquoted strings
@@ -108,7 +172,8 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
 - `include "file.conf"` and `include file("file.conf")` directives with relative path resolution
 - Object merging and array concatenation per spec
 - String, array, and object value concatenation
-- Duration and byte-size parsing (`10 seconds`, `512 MB`)
+- Duration, byte-size and period parsing (`10 seconds`, `512 MB`, `2w`), with
+  exact decimal arithmetic (`1.001s` is exactly 1001 ms)
 - Environment variable substitution (`${HOME}`)
 - Dot-separated path expressions (`server.host`)
 - Fallback configuration merging (`with_fallback`)
@@ -118,7 +183,12 @@ On top of that, HOCON combines the readability of YAML with the structure of JSO
   HOCON text with a parse-back round-trip guarantee (E18)
 - Optional Serde deserialization: one-step `hocon::from_str::<T>()` /
   `from_file::<T>()`, path-scoped `Config::get_as::<T>(path)`, and
-  `Config::deserialize::<T>()`
+  `Config::deserialize::<T>()`, with `#[serde(with = ...)]` helpers for
+  durations, byte sizes and periods
+- `include package(...)` for configuration shipped inside other crates
+  (feature `include-package`, see [Package includes](#package-includes-include-package))
+- Format adapters: read `.properties`, environment variables, JSON5, JSONC,
+  TOML and YAML as HOCON (see [Format adapters](#format-adapters))
 - Passes Lightbend equivalence tests (equiv01 through equiv05)
 
 ## API Reference
@@ -168,12 +238,23 @@ let debug: Option<bool>  = config.get_bool_option("debug");
 ```rust
 use std::time::Duration;
 
-// Supports: ns, us, ms, s/seconds, m/minutes, h/hours, d/days
+// Supports: ns, us, ms, s/seconds, m/minutes, h/hours, d/days (and long forms)
 let timeout: Duration = config.get_duration("server.timeout")?;
 
-// Supports: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB (and long forms)
+// Supports: B; kB, MB, GB, TB, PB, EB, ZB, YB (powers of 10);
+// Ki/KiB … Yi/YiB and the single letters K, M, G, T, P, E, Z, Y (powers of 2);
+// and long forms (kilobytes, mebibytes, …)
 let max_size: i64 = config.get_bytes("upload.max-size")?;
+
+// Supports: d/days, w/weeks, m/mo/months, y/years (integer amounts)
+let retention: hocon::Period = config.get_period("retention")?;
 ```
+
+Unit names are case-sensitive: `KB` and `100 MS` are errors (the
+kilo-decimal spelling is `kB`). A bare number takes the default unit
+(milliseconds, bytes, days). Fractional values are computed exactly and
+truncated toward zero — `1.001s` is 1001 ms, `1.0009kB` is 1000 bytes — and a
+duration past what `std::time::Duration` holds is an error.
 
 ### Inspection
 
@@ -202,6 +283,36 @@ let text: String = config.render_hocon()?;
 // Receiver wins; fallback fills missing keys. Objects are deep-merged.
 let merged = app_config.with_fallback(&defaults);
 ```
+
+### Package includes (`include package`)
+
+Requires the `include-package` feature. A crate that ships configuration
+registers it on a [`hocon::Parser`](https://docs.rs/hocon-parser/latest/hocon/struct.Parser.html),
+and any document parsed by that parser can include it by package identifier and
+file, without knowing where the file lives (cross-implementation convention
+[E11](https://github.com/o3co/xx.hocon/blob/main/docs/extra-spec-conventions.md#e11)):
+
+```rust
+let config = hocon::Parser::new()
+    .register_package("github.com/acme/auth", "reference.conf",
+                      include_str!("../conf/reference.conf"))
+    .parse_file("application.conf")?;
+```
+
+```hocon
+include package("github.com/acme/auth", "reference.conf")
+include required(package("github.com/acme/auth", "reference.conf"))  # same; required
+```
+
+- The identifier follows the Go-module-path style (`host/org/name`) so one
+  document works with every o3co implementation.
+- A package that depends on other packages exposes a
+  `register(parser: hocon::Parser) -> hocon::Parser` function that registers its
+  own files and then calls its dependencies' `register` (the cascade
+  convention).
+- Registering different content for the same `(identifier, file)` panics;
+  re-registering byte-identical content is a no-op. Including an unregistered
+  package is a parse error.
 
 ### Deferred Resolution (v1.4.0)
 
@@ -283,8 +394,9 @@ struct Session {
 }
 ```
 
-A decode error names the failing key: `DeserializeError::path` (and
-`ConfigError::path` from `from_str` / `get_as`) is `session.lifetime`,
+A decode error names the failing key: `DeserializeError::path` (and the
+`ConfigError::path` of `get_as`, or of `HoconError::Config` from `from_str` /
+`from_file`) is `session.lifetime`,
 `servers[0].port`, … The helpers read a HOCON value exactly as the getters do.
 Where serde buffers it (`#[serde(flatten)]`, untagged and internally tagged
 enums) they read the same values — except a number literal that is not an i64
@@ -292,17 +404,21 @@ integer and has more than 15 significant digits, which is buffered as the
 nearest double, and a negative number that underflows the double (`-1e-400`),
 buffered as `-0.0` — and the error path stops at the buffered object. With another self-describing
 deserializer (serde_json, …) a number is read from its value — an integer as an
-integer, a float as a float.
+integer, a float as a float. Formats that are not self-describing (bincode,
+postcard) cannot use the helpers.
 
 ## Error Types
 
 | Type | When |
 |------|------|
+| `HoconError` | Returned by the parse functions, `from_str` / `from_file` and `Config::resolve`; wraps one of the errors below (`Parse`, `Resolve`, `Io`, `NotResolved`, `Config`) |
 | `ParseError` | Syntax errors during lexing/parsing (includes line and column) |
 | `ResolveError` | Substitution failures, cyclic references, missing required variables |
+| `NotResolvedError` | `resolve_with` called on a source config that still has unresolved substitutions |
 | `ConfigError` | Missing keys or type mismatches during value access |
 | `ConfigError` (use `.is_not_resolved()` to detect "value not yet resolved") | Getter called on a path containing an unresolved substitution placeholder (v1.4.0) |
-| `DeserializeError` | Serde deserialization failures (with `serde` feature) |
+| `DeserializeError` | Serde deserialization failures, with the failing key's `path` (with `serde` feature) |
+| `AdapterError` | A format adapter could not read its input (with an `adapters-*` feature) |
 
 ## HOCON Examples
 
@@ -388,17 +504,19 @@ For typical application configs (loaded once at startup), the parsing cost is ne
 | **Formats** | | |
 | HOCON | ✅ | ❌ |
 | JSON | ✅ | ✅ |
-| YAML | ❌ | ✅ |
-| TOML | ❌ | ✅ |
-| Env vars | ✅ (fallback) | ✅ |
-| .properties | ✅ (via include) | ❌ |
+| JSON5 | ✅ (adapter) | ✅ |
+| JSONC | ✅ (adapter) | ⚠️ (via JSON5) |
+| YAML | ✅ (adapter) | ✅ |
+| TOML | ✅ (adapter) | ✅ |
+| Env vars | ✅ (adapter, and `${VAR}` fallback) | ✅ |
+| .properties | ✅ (adapter, and `include`) | ❌ |
 | **Features** | | |
 | Substitutions | ✅ | ❌ |
 | File includes | ✅ | ❌ |
 | Type coercion | ✅ | ✅ |
 | Serde support | ✅ | ✅ |
 | Watch/reload | ❌ | ❌ |
-| Layered config | ❌ | ✅ |
+| Layered config | ✅ (`include`, `with_fallback`) | ✅ |
 
 ## Spec Compliance
 
@@ -412,7 +530,7 @@ Conformance against the [Lightbend HOCON specification](https://github.com/light
 
 ## Minimum Supported Rust Version
 
-The MSRV is **1.82**, for every feature combination including all five
+The MSRV is **1.82**, for every feature combination including all six
 adapters. CI runs the full test suite at 1.82 with `--all-features`, so this is
 verified rather than asserted.
 
@@ -596,7 +714,7 @@ decodes it themselves and hands the result over.
 - **No watch/reload** — the library parses config at load time. For live-reloading, call `parse()` / `parse_file()` again on change.
 - **No streaming parser** — the entire input is loaded into memory.
 
-For full API documentation, see [docs.rs](https://docs.rs/hocon-parser) (available after crate publication).
+For full API documentation, see [docs.rs](https://docs.rs/hocon-parser).
 
 ## Security Considerations
 

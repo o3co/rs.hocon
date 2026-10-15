@@ -1,3 +1,29 @@
+//! Serde integration (feature `serde`).
+//!
+//! - [`from_str`] / [`from_file`]: parse and deserialize in one step.
+//! - [`Config::get_as`](crate::Config::get_as): deserialize one subtree.
+//! - [`Config::deserialize`](crate::Config::deserialize) /
+//!   [`from_value`]: deserialize a whole config or any value.
+//! - [`duration`], [`bytes`], [`period`]: `#[serde(with = "...")]` helpers
+//!   that read HOCON unit values (`30m`, `64KiB`, `2w`) with the getters'
+//!   rules, plus an `::option` variant each.
+//!
+//! A failure is a [`DeserializeError`] whose `path` names the failing key
+//! (`server.port`, `servers[0].host`). Where serde buffers the input
+//! (`#[serde(flatten)]`, untagged and internally tagged enums) the path stops
+//! at the buffered value.
+//!
+//! The unit helpers read a number's source text through this crate's
+//! deserializers, so they read exactly what the getters read. Where serde
+//! buffers the input, and with other self-describing deserializers
+//! (serde_json, …), they get the value instead: the same result, except
+//! that a number literal that is not an i64 integer and has more than 15
+//! significant digits reads as its nearest double, and a negative number that
+//! underflows the double (`-1e-400`) reads as zero. Formats that are not
+//! self-describing (bincode, postcard) cannot use the helpers, and serde_json
+//! built with `arbitrary_precision` hands floats over in a form they do not
+//! read.
+
 use crate::error::{ConfigError, HoconError};
 use crate::numeric_array::numeric_object_to_array;
 use crate::render_hocon::render_path_key;

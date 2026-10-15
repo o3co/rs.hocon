@@ -42,6 +42,8 @@
 //! | [`Config::get_list`] | `Result<Vec<HoconValue>, ConfigError>` |
 //! | [`Config::get_duration`] | `Result<Duration, ConfigError>` |
 //! | [`Config::get_bytes`] | `Result<i64, ConfigError>` |
+//! | [`Config::get_period`] | `Result<Period, ConfigError>` |
+//! | `Config::get_as::<T>` (feature `serde`) | `Result<T, ConfigError>` |
 //!
 //! Each typed getter has an `_option` variant (e.g., [`Config::get_string_option`])
 //! that returns `Option<T>` instead.
@@ -63,13 +65,22 @@
 //!
 //! Duration units: `ns`, `us`, `ms`, `s`/`seconds`, `m`/`minutes`, `h`/`hours`, `d`/`days`.
 //!
-//! Byte-size units: `B`, `KB`, `KiB`, `MB`, `MiB`, `GB`, `GiB`, `TB`, `TiB`
-//! (and their long forms like `megabytes`, `mebibytes`).
+//! Byte-size units: `B`; `kB`, `MB`, … `YB` (powers of 10); `Ki`/`KiB` …
+//! `Yi`/`YiB` and the single letters `K`, `M`, … `Y` (powers of 2); and long
+//! forms like `megabytes`, `mebibytes`. Unit names are case-sensitive (`KB` is
+//! an error). Fractional values are computed exactly (`1.001s` is 1001 ms).
+//!
+//! Period units ([`Config::get_period`]): `d`/`days`, `w`/`weeks`,
+//! `m`/`mo`/`months`, `y`/`years`.
 //!
 //! ## Serde Deserialization
 //!
-//! With the `serde` feature enabled, deserialize a [`Config`] (or sub-config)
-//! into any type implementing `serde::Deserialize`:
+//! With the `serde` feature enabled, deserialize HOCON into any type
+//! implementing `serde::Deserialize`: `hocon::from_str` / `hocon::from_file`
+//! in one step, `Config::get_as::<T>(path)` for one subtree, or
+//! `Config::deserialize` for a whole config. Durations, byte sizes and periods
+//! read through `#[serde(with = "hocon::serde::duration")]` (and `bytes`,
+//! `period`). See the `hocon::serde` module.
 //!
 //! ```rust,ignore
 //! use serde::Deserialize;
@@ -80,7 +91,7 @@
 //!     port: u16,
 //! }
 //!
-//! let server: Server = config.get_config("server")?.deserialize()?;
+//! let server: Server = config.get_as("server")?;
 //! ```
 //!
 //! ## Include Files
@@ -94,15 +105,23 @@
 //! ```
 //!
 //! When parsing with [`parse_file`], include paths are resolved relative to the
-//! file being parsed.
+//! file being parsed. With the `include-package` feature, `include package(...)`
+//! reads configuration that another crate registered on a `Parser`
+//! (extra-spec convention E11).
 //!
 //! ## Error Types
 //!
-//! - [`HoconError`] -- unified error returned by parse functions. Wraps:
+//! - [`HoconError`] -- unified error returned by parse functions (and by
+//!   `from_str` / `from_file`). Wraps:
 //!   - [`ParseError`] -- syntax errors during lexing or parsing (includes line/column).
 //!   - [`ResolveError`] -- substitution resolution failures, cycle detection.
 //!   - `std::io::Error` -- file I/O errors (top-level file read; include file errors appear as [`ResolveError`]).
+//!   - [`NotResolvedError`] -- `Config::resolve_with` given a source that is
+//!     not resolved.
+//!   - [`ConfigError`] -- a decode failure from `from_str` / `from_file`.
 //! - [`ConfigError`] -- missing keys or type mismatches when accessing values.
+//! - `DeserializeError` (feature `serde`) -- a decode failure, with the
+//!   failing key's path.
 //!
 //! ## HOCON Specification
 //!
@@ -440,7 +459,7 @@ pub fn parse(input: &str) -> Result<Config, HoconError> {
 /// `Config` may have `is_resolved() = false`. Use [`Config::resolve`] later.
 ///
 /// This module-level function does **not** thread a package registry — for that,
-/// use [`Parser::parse_with_options`] (feature `include-package`).
+/// use `Parser::parse_with_options` (feature `include-package`).
 pub fn parse_string_with_options(input: &str, opts: ParseOptions) -> Result<Config, HoconError> {
     let tokens = lexer::tokenize(input)?;
     let ast = parser::parse_tokens(&tokens)?;

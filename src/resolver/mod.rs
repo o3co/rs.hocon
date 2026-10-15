@@ -58,7 +58,7 @@ fn rv_has_placeholder(v: &types::ResolverValue) -> bool {
 
 /// Binary merge primitive for E12 WithFallback on unresolved trees.
 /// Receiver's keys win; on non-Obj collision, fallback's value is stored as
-/// prior_values[key] for cross-layer self-reference lookback in phase 2.
+/// `prior_values[key]` for cross-layer self-reference lookback in phase 2.
 /// Both-Obj collisions recurse (deep merge). Fallback-only keys are included.
 ///
 /// The caller (Config::with_fallback in T8) is responsible for the

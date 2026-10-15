@@ -65,3 +65,8 @@ tempfile = ">=3.19, <3.20"
 [[bench]]
 name = "parse_bench"
 harness = false
+
+[[example]]
+name = "module_config"
+path = "examples/module_config/main.rs"
+required-features = ["serde", "include-package"]

@@ -144,7 +144,7 @@ pub struct ResObj {
     pub prior_values: IndexMap<String, ResolverValue>,
     /// Keys whose net value in THIS object was established by an explicit
     /// non-self-referential assignment (`k = [...]`), i.e. a reset rather than
-    /// a `+=`/self-ref append. Used by [`deep_merge_res_obj_into`] to decide
+    /// a `+=`/self-ref append. Used by `deep_merge_res_obj_into` to decide
     /// whether an included file's `k` chains off the destination's pre-merge
     /// value (append origin → splice) or replaces it (reset origin → discard).
     /// See go.hocon#134 (S13b.2 `+=` accumulation across includes).
