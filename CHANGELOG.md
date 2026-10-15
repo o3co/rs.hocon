@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unit values accept exponent forms** (extra-spec E20, xx.hocon#111), as
+  Lightbend does: `"1e+5ms"` is 100 s, `"1.5e2s"` 150 s, `"1E3"` 1000 ms,
+  `"1e-3s"` 1 ms, `"1e3kB"` 1000000 bytes, `"2E2KiB"` 204800. The unit is now
+  taken as the trailing run of letters (Lightbend `getUnits`), so `1E` is
+  still one exabyte; the number is read exactly, and a huge exponent is an
+  immediate error (`"1e400s"`, E21) or zero (`"1e-400s"`) without building
+  the power of ten. Periods stay integer-only (`"1e2d"` is an error). Only
+  values that were rejected before are affected.
+
 - **Serde helpers for HOCON unit values** (xx.hocon#102):
   `hocon::serde::duration`, `hocon::serde::bytes` and `hocon::serde::period`,
   for `#[serde(with = "...")]`, each with an `::option` variant (`null` →

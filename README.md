@@ -258,7 +258,9 @@ kilo-decimal spelling is `kB`). A bare number takes the default unit
 (milliseconds, bytes, days). Periods take integer amounts only; fractional
 durations and byte sizes are computed exactly and
 truncated toward zero — `1.001s` is 1001 ms, `1.0009kB` is 1000 bytes — and a
-duration past what `std::time::Duration` holds is an error.
+duration past what `std::time::Duration` holds is an error. The number may use
+an exponent, as in Lightbend: `1e+5ms` is 100 s, `2E2KiB` is 204800 bytes
+(the unit is the trailing run of letters, so `1E` is one exabyte).
 
 ### Inspection
 

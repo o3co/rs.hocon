@@ -459,7 +459,8 @@ impl Config {
     /// to [`get_duration_option`](Self::get_duration_option).
     ///
     /// The arithmetic is exact (extra-spec E20): `"1.001s"` is exactly
-    /// 1001 ms, truncated toward zero at the nanosecond. A duration past what
+    /// 1001 ms, truncated toward zero at the nanosecond. The number may use
+    /// an exponent (`"1e+5ms"`, `"1.5e2s"`). A duration past what
     /// `std::time::Duration` holds is an error, however it is spelled (E21),
     /// and so is a negative duration (`std::time::Duration` is unsigned).
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
@@ -494,9 +495,9 @@ impl Config {
     ///   `kibibyte(s)` … `yobibyte(s)`, and the single letters
     ///   `K`, `M`, `G`, `T`, `P`, `E`, `Z`, `Y` (either case, java `-Xmx` style).
     ///
-    /// Fractional values (e.g. `0.5M`) are computed exactly and truncated
-    /// toward zero (extra-spec E20). Negative sizes and sizes past `i64` are
-    /// errors.
+    /// Fractional values (e.g. `0.5M`) and exponents (`1e3kB`, `2E2KiB`) are
+    /// computed exactly and truncated toward zero (extra-spec E20). Negative
+    /// sizes and sizes past `i64` are errors.
     pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
         let v = self.lookup_node(path).ok_or_else(|| ConfigError {
             message: format!("path not found: {}", path),

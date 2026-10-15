@@ -27,18 +27,20 @@ pub(super) struct Decimal {
 const EXP_LIMIT: i64 = i64::MAX / 4;
 
 impl Decimal {
-    /// Parse `[+-]? digits [. digits]?` (at least one digit, either side of
-    /// the point), and with `exponent` also a trailing `[eE] [+-]? digits`.
-    /// Returns `None` for anything else.
-    pub(super) fn parse(s: &str, exponent: bool) -> Option<Decimal> {
+    /// Parse a number in Java's `double` grammar, as Lightbend reads the
+    /// number part of a unit value: `[+-]? (digits [. digits?] | . digits)`
+    /// with an optional `[eE] [+-]? digits` exponent (`1e+5`, `1.e3`, `.5`).
+    /// Returns `None` for anything else (`1e3.5`, `1e`, `inf`, hex). The JVM's
+    /// `d` / `f` type suffix (`Double.parseDouble("1e2d")`) is not adopted
+    /// (E20): there it would be a unit.
+    pub(super) fn parse(s: &str) -> Option<Decimal> {
         let (negative, rest) = match s.as_bytes().first() {
             Some(b'-') => (true, &s[1..]),
             Some(b'+') => (false, &s[1..]),
             _ => (false, s),
         };
         let (mantissa, exp_part) = match rest.find(['e', 'E']) {
-            Some(i) if exponent => (&rest[..i], Some(&rest[i + 1..])),
-            Some(_) => return None,
+            Some(i) => (&rest[..i], Some(&rest[i + 1..])),
             None => (rest, None),
         };
         let (int_part, frac_part) = match mantissa.find('.') {
@@ -193,7 +195,7 @@ mod tests {
     use super::*;
 
     fn d(s: &str) -> Decimal {
-        Decimal::parse(s, true).unwrap()
+        Decimal::parse(s).unwrap()
     }
 
     #[test]
@@ -201,15 +203,14 @@ mod tests {
         for ok in [
             "0", "-0", "+5", "5.", ".5", "1.001", "007", "1e3", "1E-3", "2.05e+0",
         ] {
-            assert!(Decimal::parse(ok, true).is_some(), "{}", ok);
+            assert!(Decimal::parse(ok).is_some(), "{}", ok);
         }
         for bad in [
             "", ".", "-", "1.2.3", "1-2", "e3", "1e", "1e+", "abc", "inf", "NaN",
         ] {
-            assert!(Decimal::parse(bad, true).is_none(), "{}", bad);
+            assert!(Decimal::parse(bad).is_none(), "{}", bad);
         }
-        // Without `exponent`, an `e` makes the text invalid.
-        assert!(Decimal::parse("1e3", false).is_none());
+        assert!(Decimal::parse("1e3.5").is_none());
     }
 
     #[test]

@@ -80,7 +80,7 @@ pub(crate) fn read_duration(raw: &str, ty: ScalarType) -> Result<Duration, UnitE
         // exponent included (S18.1, E20): `1e3` and `1000` are the same value.
         // A number scalar built in code may carry text the parser never
         // produces (`30s`); that still goes through the grammar below.
-        if let Some(value) = Decimal::parse(trim_hocon_ws(raw), true) {
+        if let Some(value) = Decimal::parse(trim_hocon_ws(raw)) {
             if value.is_negative() {
                 return Err(UnitError::NegativeDuration);
             }
@@ -99,7 +99,7 @@ pub(crate) fn read_bytes(raw: &str, ty: ScalarType) -> Result<i64, UnitError> {
     let n = if ty == ScalarType::Number {
         // A number value is bytes, read from the literal as written, exponent
         // included, exactly and truncated toward zero (S18.1, E20): `1.5` is 1.
-        let value = Decimal::parse(trim_hocon_ws(raw), true).ok_or(UnitError::ExpectedBytes)?;
+        let value = Decimal::parse(trim_hocon_ws(raw)).ok_or(UnitError::ExpectedBytes)?;
         let magnitude = i128::try_from(value.mul_trunc(1).ok_or(UnitError::InvalidBytes)?)
             .map_err(|_| UnitError::InvalidBytes)?;
         i64::try_from(if value.is_negative() {
@@ -154,15 +154,23 @@ fn is_integer_str(s: &str) -> bool {
 /// error past it, never saturated or wrapped.
 const MAX_DURATION_NANOS: u128 = u64::MAX as u128 * 1_000_000_000 + 999_999_999;
 
-/// Split `[ws] number [ws] [unit] [ws]` into the number and the unit. The
-/// number is the leading run of digits, signs and points; the rest, without
-/// surrounding HOCON whitespace, is the unit (possibly empty).
+/// Split `[ws] number [ws] [unit] [ws]` into the number and the unit, as
+/// Lightbend's `getUnits` does: the unit is the trailing run of letters
+/// (possibly empty), the number is what precedes it, without surrounding
+/// HOCON whitespace. Taking the unit from the end is what tells an exponent
+/// from a unit: `1e3` is the number 1e3 with no unit, `2E2KiB` is 2E2 KiB,
+/// and `1E` is one exabyte. "Letter" is `char::is_alphabetic`, a superset of
+/// Java's `isLetter`; every unit and every number character is ASCII, so the
+/// difference only changes which branch rejects an already invalid string.
 fn split_number_unit(s: &str) -> (&str, &str) {
     let s = trim_hocon_ws(s);
-    let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+')
-        .unwrap_or(s.len());
-    (&s[..num_end], trim_hocon_ws(&s[num_end..]))
+    let unit_start = s
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphabetic())
+        .last()
+        .map_or(s.len(), |(i, _)| i);
+    (trim_hocon_ws(&s[..unit_start]), &s[unit_start..])
 }
 
 /// Nanoseconds per duration unit (HOCON.md L1304-1313). Unit names are
@@ -201,14 +209,14 @@ fn duration_from(value: &Decimal, nanos_per_unit: u128) -> Result<Duration, Unit
 
 /// Parse a HOCON duration string into a [`Duration`].
 ///
-/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
-/// exponent, read exactly (E20: `1.001s` is 1001 ms, not the binary-float
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal, exponent
+/// included (`Decimal::parse`), read exactly (E20: `1.001s` is 1001 ms, not the binary-float
 /// 1000.999999 ms). `std::time::Duration` is unsigned, so a negative value is
 /// an error (rs-specific; the ud06 conformance test asserts it).
 fn parse_duration(s: &str) -> Result<Duration, UnitError> {
     let (num, unit) = split_number_unit(s);
     let nanos_per_unit = duration_unit_nanos(unit).ok_or(UnitError::InvalidDuration)?;
-    let value = Decimal::parse(num, false).ok_or(UnitError::InvalidDuration)?;
+    let value = Decimal::parse(num).ok_or(UnitError::InvalidDuration)?;
     if value.is_negative() {
         return Err(UnitError::InvalidDuration);
     }
@@ -305,8 +313,8 @@ fn bytes_unit_multiplier(unit: &str) -> Option<u128> {
 
 /// Parse a HOCON byte-size string into a byte count.
 ///
-/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal without an
-/// exponent. The product is exact and then truncated toward zero, as
+/// Accepts `[ws] number [ws] [unit] [ws]`; the number is a decimal, exponent
+/// included (`Decimal::parse`). The product is exact and then truncated toward zero, as
 /// Lightbend's `BigDecimal.toBigInteger()` does (E20: `1.001kB` is 1001,
 /// `1.0009kB` is 1000). `None` past the `i64` range.
 ///
@@ -316,7 +324,7 @@ fn bytes_unit_multiplier(unit: &str) -> Option<u128> {
 fn parse_bytes(s: &str) -> Option<i64> {
     let (num, unit) = split_number_unit(s);
     let multiplier = bytes_unit_multiplier(unit)?;
-    let value = Decimal::parse(num, false)?;
+    let value = Decimal::parse(num)?;
     let magnitude = i128::try_from(value.mul_trunc(multiplier)?).ok()?;
     i64::try_from(if value.is_negative() {
         -magnitude
@@ -571,15 +579,61 @@ mod tests {
 
     #[test]
     fn read_duration_number_exponent_is_millis() {
-        // `1e3` is outside the unit grammar; a number scalar still reads as ms.
+        // An exponent is part of the number, quoted or not (E20 exponent forms).
         assert_eq!(
             read_duration("1e3", ScalarType::Number),
             Ok(Duration::from_secs(1))
         );
         assert_eq!(
             read_duration("1e3", ScalarType::String),
-            Err(UnitError::InvalidDuration)
+            Ok(Duration::from_secs(1))
         );
+    }
+
+    #[test]
+    fn exponent_forms_in_unit_values() {
+        assert_eq!(parse_duration("1e3 ms"), Ok(Duration::from_secs(1)));
+        assert_eq!(parse_duration("1.e3ms"), Ok(Duration::from_secs(1)));
+        assert_eq!(parse_duration("1e+5ms"), Ok(Duration::from_secs(100)));
+        assert_eq!(parse_duration(".5s"), Ok(Duration::from_millis(500)));
+        assert_eq!(parse_duration("1e-3ns"), Ok(Duration::ZERO)); // truncated
+        assert_eq!(parse_duration("1e-400s"), Ok(Duration::ZERO));
+        assert_eq!(parse_duration("-1e3ms"), Err(UnitError::InvalidDuration));
+        assert_eq!(parse_duration("1e3.5ms"), Err(UnitError::InvalidDuration));
+        assert_eq!(parse_duration("1e3e"), Err(UnitError::InvalidDuration)); // unit `e`
+        assert_eq!(parse_bytes("1E"), Some(1 << 60)); // one exabyte, not an exponent
+        assert_eq!(parse_bytes("1e3e"), None); // 1000 exabytes: past i64
+        assert_eq!(parse_bytes("2E2KiB"), Some(204_800));
+        assert_eq!(parse_bytes("1.0005e3B"), Some(1000));
+        // A trailing `e` / `E` after an exponent is the exabyte unit
+        // (Lightbend `getUnits` takes the trailing letters).
+        assert_eq!(parse_bytes("1e-3e"), Some(1_152_921_504_606_846));
+        assert_eq!(parse_bytes("1e-3E"), Some(1_152_921_504_606_846));
+        assert_eq!(parse_bytes("1E"), Some(1_152_921_504_606_846_976));
+        assert_eq!(parse_bytes("2e1E"), None); // 20 EiB: past i64
+        assert_eq!(parse_bytes("1e3e3"), None); // invalid number part
+                                                // Periods stay integer-only.
+        assert!(parse_period("1e2d").is_none());
+        assert!(parse_period("1e2").is_none());
+    }
+
+    #[test]
+    fn huge_exponents_end_fast() {
+        // No power of ten is materialised: past the range is an error, below
+        // the smallest unit is zero, and both return immediately.
+        let start = std::time::Instant::now();
+        assert_eq!(
+            parse_duration("1e999999999s"),
+            Err(UnitError::DurationTooLarge)
+        );
+        assert_eq!(parse_duration("1e-999999999s"), Ok(Duration::ZERO));
+        assert_eq!(parse_bytes("1e999999999B"), None);
+        assert_eq!(parse_bytes("1e-999999999kB"), Some(0));
+        assert_eq!(
+            parse_duration(&format!("1e{}s", "9".repeat(100))),
+            Err(UnitError::DurationTooLarge)
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]

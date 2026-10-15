@@ -1,6 +1,6 @@
 //! S18.4 — string value with no unit → default unit — conformance tests.
 //!
-//! Fixtures: xx.hocon testdata/hocon/units-default/ (29 fixtures).
+//! Fixtures: xx.hocon testdata/hocon/units-default/ (41 fixtures).
 //! No expected sidecars — per-impl assertions carry the assertion burden (the xx.hocon
 //! generator does not yet support accessor-time output capture; see spec §Test strategy).
 //!
@@ -11,6 +11,7 @@
 //!   un01-un03  Cross-family negative edge cases (empty, WS-only, unit-only)
 //!   ud09-ud11, ub07-ub08  E20 exact decimal unit arithmetic
 //!   ud12-ud13  E21 a duration past the representable range is an error
+//!   ud14-ud20, ub09-ub13  E20 exponent forms in unit values
 
 use std::path::PathBuf;
 
@@ -372,4 +373,68 @@ fn ud13_duration_overflow_fractional_rejected() {
         "ud13 (E21): must Err as too large, got {}",
         err.message
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E20 exponent forms (S18.2 / S18.4 / S18.1): ud14–ud20, ub09–ub13
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn ms(n: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(n)
+}
+
+#[test]
+fn ud14_to_ud18_duration_exponent_forms() {
+    for (file, expected) in [
+        ("ud14-duration-exponent-unit.conf", ms(100_000)),
+        ("ud15-duration-exponent-fraction.conf", ms(150_000)),
+        ("ud16-duration-exponent-no-unit.conf", ms(1000)),
+        ("ud17-duration-exponent-number-value.conf", ms(1000)),
+        ("ud18-duration-negative-exponent.conf", ms(1)),
+    ] {
+        assert_eq!(load(file).get_duration("t").unwrap(), expected, "{file}");
+    }
+}
+
+#[test]
+fn ud19_ud20_duration_exponent_errors() {
+    let err = load("ud19-duration-exponent-overflow.conf")
+        .get_duration("t")
+        .unwrap_err();
+    assert!(
+        err.message.starts_with("duration too large"),
+        "ud19 (E21): {}",
+        err.message
+    );
+    assert!(load("ud20-duration-exponent-bad-mantissa.conf")
+        .get_duration("t")
+        .is_err());
+}
+
+#[test]
+fn ub09_to_ub13_bytes_exponent_forms() {
+    assert_eq!(
+        load("ub09-bytes-exponent-unit.conf")
+            .get_bytes("b")
+            .unwrap(),
+        1_000_000
+    );
+    assert_eq!(
+        load("ub10-bytes-exponent-no-unit.conf")
+            .get_bytes("b")
+            .unwrap(),
+        1000
+    );
+    assert_eq!(
+        load("ub11-bytes-exponent-binary.conf")
+            .get_bytes("b")
+            .unwrap(),
+        204_800
+    );
+    let ub12 = load("ub12-bytes-negative-exponent-truncated.conf");
+    assert_eq!(ub12.get_bytes("b").unwrap(), 1);
+    assert_eq!(ub12.get_bytes("b2").unwrap(), 1000);
+    assert!(load("ub13-bytes-exponent-overflow.conf")
+        .get_bytes("b")
+        .is_err());
 }
