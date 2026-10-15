@@ -157,6 +157,35 @@ fn is_safe_unquoted_key(k: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Render one object key as a segment of a HOCON path expression, quoting it
+/// unless it is a bare identifier (used in error paths). Always a single
+/// line: unlike a rendered value it is never triple-quoted (path expressions
+/// do not allow that), and control characters and the Unicode line /
+/// paragraph separators are escaped.
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
+pub(crate) fn render_path_key(k: &str) -> String {
+    if is_safe_unquoted_key(k) {
+        return k.to_string();
+    }
+    let mut out = String::with_capacity(k.len() + 2);
+    out.push('"');
+    for c in k.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => {
+                out.push_str(&format!("\\u{:04x}", c as u32))
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn render_key(k: &str) -> String {
     // `include` is reserved unquoted at the start of a key (S12.5/S14a) — the
     // parser (and Lightbend: "include keyword is not followed by a quoted

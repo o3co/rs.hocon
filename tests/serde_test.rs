@@ -199,14 +199,12 @@ fn from_str_parse_error_surfaces_as_parse_variant() {
 }
 
 #[test]
-fn from_str_type_mismatch_surfaces_as_config_variant_with_empty_path() {
+fn from_str_type_mismatch_surfaces_as_config_variant_with_key_path() {
     let err = hocon::from_str::<ServerConfig>("host = localhost, port = not-a-number").unwrap_err();
     match err {
         hocon::HoconError::Config(e) => {
-            assert!(
-                e.path.is_empty(),
-                "root-level decode error carries an empty path"
-            );
+            // xx.hocon#102: the decode error names the failing key.
+            assert_eq!(e.path, "port");
         }
         other => panic!("expected HoconError::Config, got {other:?}"),
     }

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Serde decode errors now name the failing key** (xx.hocon#102).
+  `DeserializeError` gains a `path` field — a HOCON path relative to the
+  deserialized value (`server.port`, `servers[0].host`, `m."web.api"`; empty
+  when the failure concerns the value itself) — and its `Display` reads
+  `HOCON deserialization error at server.port: …`. `Config::get_as` joins it
+  onto its lookup path, rendered in the same form (`ConfigError.path` = `app.servers[0].port` instead of
+  `app.servers`), and `from_str` / `from_file` report it in `ConfigError.path`
+  instead of an empty string. Code that compared `ConfigError.path` from
+  these calls against the looked-up path, or matched on the `Display` text,
+  sees the longer path. Where serde buffers the input (`#[serde(flatten)]`,
+  untagged / internally tagged enums) the path stops at the buffered value
+  (a serde limitation).
+
 ### Fixed
 
 - **BREAKING (extra-spec E19, xx.hocon#97): a numeric literal whose magnitude

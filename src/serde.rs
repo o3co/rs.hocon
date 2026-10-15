@@ -1,5 +1,6 @@
 use crate::error::{ConfigError, HoconError};
 use crate::numeric_array::numeric_object_to_array;
+use crate::render_hocon::render_path_key;
 use crate::value::{HoconValue, ScalarType, ScalarValue};
 use indexmap::IndexMap;
 use std::fmt;
@@ -9,15 +10,78 @@ use std::path::Path;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// A serde deserialization failure.
+///
+/// `path` says where in the deserialized value the failure happened,
+/// relative to that value: keys in HOCON path-expression form, with `[i]` for
+/// array elements — `server.port`, `servers[0].host`, `"web.api".port` (a key
+/// that is not a bare identifier is quoted, on one line). Because of `[i]`
+/// and escape sequences it is a location to report, not a path to look up
+/// with a getter. It is empty
+/// when the failure concerns the value itself.
+///
+/// For a numeric-keyed object read as a sequence (S15), `[i]` is the
+/// element's position after the keys are sorted and compacted, not the key
+/// written in the source: `{ "0" {…}, "5" {…} }` reports the second element
+/// as `[1]`.
+///
+/// Where serde buffers the input before deserializing it —
+/// `#[serde(flatten)]`, untagged and internally tagged enums — the path
+/// stops at the buffered value: a failure inside a flattened struct at `a`
+/// reports `a`, not `a.port`. This is a serde limitation; the buffered
+/// content no longer passes through this crate's accessors.
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct DeserializeError {
+    /// Human-readable description of the failure, without the path.
     pub message: String,
+    /// Where the failure happened, relative to the deserialized value.
+    pub path: String,
+}
+
+impl DeserializeError {
+    fn new(message: String) -> Self {
+        DeserializeError {
+            message,
+            path: String::new(),
+        }
+    }
+
+    /// Prefix the path with an object key (the error came from its value).
+    fn in_key(mut self, key: &str) -> Self {
+        self.path = join_path(&render_path_key(key), &self.path);
+        self
+    }
+
+    /// Prefix the path with an array index (the error came from that element).
+    fn in_index(mut self, index: usize) -> Self {
+        self.path = join_path(&format!("[{}]", index), &self.path);
+        self
+    }
+}
+
+/// Join a path prefix and a path relative to it: `a` + `b` → `a.b`,
+/// `a` + `[0].b` → `a[0].b`. Either side may be empty.
+pub(crate) fn join_path(prefix: &str, rest: &str) -> String {
+    if prefix.is_empty() {
+        rest.to_string()
+    } else if rest.is_empty() || rest.starts_with('[') {
+        format!("{}{}", prefix, rest)
+    } else {
+        format!("{}.{}", prefix, rest)
+    }
 }
 
 impl fmt::Display for DeserializeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "HOCON deserialization error: {}", self.message)
+        if self.path.is_empty() {
+            return write!(f, "HOCON deserialization error: {}", self.message);
+        }
+        write!(
+            f,
+            "HOCON deserialization error at {}: {}",
+            self.path, self.message
+        )
     }
 }
 
@@ -25,9 +89,7 @@ impl std::error::Error for DeserializeError {}
 
 impl ::serde::de::Error for DeserializeError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        DeserializeError {
-            message: msg.to_string(),
-        }
+        DeserializeError::new(msg.to_string())
     }
 }
 
@@ -90,9 +152,9 @@ where
 /// environment. For a path-scoped decode use
 /// [`Config::get_as`](crate::Config::get_as).
 ///
-/// A deserialization failure is reported as [`HoconError::Config`] with an
-/// empty `path` (the error concerns the document root), matching the
-/// array-root convention.
+/// A deserialization failure is reported as [`HoconError::Config`] whose
+/// `path` names the failing key (`server.port`, `servers[0].host`); it is
+/// empty when the failure concerns the document root.
 pub fn from_str<T>(input: &str) -> Result<T, HoconError>
 where
     T: ::serde::de::DeserializeOwned,
@@ -118,7 +180,7 @@ where
 fn deserialize_to_hocon_error(e: DeserializeError) -> HoconError {
     HoconError::Config(ConfigError {
         message: e.message,
-        path: String::new(),
+        path: e.path,
     })
 }
 
@@ -141,9 +203,10 @@ where
             return Ok(n);
         }
     }
-    Err(DeserializeError {
-        message: format!("cannot parse \"{}\" as {}", sv.raw, type_name),
-    })
+    Err(DeserializeError::new(format!(
+        "cannot parse \"{}\" as {}",
+        sv.raw, type_name
+    )))
 }
 
 macro_rules! deserialize_int {
@@ -157,9 +220,11 @@ macro_rules! deserialize_int {
                     let n: $ty = parse_int_from_scalar(sv, stringify!($ty))?;
                     visitor.$visit(n)
                 }
-                other => Err(DeserializeError {
-                    message: format!("expected {}, got {:?}", stringify!($ty), other),
-                }),
+                other => Err(DeserializeError::new(format!(
+                    "expected {}, got {:?}",
+                    stringify!($ty),
+                    other
+                ))),
             }
         }
     };
@@ -191,12 +256,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
                         // literals, so this only fires on internally
                         // constructed values; refuse loudly instead.
                         if !f.is_finite() {
-                            return Err(DeserializeError {
-                                message: format!(
+                            return Err(DeserializeError::new(format!(
                                     "non-finite number {:?} cannot be deserialized",
                                     sv.raw
-                                ),
-                            });
+                                )));
                         }
                         return visitor.visit_f64(f);
                     }
@@ -206,12 +269,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
             },
             HoconValue::Object(map) => visitor.visit_map(HoconMapAccess::new(map)),
             HoconValue::Array(items) => visitor.visit_seq(HoconSeqAccess::new(items)),
-            HoconValue::Placeholder(pv) => Err(DeserializeError {
-                message: format!(
+            HoconValue::Placeholder(pv) => Err(DeserializeError::new(format!(
                     "cannot deserialize unresolved substitution at path {:?}: call Config::resolve() first",
                     pv.path
-                ),
-            }),
+                ))),
         }
     }
 
@@ -223,13 +284,15 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
             HoconValue::Scalar(sv) => match sv.raw.to_lowercase().as_str() {
                 "true" | "yes" | "on" => visitor.visit_bool(true),
                 "false" | "no" | "off" => visitor.visit_bool(false),
-                _ => Err(DeserializeError {
-                    message: format!("cannot coerce \"{}\" to bool", sv.raw),
-                }),
+                _ => Err(DeserializeError::new(format!(
+                    "cannot coerce \"{}\" to bool",
+                    sv.raw
+                ))),
             },
-            other => Err(DeserializeError {
-                message: format!("expected bool, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected bool, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -248,14 +311,15 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => {
-                let f: f32 = sv.raw.parse().map_err(|_| DeserializeError {
-                    message: format!("cannot parse \"{}\" as f32", sv.raw),
+                let f: f32 = sv.raw.parse().map_err(|_| {
+                    DeserializeError::new(format!("cannot parse \"{}\" as f32", sv.raw))
                 })?;
                 visitor.visit_f32(f)
             }
-            other => Err(DeserializeError {
-                message: format!("expected f32, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected f32, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -265,14 +329,15 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => {
-                let f: f64 = sv.raw.parse().map_err(|_| DeserializeError {
-                    message: format!("cannot parse \"{}\" as f64", sv.raw),
+                let f: f64 = sv.raw.parse().map_err(|_| {
+                    DeserializeError::new(format!("cannot parse \"{}\" as f64", sv.raw))
                 })?;
                 visitor.visit_f64(f)
             }
-            other => Err(DeserializeError {
-                message: format!("expected f64, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected f64, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -285,14 +350,16 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
                 let mut chars = sv.raw.chars();
                 match (chars.next(), chars.next()) {
                     (Some(c), None) => visitor.visit_char(c),
-                    _ => Err(DeserializeError {
-                        message: format!("expected single char, got \"{}\"", sv.raw),
-                    }),
+                    _ => Err(DeserializeError::new(format!(
+                        "expected single char, got \"{}\"",
+                        sv.raw
+                    ))),
                 }
             }
-            other => Err(DeserializeError {
-                message: format!("expected char, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected char, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -309,9 +376,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => visitor.visit_string(sv.raw.clone()),
-            other => Err(DeserializeError {
-                message: format!("expected string, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected string, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -319,18 +387,18 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
         self,
         _visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        Err(DeserializeError {
-            message: "HOCON does not support byte arrays".into(),
-        })
+        Err(DeserializeError::new(
+            "HOCON does not support byte arrays".into(),
+        ))
     }
 
     fn deserialize_byte_buf<V: ::serde::de::Visitor<'de>>(
         self,
         _visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        Err(DeserializeError {
-            message: "HOCON does not support byte arrays".into(),
-        })
+        Err(DeserializeError::new(
+            "HOCON does not support byte arrays".into(),
+        ))
     }
 
     fn deserialize_option<V: ::serde::de::Visitor<'de>>(
@@ -349,9 +417,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) if sv.value_type == ScalarType::Null => visitor.visit_unit(),
-            other => Err(DeserializeError {
-                message: format!("expected null/unit, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected null/unit, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -383,13 +452,15 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
             // error so serde receives a meaningful message.
             obj @ HoconValue::Object(_) => match numeric_object_to_array(obj) {
                 Some(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
-                None => Err(DeserializeError {
-                    message: format!("expected array, got {:?}", obj),
-                }),
+                None => Err(DeserializeError::new(format!(
+                    "expected array, got {:?}",
+                    obj
+                ))),
             },
-            other => Err(DeserializeError {
-                message: format!("expected array, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected array, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -416,9 +487,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Object(map) => visitor.visit_map(HoconMapAccess::new(map)),
-            other => Err(DeserializeError {
-                message: format!("expected object, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected object, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -439,9 +511,10 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => visitor.visit_enum(sv.raw.as_str().into_deserializer()),
-            other => Err(DeserializeError {
-                message: format!("expected string for enum variant, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected string for enum variant, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -468,14 +541,14 @@ use ::serde::de::IntoDeserializer;
 
 pub(crate) struct HoconMapAccess<'de> {
     iter: indexmap::map::Iter<'de, String, HoconValue>,
-    current_value: Option<&'de HoconValue>,
+    current: Option<(&'de str, &'de HoconValue)>,
 }
 
 impl<'de> HoconMapAccess<'de> {
     fn new(map: &'de IndexMap<String, HoconValue>) -> Self {
         Self {
             iter: map.iter(),
-            current_value: None,
+            current: None,
         }
     }
 }
@@ -489,8 +562,10 @@ impl<'de> ::serde::de::MapAccess<'de> for HoconMapAccess<'de> {
     {
         match self.iter.next() {
             Some((key, value)) => {
-                self.current_value = Some(value);
-                seed.deserialize(StringKeyDeserializer { key }).map(Some)
+                self.current = Some((key, value));
+                seed.deserialize(StringKeyDeserializer { key })
+                    .map(Some)
+                    .map_err(|e| e.in_key(key))
             }
             None => Ok(None),
         }
@@ -500,10 +575,11 @@ impl<'de> ::serde::de::MapAccess<'de> for HoconMapAccess<'de> {
     where
         V: ::serde::de::DeserializeSeed<'de>,
     {
-        let value = self.current_value.take().ok_or_else(|| DeserializeError {
-            message: "next_value_seed called before next_key_seed".into(),
+        let (key, value) = self.current.take().ok_or_else(|| {
+            DeserializeError::new("next_value_seed called before next_key_seed".into())
         })?;
         seed.deserialize(HoconDeserializer::new(value))
+            .map_err(|e| e.in_key(key))
     }
 }
 
@@ -534,12 +610,14 @@ impl<'de, 'a> ::serde::Deserializer<'de> for StringKeyDeserializer<'a> {
 // ---------------------------------------------------------------------------
 
 pub(crate) struct HoconSeqAccess<'de> {
-    iter: std::slice::Iter<'de, HoconValue>,
+    iter: std::iter::Enumerate<std::slice::Iter<'de, HoconValue>>,
 }
 
 impl<'de> HoconSeqAccess<'de> {
     fn new(items: &'de [HoconValue]) -> Self {
-        Self { iter: items.iter() }
+        Self {
+            iter: items.iter().enumerate(),
+        }
     }
 }
 
@@ -551,7 +629,10 @@ impl<'de> ::serde::de::SeqAccess<'de> for HoconSeqAccess<'de> {
         T: ::serde::de::DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some(value) => seed.deserialize(HoconDeserializer::new(value)).map(Some),
+            Some((index, value)) => seed
+                .deserialize(HoconDeserializer::new(value))
+                .map(Some)
+                .map_err(|e| e.in_index(index)),
             None => Ok(None),
         }
     }
@@ -588,9 +669,12 @@ impl<'de> ::serde::de::SeqAccess<'de> for HoconOwnedSeqAccess {
         // Clone the value at idx so OwnedHoconDeserializer can own it.
         // The clone is bounded by the element count (typically small: O(n) where n
         // is the number of numeric keys in the source object).
-        let value = self.items[self.idx].clone();
+        let index = self.idx;
+        let value = self.items[index].clone();
         self.idx += 1;
-        seed.deserialize(OwnedHoconDeserializer { value }).map(Some)
+        seed.deserialize(OwnedHoconDeserializer { value })
+            .map(Some)
+            .map_err(|e| e.in_index(index))
     }
 }
 
@@ -626,12 +710,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
                         // deserializer above — refuse a non-finite f64 loudly
                         // rather than letting serde_json degrade it to null.
                         if !f.is_finite() {
-                            return Err(DeserializeError {
-                                message: format!(
+                            return Err(DeserializeError::new(format!(
                                     "non-finite number {:?} cannot be deserialized",
                                     sv.raw
-                                ),
-                            });
+                                )));
                         }
                         return visitor.visit_f64(f);
                     }
@@ -641,12 +723,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
             },
             HoconValue::Object(map) => visitor.visit_map(OwnedHoconMapAccess::new(map)),
             HoconValue::Array(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
-            HoconValue::Placeholder(pv) => Err(DeserializeError {
-                message: format!(
+            HoconValue::Placeholder(pv) => Err(DeserializeError::new(format!(
                     "cannot deserialize unresolved substitution at path {:?}: call Config::resolve() first",
                     pv.path
-                ),
-            }),
+                ))),
         }
     }
 
@@ -656,9 +736,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => visitor.visit_string(sv.raw),
-            other => Err(DeserializeError {
-                message: format!("expected string, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected string, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -677,13 +758,15 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
             HoconValue::Scalar(sv) => match sv.raw.to_lowercase().as_str() {
                 "true" | "yes" | "on" => visitor.visit_bool(true),
                 "false" | "no" | "off" => visitor.visit_bool(false),
-                _ => Err(DeserializeError {
-                    message: format!("cannot coerce \"{}\" to bool", sv.raw),
-                }),
+                _ => Err(DeserializeError::new(format!(
+                    "cannot coerce \"{}\" to bool",
+                    sv.raw
+                ))),
             },
-            other => Err(DeserializeError {
-                message: format!("expected bool, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected bool, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -696,9 +779,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
                 let n: i64 = parse_int_from_scalar(&sv, "i64")?;
                 visitor.visit_i64(n)
             }
-            other => Err(DeserializeError {
-                message: format!("expected i64, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected i64, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -711,9 +795,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
                 let n: u64 = parse_int_from_scalar(&sv, "u64")?;
                 visitor.visit_u64(n)
             }
-            other => Err(DeserializeError {
-                message: format!("expected u64, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected u64, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -723,14 +808,15 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) => {
-                let f: f64 = sv.raw.parse().map_err(|_| DeserializeError {
-                    message: format!("cannot parse \"{}\" as f64", sv.raw),
+                let f: f64 = sv.raw.parse().map_err(|_| {
+                    DeserializeError::new(format!("cannot parse \"{}\" as f64", sv.raw))
                 })?;
                 visitor.visit_f64(f)
             }
-            other => Err(DeserializeError {
-                message: format!("expected f64, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected f64, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -742,13 +828,15 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
             HoconValue::Array(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
             obj @ HoconValue::Object(_) => match numeric_object_to_array(&obj) {
                 Some(items) => visitor.visit_seq(HoconOwnedSeqAccess::new(items)),
-                None => Err(DeserializeError {
-                    message: format!("expected array, got {:?}", obj),
-                }),
+                None => Err(DeserializeError::new(format!(
+                    "expected array, got {:?}",
+                    obj
+                ))),
             },
-            other => Err(DeserializeError {
-                message: format!("expected array, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected array, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -768,9 +856,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Scalar(sv) if sv.value_type == ScalarType::Null => visitor.visit_unit(),
-            other => Err(DeserializeError {
-                message: format!("expected null/unit, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected null/unit, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -805,9 +894,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
     ) -> Result<V::Value, Self::Error> {
         match self.value {
             HoconValue::Object(map) => visitor.visit_map(OwnedHoconMapAccess::new(map)),
-            other => Err(DeserializeError {
-                message: format!("expected object, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected object, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -830,9 +920,10 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
         // numeric-keyed-object → array elements can deserialize as string enum variants.
         match self.value {
             HoconValue::Scalar(sv) => visitor.visit_enum(sv.raw.as_str().into_deserializer()),
-            other => Err(DeserializeError {
-                message: format!("expected string for enum variant, got {:?}", other),
-            }),
+            other => Err(DeserializeError::new(format!(
+                "expected string for enum variant, got {:?}",
+                other
+            ))),
         }
     }
 
@@ -861,14 +952,14 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
 
 pub(crate) struct OwnedHoconMapAccess {
     iter: indexmap::map::IntoIter<String, HoconValue>,
-    current_value: Option<HoconValue>,
+    current: Option<(String, HoconValue)>,
 }
 
 impl OwnedHoconMapAccess {
     fn new(map: IndexMap<String, HoconValue>) -> Self {
         Self {
             iter: map.into_iter(),
-            current_value: None,
+            current: None,
         }
     }
 }
@@ -882,8 +973,16 @@ impl<'de> ::serde::de::MapAccess<'de> for OwnedHoconMapAccess {
     {
         match self.iter.next() {
             Some((key, value)) => {
-                self.current_value = Some(value);
-                seed.deserialize(key.into_deserializer()).map(Some)
+                // Hand over an owned key (visit_string, as before paths were
+                // tracked) and keep a copy for the error path. The clone runs
+                // on success too; it is small next to the element clone in
+                // HoconOwnedSeqAccess.
+                let result = seed
+                    .deserialize(key.clone().into_deserializer())
+                    .map(Some)
+                    .map_err(|e: DeserializeError| e.in_key(&key));
+                self.current = Some((key, value));
+                result
             }
             None => Ok(None),
         }
@@ -893,9 +992,10 @@ impl<'de> ::serde::de::MapAccess<'de> for OwnedHoconMapAccess {
     where
         V: ::serde::de::DeserializeSeed<'de>,
     {
-        let value = self.current_value.take().ok_or_else(|| DeserializeError {
-            message: "next_value_seed called before next_key_seed".into(),
+        let (key, value) = self.current.take().ok_or_else(|| {
+            DeserializeError::new("next_value_seed called before next_key_seed".into())
         })?;
         seed.deserialize(OwnedHoconDeserializer { value })
+            .map_err(|e| e.in_key(&key))
     }
 }

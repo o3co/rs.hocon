@@ -84,9 +84,17 @@ impl std::error::Error for ResolveError {}
 pub struct ConfigError {
     /// Human-readable description of the error.
     pub message: String,
-    /// The dot-separated path that was looked up. Empty for file-root errors
-    /// (e.g. the S3.5 array-at-file-root rejection), where no access path
-    /// exists.
+    /// Where the error happened.
+    ///
+    /// - From a getter: the dot-separated path that was looked up.
+    /// - From a serde decode ([`Config::get_as`](crate::Config::get_as),
+    ///   `from_str`, `from_file`): the path of the failing key, which can be
+    ///   deeper than the path looked up and uses the `DeserializeError`
+    ///   path form (`app.servers[0].port`, `m."web.api"`) — a location to
+    ///   report, not a path a getter accepts (`[i]`, escape sequences).
+    ///
+    /// Empty for file-root errors (e.g. the S3.5 array-at-file-root
+    /// rejection) and for a decode failure that concerns the document root.
     pub path: String,
 }
 
