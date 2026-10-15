@@ -104,13 +104,15 @@ fn period_parity_with_get_period() {
 
 #[test]
 fn exponent_form_follows_the_getter() {
-    // A number scalar's source text reaches the reader: `1e3` is 1000 ms as a
-    // duration, and not a byte count (a bare byte count is an integer).
+    // A number scalar's source text reaches the reader, exponent included.
     let d: D = hocon::from_str("v = 1e3").unwrap();
     assert_eq!(d.v, Duration::from_secs(1));
-    let err = config_error(hocon::from_str::<B>("v = 1e3").unwrap_err());
-    assert_eq!(err.message, "expected byte size: \"1e3\"");
-    assert_eq!(err.path, "v");
+    let b: B = hocon::from_str("v = 1e3").unwrap();
+    assert_eq!(b.v, 1000);
+    // The digits as written, not the nearest double: 0.99999999999999999 ms
+    // is 999999 ns exactly, while the double rounds to 1.0 (1 ms).
+    let d: D = hocon::from_str("v = 0.99999999999999999").unwrap();
+    assert_eq!(d.v, Duration::from_nanos(999_999));
 }
 
 #[test]
@@ -235,10 +237,16 @@ fn array_elements_including_numeric_keyed_objects() {
     // S15 numeric-keyed object → array: elements go through the owned
     // deserializer, which must hand over the source text too.
     let err = config_error(
-        hocon::from_str::<Items>(r#"items { "0" { v = 1k }, "1" { v = 1e3 } }"#).unwrap_err(),
+        hocon::from_str::<Items>(r#"items { "0" { v = 1k }, "1" { v = -1 } }"#).unwrap_err(),
     );
     assert_eq!(err.path, "items[1].v");
-    assert_eq!(err.message, "expected byte size: \"1e3\"");
+    assert_eq!(err.message, "negative byte size: \"-1\"");
+    #[derive(Debug, Deserialize)]
+    struct Durations {
+        items: Vec<D>,
+    }
+    let ds: Durations = hocon::from_str(r#"items { "0" { v = 0.99999999999999999 } }"#).unwrap();
+    assert_eq!(ds.items[0].v, Duration::from_nanos(999_999));
 }
 
 #[test]
@@ -260,18 +268,14 @@ fn other_deserializers_read_the_value() {
     let err = serde_json::from_str::<B>(r#"{"v": "5 parsecs"}"#).unwrap_err();
     assert!(err.to_string().contains("invalid byte size: \"5 parsecs\""));
 
-    // Another format hands over a number's value: an integer reads as an
-    // integer, a float as a float — so bytes rejects `1e3` / `1.0` here just
-    // as the getter rejects the HOCON literal `1e3`.
+    // Another format hands over a number's value, read exactly and truncated
+    // like the getter's (E20).
     let b: B = serde_json::from_str(r#"{"v": 1000}"#).unwrap();
     assert_eq!(b.v, 1000);
-    let err = serde_json::from_str::<B>(r#"{"v": 1e3}"#).unwrap_err();
-    assert!(
-        err.to_string().contains("expected byte size: \"1000.0\""),
-        "{}",
-        err
-    );
-    assert!(serde_json::from_str::<B>(r#"{"v": 1.0}"#).is_err());
+    let b: B = serde_json::from_str(r#"{"v": 1e3}"#).unwrap();
+    assert_eq!(b.v, 1000);
+    let b: B = serde_json::from_str(r#"{"v": 1.5}"#).unwrap();
+    assert_eq!(b.v, 1);
     let d: D = serde_json::from_str(r#"{"v": 1e3}"#).unwrap();
     assert_eq!(d.v, Duration::from_secs(1));
 

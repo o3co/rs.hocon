@@ -719,8 +719,8 @@ fn missing(path: &str) -> ConfigError {
 }
 
 /// The getters' wording for a unit value they cannot read:
-/// `invalid duration at <path>: <raw>`. A non-integer bare byte count has
-/// always been reported without the raw text.
+/// `invalid duration at <path>: <raw>`. A number scalar that is not a byte
+/// count has always been reported without the raw text.
 fn unit_error(path: &str, raw: &str, e: UnitError) -> ConfigError {
     let message = match e {
         UnitError::ExpectedBytes => format!("{} at {}", e, path),
@@ -1191,7 +1191,7 @@ mod tests {
     fn unit_error_getter_wording() {
         let c = make_config(vec![
             ("a", sv("5 parsecs")),
-            ("b", HoconValue::Scalar(ScalarValue::number("1.5".into()))),
+            ("b", HoconValue::Scalar(ScalarValue::number("1 kB".into()))),
         ]);
         assert_eq!(
             c.get_duration("a").unwrap_err().message,
