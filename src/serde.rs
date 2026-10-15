@@ -6,6 +6,9 @@ use indexmap::IndexMap;
 use std::fmt;
 use std::path::Path;
 
+mod unit_helpers;
+pub use unit_helpers::{bytes, duration, period};
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -434,9 +437,15 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
 
     fn deserialize_newtype_struct<V: ::serde::de::Visitor<'de>>(
         self,
-        _name: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
+        // A unit helper asking for the scalar's source text (see unit_helpers).
+        if name == unit_helpers::RAW_SCALAR {
+            if let HoconValue::Scalar(sv) = self.value {
+                return unit_helpers::visit_raw_scalar(sv, visitor);
+            }
+        }
         visitor.visit_newtype_struct(self)
     }
 
@@ -865,9 +874,15 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
 
     fn deserialize_newtype_struct<V: ::serde::de::Visitor<'de>>(
         self,
-        _name: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
+        // Mirror HoconDeserializer: answer a unit helper with the source text.
+        if name == unit_helpers::RAW_SCALAR {
+            if let HoconValue::Scalar(sv) = &self.value {
+                return unit_helpers::visit_raw_scalar(sv, visitor);
+            }
+        }
         visitor.visit_newtype_struct(self)
     }
 

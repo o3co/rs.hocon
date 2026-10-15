@@ -224,6 +224,33 @@ let ports: Vec<u16> = config.get_as("ports")?;
 let server: ServerConfig = config.deserialize()?;
 ```
 
+単位付きの値（期間・バイトサイズ・ピリオド）は、単位ごとの `with` モジュールで
+`get_duration` / `get_bytes` / `get_period` と同じ規則で読めます。範囲の制約はフィールドの型に任せます:
+
+```rust
+use std::time::Duration;
+
+#[derive(Deserialize)]
+struct Session {
+    #[serde(with = "hocon::serde::duration")]
+    lifetime: Duration,          // lifetime = 30m
+    #[serde(with = "hocon::serde::bytes")]
+    max_body: u64,               // max_body = 64KiB (T: TryFrom<i64> なら何でも)
+    #[serde(with = "hocon::serde::period")]
+    retention: hocon::Period,    // retention = 2w
+    #[serde(default, with = "hocon::serde::duration::option")]
+    idle_timeout: Option<Duration>,  // null または欠落 → None
+}
+```
+
+デコードエラーには失敗したキーのパスが入ります: `DeserializeError::path`（`from_str` / `get_as` では
+`ConfigError::path`）が `session.lifetime`、`servers[0].port` などになります。helper は HOCON の値を
+getter と同じに読みます。serde が入力をバッファする `#[serde(flatten)]`・untagged / internally tagged enum の内側でも、
+受け付ける値と拒否する値は同じです。ただし、数値で書いた duration は丸めの分だけ（通常 1 ns、10^13 ms 付近では最大 ~1 µs）
+ずれることがあり、エラーのパスはバッファされたオブジェクトで止まります。
+ほかの自己記述的な Deserializer（serde_json など）では数値を値として受け取り、整数は整数として、浮動小数点数は
+浮動小数点数として読みます。
+
 ## エラー型
 
 | 型 | 発生条件 |
