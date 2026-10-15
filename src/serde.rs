@@ -13,10 +13,10 @@
 //! - [`Config::deserialize`](crate::Config::deserialize) and [`from_value`]
 //!   return a [`DeserializeError`] (`path` relative to the value);
 //! - [`Config::get_as`](crate::Config::get_as) returns a
-//!   [`ConfigError`](crate::ConfigError) whose `path` starts with the lookup path;
+//!   [`ConfigError`] whose `path` starts with the lookup path;
 //! - [`from_str`] / [`from_file`] return
-//!   [`HoconError::Config`](crate::HoconError::Config) with the
-//!   [`ConfigError`](crate::ConfigError) inside.
+//!   [`HoconError::Config`] with the
+//!   [`ConfigError`] inside.
 //!
 //! Where serde buffers the input (`#[serde(flatten)]`, untagged and
 //! internally tagged enums) the path stops at the buffered value.
