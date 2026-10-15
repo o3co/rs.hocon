@@ -999,3 +999,17 @@ impl<'de> ::serde::de::MapAccess<'de> for OwnedHoconMapAccess {
             .map_err(|e| e.in_key(&key))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::join_path;
+
+    #[test]
+    fn join_path_forms() {
+        assert_eq!(join_path("", ""), "");
+        assert_eq!(join_path("", "a.b"), "a.b");
+        assert_eq!(join_path("a", ""), "a");
+        assert_eq!(join_path("a", "b"), "a.b");
+        assert_eq!(join_path("a", "[0].b"), "a[0].b");
+    }
+}
