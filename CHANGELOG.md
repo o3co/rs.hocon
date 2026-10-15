@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`DeserializeError`) instead of letting `serde_json` degrade it to `null` —
   defense in depth for number scalars constructed programmatically, which the
   parser fix above cannot reach.
+- `Config::get_duration` no longer panics on a bare number of milliseconds
+  that comes to exactly 2^64 seconds (`d = 18446744073709551616000`); it
+  returns `duration too large`, like every larger value already did.
 
 ## [1.13.1] - 2026-08-26
 
