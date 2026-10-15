@@ -1,6 +1,6 @@
 //! Read config formats owned by *other* programs as HOCON.
 //!
-//! Each adapter returns a fully resolved [`Config`](crate::Config) you place
+//! Each adapter returns a fully resolved [`Config`] you place
 //! under your own document with [`Config::with_fallback`](crate::Config::with_fallback),
 //! so a `${...}` can reach into it:
 //!
@@ -10,7 +10,7 @@
 //!     ..Default::default()
 //! })?;
 //! let cfg = hocon::parse_string_with_options(src, opts_without_resolution)?;
-//! let merged = cfg.with_fallback(&base).resolve(Default::default())?;
+//! let merged = cfg.with_fallback(&base).resolve(hocon::ResolveOptions::defaults())?;
 //! ```
 //!
 //! Deferring resolution matters: the plain `parse` resolves as it goes, so a

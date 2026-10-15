@@ -23,10 +23,16 @@ work and ensures the feature fits the project direction.
 ```sh
 git clone https://github.com/o3co/rs.hocon.git
 cd rs.hocon
-cargo test
-cargo test --features serde
-cargo test --all-features
+make testdata   # fetch the conformance fixtures (see below)
+make test       # cargo test, --features serde and --all-features
 ```
+
+`make testdata` downloads the shared conformance fixtures from
+[o3co/xx.hocon](https://github.com/o3co/xx.hocon) into `tests/testdata/`. They
+are gitignored, so on a fresh clone `cargo test` fails with missing-fixture
+errors until you run it. It pins the fetched commit in `.xx-hocon-version` and
+skips the download while that pin is current; run it again to pick up new
+fixtures.
 
 ## Testing
 
@@ -82,26 +88,27 @@ All pull requests must pass `cargo test`, `cargo test --features serde` and
 
 ## Releasing
 
-Releases are published to crates.io automatically by CI when a `v*` tag is pushed.
-Use [cargo-release](https://github.com/crate-ci/cargo-release) to do everything in one command:
+Releases are cut by pushing a `v*` tag; `.github/workflows/publish.yml` does
+the rest. `Cargo.toml`'s `version` is not bumped by hand — the workflow sets it
+from the tag (`cargo set-version`) before testing and publishing.
 
-```sh
-# Install once
-cargo install cargo-release
+1. **Release-prep PR** against `develop`, with one commit
+   `chore(release): X.Y.Z` that:
+   - renames `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`
+     and opens a new empty `## [Unreleased]` above it;
+   - updates the link references at the bottom of `CHANGELOG.md`
+     (`[Unreleased]` compares from `vX.Y.Z`, plus a `[X.Y.Z]` line).
+2. **Tag** the merged commit on `develop` with `vX.Y.Z` and push the tag.
+3. **CI** (`publish.yml`) then:
+   1. sets the crate version from the tag;
+   2. fetches the fixtures and runs `cargo test`, `--features serde` and
+      `--all-features`;
+   3. extracts the `## [X.Y.Z]` section of `CHANGELOG.md` as the release
+      notes — a missing section fails the run before anything is published;
+   4. creates the GitHub Release, then runs `cargo publish`.
 
-# Release a patch (0.1.3 → 0.1.4), minor, or major bump
-cargo release patch   # or: cargo release minor / cargo release major
-```
-
-This will:
-
-1. Bump the version in `Cargo.toml`
-2. Create a commit (`chore: release v0.1.4`)
-3. Tag it (`v0.1.4`)
-4. Push the commit and tag to origin
-5. CI picks up the tag and runs `cargo publish`
-
-> **Do not** run `cargo publish` locally — CI handles it and verifies the tag matches `Cargo.toml`.
+> **Do not** run `cargo publish` locally. crates.io never accepts the same
+> version twice, so a release has to go through the gated workflow.
 
 ## License Agreement
 

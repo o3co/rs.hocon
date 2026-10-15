@@ -460,7 +460,8 @@ impl Config {
     ///
     /// The arithmetic is exact (extra-spec E20): `"1.001s"` is exactly
     /// 1001 ms, truncated toward zero at the nanosecond. A duration past what
-    /// `std::time::Duration` holds is an error, however it is spelled (E21).
+    /// `std::time::Duration` holds is an error, however it is spelled (E21),
+    /// and so is a negative duration (`std::time::Duration` is unsigned).
     pub fn get_duration(&self, path: &str) -> Result<std::time::Duration, ConfigError> {
         match self.lookup_node(path) {
             None => Err(missing(path)),
@@ -482,14 +483,20 @@ impl Config {
 
     /// Return the value at `path` as a byte count (`i64`).
     ///
-    /// Accepts HOCON byte-size strings (e.g., `"512 MB"`, `"1 GiB"`).
-    /// Bare integers are returned as-is (assumed bytes).
+    /// Accepts HOCON byte-size strings (e.g., `"512 MB"`, `"1 GiB"`). A bare
+    /// number is bytes.
     ///
-    /// Supported units: `B`/`byte`/`bytes`, `K`/`KB`/`kilobyte`/`kilobytes`,
-    /// `KiB`/`kibibyte`/`kibibytes`, `M`/`MB`/`megabyte`/`megabytes`,
-    /// `MiB`/`mebibyte`/`mebibytes`, `G`/`GB`/`gigabyte`/`gigabytes`,
-    /// `GiB`/`gibibyte`/`gibibytes`, `T`/`TB`/`terabyte`/`terabytes`,
-    /// `TiB`/`tebibyte`/`tebibytes`. Fractional numbers (e.g. `0.5M`) are supported.
+    /// Supported units (case-sensitive, as in Lightbend):
+    /// - `B`/`b`/`byte`/`bytes`;
+    /// - powers of 10: `kB`, `MB`, `GB`, `TB`, `PB`, `EB`, `ZB`, `YB` and the
+    ///   long forms `kilobyte(s)` … `yottabyte(s)` — `KB` is an error;
+    /// - powers of 2: `Ki`/`KiB` … `Yi`/`YiB`, the long forms
+    ///   `kibibyte(s)` … `yobibyte(s)`, and the single letters
+    ///   `K`, `M`, `G`, `T`, `P`, `E`, `Z`, `Y` (either case, java `-Xmx` style).
+    ///
+    /// Fractional values (e.g. `0.5M`) are computed exactly and truncated
+    /// toward zero (extra-spec E20). Negative sizes and sizes past `i64` are
+    /// errors.
     pub fn get_bytes(&self, path: &str) -> Result<i64, ConfigError> {
         let v = self.lookup_node(path).ok_or_else(|| ConfigError {
             message: format!("path not found: {}", path),
@@ -564,8 +571,6 @@ impl Config {
     /// # Ok(())
     /// # }
     /// ```
-    /// Merge this config with a fallback. Receiver's keys win; missing keys
-    /// come from fallback. Nested objects are deep-merged.
     ///
     /// Accepts both resolved and unresolved operands (E12 decision 5).
     /// Non-object collision captures fallback value as prior for S13a
