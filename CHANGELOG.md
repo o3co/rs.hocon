@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-16
+
+**Minor, with two BREAKING parse changes** (released as a minor by decision;
+see **Fixed**): an unquoted `+` that is not an exponent sign is now an error
+(S8.1 / E8 `us15`; quote the value), and a numeric literal that overflows
+f64 is an error (E19). Unit values gain exact decimal arithmetic (E20,
+including exponent forms), one duration range (E21), and serde helpers;
+serde decode errors now name the failing key.
+
 ### Added
 
 - **Unit values accept exponent forms** (extra-spec E20, xx.hocon#111), as
@@ -1252,7 +1261,8 @@ A subset of these fixes change observable runtime behavior. The most likely user
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.13.1...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/o3co/rs.hocon/compare/v1.13.1...v1.14.0
 [1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/o3co/rs.hocon/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/o3co/rs.hocon/compare/v1.11.0...v1.12.0
