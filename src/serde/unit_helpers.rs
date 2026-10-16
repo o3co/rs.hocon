@@ -35,8 +35,21 @@
 //! Formats that are not self-describing (bincode, postcard) cannot use the
 //! helpers, and serde_json built with `arbitrary_precision` hands over floats
 //! in a form they do not read (integers and strings still work).
+//!
+//! # Requiring the unit
+//!
+//! Each helper has a `require_unit` sibling (`duration::require_unit`, …)
+//! that reads the same values but refuses one that does not name its unit: a
+//! number (`ttl = 30`) or a string of the number alone (`"30"`, what an
+//! environment variable gives), which would otherwise read in the default
+//! unit. The value is read first, so one that does not read keeps its own
+//! error; whether a unit is named is decided by the readers' own split
+//! ([`crate::units`]). The buffered paths hand over a number as a number and
+//! a string as a string, so the check is the same there.
 
-use crate::units::{read_bytes, read_duration, read_period, UnitError};
+use crate::units::{
+    names_magnitude_unit, names_period_unit, read_bytes, read_duration, read_period, UnitError,
+};
 use crate::value::{ScalarType, ScalarValue};
 use ::serde::de::{self, Deserializer, SeqAccess, Visitor};
 use std::fmt;
@@ -171,6 +184,29 @@ trait Unit {
     type Value;
     const EXPECTING: &'static str;
     fn read(raw: &str, ty: ScalarType) -> Result<Self::Value, String>;
+    /// Whether a scalar that `read` accepts names its unit.
+    fn names_unit(raw: &str, ty: ScalarType) -> bool;
+}
+
+/// `U`, refusing a value that does not name its unit (the `require_unit`
+/// modules). The reader runs first, so a value that does not read keeps its
+/// own error. The message names the problem, not the value: a value can be a
+/// secret set under the wrong key.
+struct RequireUnit<U>(PhantomData<U>);
+
+impl<U: Unit> Unit for RequireUnit<U> {
+    type Value = U::Value;
+    const EXPECTING: &'static str = U::EXPECTING;
+    fn read(raw: &str, ty: ScalarType) -> Result<Self::Value, String> {
+        let value = U::read(raw, ty)?;
+        if !U::names_unit(raw, ty) {
+            return Err(format!("{} must name its unit", U::EXPECTING));
+        }
+        Ok(value)
+    }
+    fn names_unit(raw: &str, ty: ScalarType) -> bool {
+        U::names_unit(raw, ty)
+    }
 }
 
 /// The helpers' wording: `invalid duration: "5 parsecs"` (the path is
@@ -226,6 +262,9 @@ impl Unit for DurationUnit {
     fn read(raw: &str, ty: ScalarType) -> Result<Self::Value, String> {
         read_duration(raw, ty).map_err(unit_message(raw))
     }
+    fn names_unit(raw: &str, ty: ScalarType) -> bool {
+        names_magnitude_unit(raw, ty)
+    }
 }
 
 struct BytesUnit<T>(PhantomData<T>);
@@ -248,6 +287,9 @@ where
             )
         })
     }
+    fn names_unit(raw: &str, ty: ScalarType) -> bool {
+        names_magnitude_unit(raw, ty)
+    }
 }
 
 struct PeriodUnit;
@@ -257,6 +299,9 @@ impl Unit for PeriodUnit {
     const EXPECTING: &'static str = "period";
     fn read(raw: &str, ty: ScalarType) -> Result<Self::Value, String> {
         read_period(raw, ty).map_err(unit_message(raw))
+    }
+    fn names_unit(raw: &str, ty: ScalarType) -> bool {
+        names_period_unit(raw, ty)
     }
 }
 
@@ -303,6 +348,61 @@ pub mod duration {
             deserializer: D,
         ) -> Result<Option<Duration>, D::Error> {
             deserialize_option::<DurationUnit, D>(deserializer)
+        }
+    }
+
+    /// [`duration`](crate::serde::duration), refusing a value that does not
+    /// name its unit: a number (`ttl = 30`) or a string of the number alone
+    /// (`"30"`, `"1e3"`) is an error (`duration must name its unit`) instead of
+    /// milliseconds. `30s`, `"30 s"` and `"1e3ms"` read as before; a value that
+    /// is not a duration keeps its own error.
+    ///
+    /// ```
+    /// use serde::Deserialize;
+    /// use std::time::Duration;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Token {
+    ///     #[serde(with = "hocon::serde::duration::require_unit")]
+    ///     ttl: Duration,
+    ///     #[serde(default, with = "hocon::serde::duration::require_unit::option")]
+    ///     refresh: Option<Duration>,
+    /// }
+    ///
+    /// let t: Token = hocon::from_str("ttl = 30s")?;
+    /// assert_eq!(t.ttl, Duration::from_secs(30));
+    /// assert_eq!(t.refresh, None);
+    ///
+    /// let Err(hocon::HoconError::Config(e)) = hocon::from_str::<Token>("ttl = 30") else {
+    ///     panic!("a bare number must be refused");
+    /// };
+    /// assert_eq!((e.path.as_str(), e.message.as_str()), ("ttl", "duration must name its unit"));
+    /// # Ok::<(), hocon::HoconError>(())
+    /// ```
+    pub mod require_unit {
+        use super::super::{deserialize_option, deserialize_unit, DurationUnit, RequireUnit};
+        use ::serde::Deserializer;
+        use std::time::Duration;
+
+        /// Deserialize a HOCON duration that names its unit. See the
+        /// [module docs](self).
+        pub fn deserialize<'de, D: Deserializer<'de>>(
+            deserializer: D,
+        ) -> Result<Duration, D::Error> {
+            deserialize_unit::<RequireUnit<DurationUnit>, D>(deserializer)
+        }
+
+        /// `Option<Duration>` that names its unit: `null` reads as `None`.
+        /// Add `#[serde(default)]` to also accept a missing key.
+        pub mod option {
+            use super::*;
+
+            /// Deserialize an optional HOCON duration that names its unit.
+            pub fn deserialize<'de, D: Deserializer<'de>>(
+                deserializer: D,
+            ) -> Result<Option<Duration>, D::Error> {
+                deserialize_option::<RequireUnit<DurationUnit>, D>(deserializer)
+            }
         }
     }
 }
@@ -359,6 +459,58 @@ pub mod bytes {
             deserialize_option::<BytesUnit<T>, D>(deserializer)
         }
     }
+
+    /// [`bytes`](crate::serde::bytes), refusing a value that does not name its
+    /// unit: a number (`buffer = 4096`) or a string of the number alone
+    /// (`"4096"`, `"1e3"`) is an error (`byte size must name its unit`) instead
+    /// of bytes. `64KiB`, `"512 MB"` and `4096B` read as before; a value that
+    /// is not a byte size, or does not fit `T`, keeps its own error.
+    ///
+    /// ```
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Limits {
+    ///     #[serde(with = "hocon::serde::bytes::require_unit")]
+    ///     max_body: u64,
+    ///     #[serde(default, with = "hocon::serde::bytes::require_unit::option")]
+    ///     cache: Option<usize>,
+    /// }
+    ///
+    /// let l: Limits = hocon::from_str("max_body = 64KiB")?;
+    /// assert_eq!(l.max_body, 65_536);
+    /// assert!(hocon::from_str::<Limits>("max_body = 65536").is_err());
+    /// # Ok::<(), hocon::HoconError>(())
+    /// ```
+    pub mod require_unit {
+        use super::super::{deserialize_option, deserialize_unit, BytesUnit, RequireUnit};
+        use ::serde::Deserializer;
+
+        /// Deserialize a HOCON byte size that names its unit. See the
+        /// [module docs](self).
+        pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+        where
+            D: Deserializer<'de>,
+            T: TryFrom<i64>,
+        {
+            deserialize_unit::<RequireUnit<BytesUnit<T>>, D>(deserializer)
+        }
+
+        /// `Option<T>` that names its unit: `null` reads as `None`. Add
+        /// `#[serde(default)]` to also accept a missing key.
+        pub mod option {
+            use super::*;
+
+            /// Deserialize an optional HOCON byte size that names its unit.
+            pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+            where
+                D: Deserializer<'de>,
+                T: TryFrom<i64>,
+            {
+                deserialize_option::<RequireUnit<BytesUnit<T>>, D>(deserializer)
+            }
+        }
+    }
 }
 
 /// Read a HOCON period (`7d`, `2w`, `3m`, `1y`) into a [`Period`](crate::Period),
@@ -401,6 +553,53 @@ pub mod period {
             deserializer: D,
         ) -> Result<Option<Period>, D::Error> {
             deserialize_option::<PeriodUnit, D>(deserializer)
+        }
+    }
+
+    /// [`period`](crate::serde::period), refusing a value that does not name
+    /// its unit: a number (`keep = 14`) or a string of the integer alone
+    /// (`"14"`) is an error (`period must name its unit`) instead of days.
+    /// `14d`, `"2 w"` and `1y` read as before; a value that is not a period
+    /// keeps its own error.
+    ///
+    /// ```
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct Retention {
+    ///     #[serde(with = "hocon::serde::period::require_unit")]
+    ///     keep: hocon::Period,
+    ///     #[serde(default, with = "hocon::serde::period::require_unit::option")]
+    ///     archive: Option<hocon::Period>,
+    /// }
+    ///
+    /// let r: Retention = hocon::from_str("keep = 2w")?;
+    /// assert_eq!(r.keep, hocon::Period::new(0, 0, 14));
+    /// assert!(hocon::from_str::<Retention>("keep = 14").is_err());
+    /// # Ok::<(), hocon::HoconError>(())
+    /// ```
+    pub mod require_unit {
+        use super::super::{deserialize_option, deserialize_unit, PeriodUnit, RequireUnit};
+        use crate::Period;
+        use ::serde::Deserializer;
+
+        /// Deserialize a HOCON period that names its unit. See the
+        /// [module docs](self).
+        pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Period, D::Error> {
+            deserialize_unit::<RequireUnit<PeriodUnit>, D>(deserializer)
+        }
+
+        /// `Option<Period>` that names its unit: `null` reads as `None`. Add
+        /// `#[serde(default)]` to also accept a missing key.
+        pub mod option {
+            use super::*;
+
+            /// Deserialize an optional HOCON period that names its unit.
+            pub fn deserialize<'de, D: Deserializer<'de>>(
+                deserializer: D,
+            ) -> Result<Option<Period>, D::Error> {
+                deserialize_option::<RequireUnit<PeriodUnit>, D>(deserializer)
+            }
         }
     }
 }

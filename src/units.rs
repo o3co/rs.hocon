@@ -4,7 +4,9 @@
 //! default unit of a bare number (ms / days / bytes), non-negative byte sizes,
 //! integer-only periods. The `read_*` functions take a scalar's source text
 //! and type and are the only place these rules are applied; a caller decides
-//! only where the scalar comes from and how a [`UnitError`] is worded.
+//! only where the scalar comes from and how a [`UnitError`] is worded. The
+//! `names_*` functions say whether a scalar names its unit, by the readers'
+//! own split (for the serde `require_unit` helpers).
 
 use crate::lexer::is_hocon_whitespace;
 use crate::value::ScalarType;
@@ -131,6 +133,25 @@ pub(crate) fn read_period(raw: &str, ty: ScalarType) -> Result<Period, UnitError
     Err(UnitError::InvalidPeriod)
 }
 
+/// Whether a duration or byte-size scalar names its unit (`30s`, `"64 KiB"`,
+/// `1E`), as the readers split it ([`split_number_unit`]): a number scalar
+/// never does, and neither does a string of the number alone (`"30"`,
+/// `"1e3"`), which reads in the default unit. Only meaningful for a scalar
+/// [`read_duration`] / [`read_bytes`] accepts.
+#[cfg(feature = "serde")] // asked only by the serde `require_unit` helpers
+pub(crate) fn names_magnitude_unit(raw: &str, ty: ScalarType) -> bool {
+    ty == ScalarType::String && !split_number_unit(raw).1.is_empty()
+}
+
+/// Whether a period scalar names its unit (`7d`, `"2 w"`), as
+/// [`parse_period`] splits it: a number scalar never does, and neither does a
+/// string of the integer alone (`"7"`), which is days. Only meaningful for a
+/// scalar [`read_period`] accepts.
+#[cfg(feature = "serde")] // asked only by the serde `require_unit` helpers
+pub(crate) fn names_period_unit(raw: &str, ty: ScalarType) -> bool {
+    ty == ScalarType::String && !split_period(raw).1.is_empty()
+}
+
 /// Trim HOCON whitespace (per `is_hocon_whitespace`) from both ends of `s`.
 ///
 /// Unlike `str::trim()` (which is ASCII-only for whitespace), this respects the full
@@ -236,17 +257,7 @@ fn parse_duration(s: &str) -> Result<Duration, UnitError> {
 /// negative). A `chrono` dependency is intentionally avoided; callers that need a typed
 /// `Period` can decompose the tuple.
 fn parse_period(s: &str) -> Option<(i32, i32, i32)> {
-    let s = trim_hocon_ws(s);
-    if s.is_empty() {
-        return None;
-    }
-
-    // Scan numeric prefix.
-    let num_end = s
-        .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
-        .unwrap_or(s.len());
-    let num_str = s[..num_end].trim();
-    let unit_str = trim_hocon_ws(&s[num_end..]);
+    let (num_str, unit_str) = split_period(s);
 
     if num_str.is_empty() {
         return None;
@@ -269,6 +280,18 @@ fn parse_period(s: &str) -> Option<(i32, i32, i32)> {
         "y" | "year" | "years" => Some((n, 0, 0)),
         _ => None,
     }
+}
+
+/// Split a period into its leading run of digits and signs and the unit text
+/// after it, both without surrounding HOCON whitespace. Unlike
+/// [`split_number_unit`] the number comes first: a period is integer-only, so
+/// there is no exponent to tell from a unit.
+fn split_period(s: &str) -> (&str, &str) {
+    let s = trim_hocon_ws(s);
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
+        .unwrap_or(s.len());
+    (&s[..num_end], trim_hocon_ws(&s[num_end..]))
 }
 
 /// Bytes per byte-size unit. S21.1–S21.4 — the EXACT Lightbend unit set
@@ -684,6 +707,29 @@ mod tests {
             read_bytes("-1k", ScalarType::String),
             Err(UnitError::NegativeBytes)
         );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn names_unit_follows_the_readers_split() {
+        for raw in [
+            "30s", "30 s", " 30 ms ", "64KiB", "1e3ms", "2E2KiB", "1E", "0.5G",
+        ] {
+            assert!(names_magnitude_unit(raw, ScalarType::String), "{}", raw);
+        }
+        for raw in ["30", " 30 ", "1e3", "1E3", "1.5", "-5"] {
+            assert!(!names_magnitude_unit(raw, ScalarType::String), "{}", raw);
+        }
+        // A number never names a unit, whatever its text.
+        assert!(!names_magnitude_unit("30", ScalarType::Number));
+        assert!(!names_magnitude_unit("1e3", ScalarType::Number));
+        for raw in ["7d", "2 w", " 3m ", "1y", "-7d"] {
+            assert!(names_period_unit(raw, ScalarType::String), "{}", raw);
+        }
+        for raw in ["7", " 7 ", "-7", "+7"] {
+            assert!(!names_period_unit(raw, ScalarType::String), "{}", raw);
+        }
+        assert!(!names_period_unit("7", ScalarType::Number));
     }
 
     #[test]

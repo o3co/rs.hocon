@@ -415,6 +415,23 @@ struct Session {
 }
 ```
 
+A bare number reads in the default unit (`lifetime = 30` is 30 ms), as the
+getters read it. To make the unit part of the field's contract, use the
+`require_unit` sibling of a helper (`duration::require_unit`,
+`bytes::require_unit`, `period::require_unit`, each with `::option`): a number
+or a string of the number alone (`"30"`, what an environment variable gives)
+is then refused at the key with `duration must name its unit` (`byte size …`,
+`period …`; the message leaves the value out), and `30s`, `"30 s"`, `64KiB`
+or `2w` read as before. A value that does not read at all keeps its own error.
+
+```rust
+#[derive(Deserialize)]
+struct Token {
+    #[serde(with = "hocon::serde::duration::require_unit")]
+    ttl: Duration,               // ttl = 30s → 30 s; ttl = 30 → error at `ttl`
+}
+```
+
 A decode error names the failing key: `DeserializeError::path` (and the
 `ConfigError::path` of `get_as`, or of `HoconError::Config` from `from_str` /
 `from_file`) is `session.lifetime`,
