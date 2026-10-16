@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-10-16
+
+**Patch.** Serde decoding reads an environment-variable string in two more
+positions (elements of a numeric-keyed object read as an array, and number /
+bool / char / enum map keys), and the README says where serde's buffering
+keeps a string a string. No value of a standard type that decoded on 1.14.0
+changes; one behaviour change for a custom map-key type is named below.
+
 ### Fixed
 
 - **serde: a numeric-keyed object read as an array coerces every number
@@ -1298,7 +1306,8 @@ A subset of these fixes change observable runtime behavior. The most likely user
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/o3co/rs.hocon/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/o3co/rs.hocon/compare/v1.13.1...v1.14.0
 [1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/o3co/rs.hocon/compare/v1.12.0...v1.13.0
