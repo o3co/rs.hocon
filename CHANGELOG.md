@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-10-17
+
+**Patch.** Opt-in `require_unit` variants of the serde duration, bytes and
+period helpers refuse a value that does not name its unit (xx.hocon E22).
+The existing helpers and the getters are unchanged.
+
 ### Added
 
 - **serde: `require_unit` variants of the unit helpers refuse a value that
@@ -1327,7 +1333,8 @@ A subset of these fixes change observable runtime behavior. The most likely user
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.1...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.2...HEAD
+[1.14.2]: https://github.com/o3co/rs.hocon/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/o3co/rs.hocon/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/o3co/rs.hocon/compare/v1.13.1...v1.14.0
 [1.13.1]: https://github.com/o3co/rs.hocon/compare/v1.13.0...v1.13.1
