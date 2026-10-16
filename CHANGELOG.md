@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the later wins) where 1.14.0 handed both over as strings. Standard key
   types refused such keys before.
 
+### Documented
+
+- **serde: where a string is not coerced.** The README now says that a
+  string is read as the number, bool or char a field asks for everywhere
+  except where serde buffers the value before it knows the field's type
+  (`#[serde(flatten)]`, untagged and internally tagged enums): there a string
+  stays a string, so `"8080"` from an environment variable is refused by a
+  number field. It names the workarounds (an unquoted number, `true` or
+  `false`; an adjacently tagged enum with the tag before the content;
+  `deserialize_with`) and how a map key is parsed.
+
 ## [1.14.0] - 2026-10-16
 
 **Minor, with two BREAKING parse changes** (released as a minor by decision;
