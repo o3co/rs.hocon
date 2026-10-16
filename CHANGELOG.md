@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over as a string. They now coerce as `i64`, `u64` and the borrowed path
   always did. `-0` keeps reading as 0 for the unsigned types there, and now
   does in every position (`port = -0` as `u16` was refused).
+- **serde: a map key type that is a number, a bool, a char or a unit-variant
+  enum parses the key.** `HashMap<u16, _>`, `BTreeMap<i64, _>`,
+  `HashMap<bool, _>`, `HashMap<char, _>`, `HashMap<f64, _>`, a newtype key
+  (`struct Port(u16)`, `struct Name(String)`) and, in an ordinary object, a
+  unit-variant enum key (`HashMap<Color, _>`) refused every key, since an
+  object key is always a string. The key is now parsed as the key type with
+  `str::parse` (like serde_json's map keys; a bool key is `true` or `false`).
+  A key that does not parse reaches the key type as a string, as every key
+  did before, so a key type that also takes a string still gets one, and a
+  plain number key type reports the error at that key (`m.http`). String
+  keys are unchanged. **Behaviour change for a custom key type** whose
+  `Deserialize` asks for a number (or bool) but also accepts a string: a key
+  that parses now arrives as the number, so `"80"` and `"080"` become one key
+  (the later wins) where 1.14.0 handed both over as strings. Standard key
+  types refused such keys before.
 
 ## [1.14.0] - 2026-10-16
 

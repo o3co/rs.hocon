@@ -627,7 +627,7 @@ impl<'de> ::serde::de::MapAccess<'de> for HoconMapAccess<'de> {
         match self.iter.next() {
             Some((key, value)) => {
                 self.current = Some((key, value));
-                seed.deserialize(StringKeyDeserializer { key })
+                seed.deserialize(StringKeyDeserializer { key, owned: false })
                     .map(Some)
                     .map_err(|e| e.in_key(key))
             }
@@ -647,9 +647,30 @@ impl<'de> ::serde::de::MapAccess<'de> for HoconMapAccess<'de> {
     }
 }
 
-// A simple key deserializer that yields a string.
+// A map key deserializer. An object key is always a string; a key type that
+// is a number or a bool (`HashMap<u16, _>`) parses it, as serde_json does.
+// `owned` keeps what each map access handed a string key before: the borrowed
+// one visit_str, the owned one (elements of an S15 array) visit_string.
 struct StringKeyDeserializer<'a> {
     key: &'a str,
+    owned: bool,
+}
+
+macro_rules! deserialize_key_parsed {
+    ($method:ident, $visit:ident, $ty:ty) => {
+        fn $method<V: ::serde::de::Visitor<'de>>(
+            self,
+            visitor: V,
+        ) -> Result<V::Value, Self::Error> {
+            // A key that does not parse goes to the visitor as a string, as
+            // every key did before: a key type that also takes a string still
+            // gets it, and serde's own visitors refuse it at the key.
+            match self.key.parse::<$ty>() {
+                Ok(v) => visitor.$visit(v),
+                Err(_) => ::serde::Deserializer::deserialize_any(self, visitor),
+            }
+        }
+    };
 }
 
 impl<'de, 'a> ::serde::Deserializer<'de> for StringKeyDeserializer<'a> {
@@ -659,13 +680,52 @@ impl<'de, 'a> ::serde::Deserializer<'de> for StringKeyDeserializer<'a> {
         self,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        visitor.visit_str(self.key)
+        if self.owned {
+            visitor.visit_string(self.key.to_owned())
+        } else {
+            visitor.visit_str(self.key)
+        }
+    }
+
+    deserialize_key_parsed!(deserialize_bool, visit_bool, bool);
+    deserialize_key_parsed!(deserialize_i8, visit_i8, i8);
+    deserialize_key_parsed!(deserialize_i16, visit_i16, i16);
+    deserialize_key_parsed!(deserialize_i32, visit_i32, i32);
+    deserialize_key_parsed!(deserialize_i64, visit_i64, i64);
+    deserialize_key_parsed!(deserialize_u8, visit_u8, u8);
+    deserialize_key_parsed!(deserialize_u16, visit_u16, u16);
+    deserialize_key_parsed!(deserialize_u32, visit_u32, u32);
+    deserialize_key_parsed!(deserialize_u64, visit_u64, u64);
+    deserialize_key_parsed!(deserialize_f32, visit_f32, f32);
+    deserialize_key_parsed!(deserialize_f64, visit_f64, f64);
+    deserialize_key_parsed!(deserialize_char, visit_char, char);
+
+    fn deserialize_newtype_struct<V: ::serde::de::Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        visitor.visit_newtype_struct(self)
+    }
+
+    // A unit-variant enum key (`HashMap<Color, _>`) names its variant, as an
+    // owned string where the owned map access handed one over before.
+    fn deserialize_enum<V: ::serde::de::Visitor<'de>>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        if self.owned {
+            visitor.visit_enum(self.key.to_owned().into_deserializer())
+        } else {
+            visitor.visit_enum(self.key.into_deserializer())
+        }
     }
 
     ::serde::forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
+        str string bytes byte_buf option unit unit_struct seq tuple
+        tuple_struct map struct identifier ignored_any
     }
 }
 
@@ -1054,12 +1114,13 @@ impl<'de> ::serde::de::MapAccess<'de> for OwnedHoconMapAccess {
     {
         match self.iter.next() {
             Some((key, value)) => {
-                // Hand over an owned key (visit_string, as before paths were
-                // tracked) and keep a copy for the error path. The clone runs
-                // on success too; it is small next to the element clone in
-                // HoconOwnedSeqAccess.
+                // The same key deserializer as HoconMapAccess, so a number or
+                // bool key type parses the key here too.
                 let result = seed
-                    .deserialize(key.clone().into_deserializer())
+                    .deserialize(StringKeyDeserializer {
+                        key: &key,
+                        owned: true,
+                    })
                     .map(Some)
                     .map_err(|e: DeserializeError| e.in_key(&key));
                 self.current = Some((key, value));
