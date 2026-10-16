@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **serde: a numeric-keyed object read as an array coerces every number
+  type.** For `Vec<u16>`, `Vec<i32>`, `Vec<f32>`, `Vec<char>` and the other
+  narrower types (and structs holding them), an element of a numeric-keyed
+  object read as an array (S15, `a { "0" = ${?PORT} }`) refused a string such
+  as `"5"`: these types went through `deserialize_any`, which hands a string
+  over as a string. They now coerce as `i64`, `u64` and the borrowed path
+  always did. `-0` keeps reading as 0 for the unsigned types there, and now
+  does in every position (`port = -0` as `u16` was refused).
+
 ## [1.14.0] - 2026-10-16
 
 **Minor, with two BREAKING parse changes** (released as a minor by decision;

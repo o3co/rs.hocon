@@ -232,10 +232,16 @@ where
     if let Ok(n) = sv.raw.parse::<T>() {
         return Ok(n);
     }
-    // Whole-number float/exponent coercion fallback, for any float-like raw
-    // (quoted or not) — consistent with `Config::get_i64`. Wholeness/value are
-    // derived from the raw text, never via f64 (xx.hocon#56).
-    if let Some(as_i64) = crate::value::whole_float_to_i64(&sv.raw) {
+    // Then as an i64 converted into T: `-0` is 0 for an unsigned type, which
+    // its own parse refuses. Then the whole-number float/exponent fallback, for
+    // any float-like raw (quoted or not) — consistent with `Config::get_i64`.
+    // Wholeness/value are derived from the raw text, never via f64 (xx.hocon#56).
+    let as_i64 = sv
+        .raw
+        .parse::<i64>()
+        .ok()
+        .or_else(|| crate::value::whole_float_to_i64(&sv.raw));
+    if let Some(as_i64) = as_i64 {
         if let Ok(n) = T::try_from(as_i64) {
             return Ok(n);
         }
@@ -246,13 +252,66 @@ where
     )))
 }
 
+// Used by both HoconDeserializer and OwnedHoconDeserializer: `&self.value`
+// matches a borrowed and an owned value alike.
+fn scalar_f32(value: &HoconValue) -> Result<f32, DeserializeError> {
+    match value {
+        HoconValue::Scalar(sv) => sv
+            .raw
+            .parse()
+            .map_err(|_| DeserializeError::new(format!("cannot parse \"{}\" as f32", sv.raw))),
+        other => Err(DeserializeError::new(format!(
+            "expected f32, got {:?}",
+            other
+        ))),
+    }
+}
+
+fn scalar_char(value: &HoconValue) -> Result<char, DeserializeError> {
+    match value {
+        HoconValue::Scalar(sv) => {
+            let mut chars = sv.raw.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) => Ok(c),
+                _ => Err(DeserializeError::new(format!(
+                    "expected single char, got \"{}\"",
+                    sv.raw
+                ))),
+            }
+        }
+        other => Err(DeserializeError::new(format!(
+            "expected char, got {:?}",
+            other
+        ))),
+    }
+}
+
+// Shared by both deserializers, like the helpers above.
+macro_rules! deserialize_f32_and_char {
+    () => {
+        fn deserialize_f32<V: ::serde::de::Visitor<'de>>(
+            self,
+            visitor: V,
+        ) -> Result<V::Value, Self::Error> {
+            visitor.visit_f32(scalar_f32(&self.value)?)
+        }
+
+        fn deserialize_char<V: ::serde::de::Visitor<'de>>(
+            self,
+            visitor: V,
+        ) -> Result<V::Value, Self::Error> {
+            visitor.visit_char(scalar_char(&self.value)?)
+        }
+    };
+}
+
 macro_rules! deserialize_int {
     ($method:ident, $visit:ident, $ty:ty) => {
         fn $method<V: ::serde::de::Visitor<'de>>(
             self,
             visitor: V,
         ) -> Result<V::Value, Self::Error> {
-            match self.value {
+            match &self.value {
                 HoconValue::Scalar(sv) => {
                     let n: $ty = parse_int_from_scalar(sv, stringify!($ty))?;
                     visitor.$visit(n)
@@ -342,23 +401,7 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
     deserialize_int!(deserialize_u32, visit_u32, u32);
     deserialize_int!(deserialize_u64, visit_u64, u64);
 
-    fn deserialize_f32<V: ::serde::de::Visitor<'de>>(
-        self,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error> {
-        match self.value {
-            HoconValue::Scalar(sv) => {
-                let f: f32 = sv.raw.parse().map_err(|_| {
-                    DeserializeError::new(format!("cannot parse \"{}\" as f32", sv.raw))
-                })?;
-                visitor.visit_f32(f)
-            }
-            other => Err(DeserializeError::new(format!(
-                "expected f32, got {:?}",
-                other
-            ))),
-        }
-    }
+    deserialize_f32_and_char!();
 
     fn deserialize_f64<V: ::serde::de::Visitor<'de>>(
         self,
@@ -373,28 +416,6 @@ impl<'de> ::serde::Deserializer<'de> for HoconDeserializer<'de> {
             }
             other => Err(DeserializeError::new(format!(
                 "expected f64, got {:?}",
-                other
-            ))),
-        }
-    }
-
-    fn deserialize_char<V: ::serde::de::Visitor<'de>>(
-        self,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error> {
-        match self.value {
-            HoconValue::Scalar(sv) => {
-                let mut chars = sv.raw.chars();
-                match (chars.next(), chars.next()) {
-                    (Some(c), None) => visitor.visit_char(c),
-                    _ => Err(DeserializeError::new(format!(
-                        "expected single char, got \"{}\"",
-                        sv.raw
-                    ))),
-                }
-            }
-            other => Err(DeserializeError::new(format!(
-                "expected char, got {:?}",
                 other
             ))),
         }
@@ -990,8 +1011,19 @@ impl<'de> ::serde::Deserializer<'de> for OwnedHoconDeserializer {
         visitor.visit_unit()
     }
 
+    // The narrower numbers and char coerce as in HoconDeserializer; before,
+    // they went to deserialize_any, which hands a string over as a string, so
+    // a numeric-keyed object read as an array (S15) refused `"5"` as u16.
+    deserialize_int!(deserialize_i8, visit_i8, i8);
+    deserialize_int!(deserialize_i16, visit_i16, i16);
+    deserialize_int!(deserialize_i32, visit_i32, i32);
+    deserialize_int!(deserialize_u8, visit_u8, u8);
+    deserialize_int!(deserialize_u16, visit_u16, u16);
+    deserialize_int!(deserialize_u32, visit_u32, u32);
+    deserialize_f32_and_char!();
+
     ::serde::forward_to_deserialize_any! {
-        i8 i16 i32 u8 u16 u32 f32 char bytes byte_buf unit_struct
+        bytes byte_buf unit_struct
     }
 }
 
