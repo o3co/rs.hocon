@@ -403,6 +403,20 @@ struct Session {
 }
 ```
 
+単位のない数値はゲッターと同じくデフォルトの単位で読みます（`lifetime = 30` は 30 ms）。単位の明記をフィールドの
+契約にするには、ヘルパーの `require_unit` 版（`duration::require_unit`・`bytes::require_unit`・
+`period::require_unit`。それぞれ `::option` あり）を使います。数値や数値だけの文字列（環境変数から来る `"30"`）は
+そのキーで `duration must name its unit`（`byte size …`・`period …`。メッセージに値は含めません）として拒否され、
+`30s`・`"30 s"`・`64KiB`・`2w` はこれまでどおり読めます。そもそも読めない値は従来のエラーのままです。
+
+```rust
+#[derive(Deserialize)]
+struct Token {
+    #[serde(with = "hocon::serde::duration::require_unit")]
+    ttl: Duration,               // ttl = 30s → 30 s; ttl = 30 → error at `ttl`
+}
+```
+
 デコードエラーには失敗したキーのパスが入ります: `DeserializeError::path`（および `get_as` の
 `ConfigError::path`、`from_str` / `from_file` では `HoconError::Config` の `ConfigError::path`）が
 `session.lifetime`、`servers[0].port` などになります。ヘルパーは HOCON の値をゲッターとまったく同じに読みます。

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **serde: `require_unit` variants of the unit helpers refuse a value that
+  does not name its unit** (port of
+  [ts.hocon#233](https://github.com/o3co/ts.hocon/issues/233)):
+  `hocon::serde::duration::require_unit`, `hocon::serde::bytes::require_unit`
+  and `hocon::serde::period::require_unit`, each with its own `::option`
+  (`#[serde(with = "hocon::serde::duration::require_unit")]`). A number
+  (`ttl = 30`) or a string of the number alone (`"30"`, what an environment
+  variable gives) otherwise reads in the default unit (milliseconds, bytes,
+  days), which turns a key migrated from `ttl-seconds = 30` to `ttl = 30`
+  into 30 ms without a word. Through `require_unit` such a value is a decode
+  error at the key (`duration must name its unit`, `byte size …`,
+  `period …`, without the value), and `30s`, `"30 s"`, `64KiB`, `2w`,
+  `"1e3ms"` read as before. The value is read first, so one that does not
+  read keeps its own error. Whether a unit is named follows the readers' own
+  split, so `"1e3"` names none and `"0.5G"` does; the check is the same where
+  serde buffers the input (`#[serde(flatten)]`, untagged and internally
+  tagged enums) and with other self-describing deserializers. The existing
+  helpers and the getters are unchanged.
+
 ## [1.14.1] - 2026-10-16
 
 **Patch.** Serde decoding reads an environment-variable string in two more

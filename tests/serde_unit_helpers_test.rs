@@ -450,3 +450,351 @@ fn buffered_negative_underflow_reads_as_zero() {
     assert_eq!(parse(src).unwrap().get_bytes("v").unwrap(), 0);
     assert_eq!(hocon::from_str::<Flat<B>>(src).unwrap().inner.v, 0);
 }
+
+// ── require_unit (ts.hocon#233) ─────────────────────────────────────────
+// `hocon::serde::{duration, bytes, period}::require_unit` read the same
+// values as their siblings but refuse one that does not name its unit.
+
+#[derive(Debug, Deserialize)]
+struct RD {
+    #[serde(with = "hocon::serde::duration::require_unit")]
+    v: Duration,
+}
+
+#[derive(Debug, Deserialize)]
+struct RB {
+    #[serde(with = "hocon::serde::bytes::require_unit")]
+    v: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct RP {
+    #[serde(with = "hocon::serde::period::require_unit")]
+    v: Period,
+}
+
+/// The decode error of `v = <literal>`, at the key `v`.
+fn require_unit_error<W: serde::de::DeserializeOwned + std::fmt::Debug>(literal: &str) -> String {
+    let err = config_error(hocon::from_str::<W>(&format!("v = {}", literal)).unwrap_err());
+    assert_eq!(err.path, "v", "literal {}", literal);
+    err.message
+}
+
+#[test]
+fn require_unit_refuses_a_value_without_its_unit() {
+    // A number, a string of the number alone (an environment variable), and
+    // an exponent form, which is a number too (`1e3` is not "1 e3").
+    for lit in ["30", "\"30\"", "1e3", "\"1e3\"", "\" 30 \"", "0", "1.5"] {
+        assert_eq!(
+            require_unit_error::<RD>(lit),
+            "duration must name its unit",
+            "literal {}",
+            lit
+        );
+    }
+    for lit in ["4096", "\"4096\"", "1e3", "\"1e3\"", "0"] {
+        assert_eq!(
+            require_unit_error::<RB>(lit),
+            "byte size must name its unit",
+            "literal {}",
+            lit
+        );
+    }
+    for lit in ["14", "\"14\"", "-7", "\"+7\"", "0"] {
+        assert_eq!(
+            require_unit_error::<RP>(lit),
+            "period must name its unit",
+            "literal {}",
+            lit
+        );
+    }
+    // A period is integer-only: `"1e3"` is not a period at all, and keeps
+    // that error.
+    assert_eq!(
+        require_unit_error::<RP>("\"1e3\""),
+        "invalid period: \"1e3\""
+    );
+    assert_eq!(require_unit_error::<RP>("1e3"), "invalid period: \"1e3\"");
+}
+
+#[test]
+fn require_unit_message_has_no_value() {
+    // A value can be a secret set under the wrong key.
+    let secret = "\"8675309\"";
+    for message in [
+        require_unit_error::<RD>(secret),
+        require_unit_error::<RB>(secret),
+        require_unit_error::<RP>(secret),
+        require_unit_error::<RD>("8675309"),
+    ] {
+        assert!(!message.contains("8675309"), "{}", message);
+    }
+}
+
+#[test]
+fn require_unit_reads_a_value_with_its_unit() {
+    for (lit, want) in [
+        ("30s", Duration::from_secs(30)),
+        ("\"30s\"", Duration::from_secs(30)),
+        ("30 s", Duration::from_secs(30)),
+        ("\"30 s\"", Duration::from_secs(30)),
+        ("\"1e3ms\"", Duration::from_secs(1)),
+        ("1e3ms", Duration::from_secs(1)),
+        ("100 ms", Duration::from_millis(100)),
+        ("2 hours", Duration::from_secs(7200)),
+    ] {
+        let d: RD = hocon::from_str(&format!("v = {}", lit)).unwrap();
+        assert_eq!(d.v, want, "literal {}", lit);
+    }
+    for (lit, want) in [
+        ("64KiB", 65_536),
+        ("\"64 KiB\"", 65_536),
+        ("4096B", 4096),
+        ("1e3kB", 1_000_000),
+        ("0.5G", 1 << 29),
+        ("1E", 1 << 60),
+    ] {
+        let b: RB = hocon::from_str(&format!("v = {}", lit)).unwrap();
+        assert_eq!(b.v, want, "literal {}", lit);
+    }
+    for (lit, want) in [
+        ("2w", Period::new(0, 0, 14)),
+        ("\"2 w\"", Period::new(0, 0, 14)),
+        ("7d", Period::new(0, 0, 7)),
+        ("-7d", Period::new(0, 0, -7)),
+        ("3 mo", Period::new(0, 3, 0)),
+        ("1y", Period::new(1, 0, 0)),
+    ] {
+        let p: RP = hocon::from_str(&format!("v = {}", lit)).unwrap();
+        assert_eq!(p.v, want, "literal {}", lit);
+    }
+}
+
+#[test]
+fn require_unit_keeps_the_readers_errors() {
+    // The reader runs first: a value that does not read reports why, with
+    // the value, as the sibling helper does.
+    assert_eq!(
+        require_unit_error::<RD>("5 parsecs"),
+        "invalid duration: \"5 parsecs\""
+    );
+    assert_eq!(require_unit_error::<RD>("-5"), "negative duration: \"-5\"");
+    assert_eq!(
+        require_unit_error::<RD>("\"-5s\""),
+        "invalid duration: \"-5s\""
+    );
+    assert_eq!(
+        require_unit_error::<RD>("18446744073709551616000"),
+        "duration too large: \"18446744073709551616000\""
+    );
+    assert_eq!(
+        require_unit_error::<RD>("\"1e400s\""),
+        "duration too large: \"1e400s\""
+    );
+    assert_eq!(require_unit_error::<RB>("-1"), "negative byte size: \"-1\"");
+    assert_eq!(
+        require_unit_error::<RB>("\"-1k\""),
+        "negative byte size: \"-1k\""
+    );
+    assert_eq!(
+        require_unit_error::<RB>("9223372036854775808"),
+        "invalid byte size: \"9223372036854775808\""
+    );
+    assert_eq!(
+        require_unit_error::<RB>("10 KB"),
+        "invalid byte size: \"10 KB\""
+    );
+    assert_eq!(require_unit_error::<RP>("7.5"), "invalid period: \"7.5\"");
+    assert_eq!(require_unit_error::<RP>("7D"), "invalid period: \"7D\"");
+    assert_eq!(
+        require_unit_error::<RD>("true"),
+        "invalid duration: \"true\""
+    );
+
+    // The field type's range is checked by the reader too.
+    #[derive(Debug, Deserialize)]
+    struct Small {
+        #[serde(with = "hocon::serde::bytes::require_unit")]
+        v: u8,
+    }
+    assert_eq!(
+        require_unit_error::<Small>("1k"),
+        "byte size \"1k\" (1024 bytes) is out of range for u8"
+    );
+    assert_eq!(
+        require_unit_error::<Small>("300"),
+        "byte size \"300\" (300 bytes) is out of range for u8"
+    );
+    assert_eq!(hocon::from_str::<Small>("v = 255B").unwrap().v, 255);
+
+    // Not a scalar: the same type error as the sibling helper.
+    assert_eq!(
+        require_unit_error::<RD>("{ a = 1 }"),
+        "invalid type: map, expected a HOCON duration"
+    );
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct RequiredOptional {
+    #[serde(default, with = "hocon::serde::duration::require_unit::option")]
+    d: Option<Duration>,
+    #[serde(default, with = "hocon::serde::bytes::require_unit::option")]
+    b: Option<u64>,
+    #[serde(default, with = "hocon::serde::period::require_unit::option")]
+    p: Option<Period>,
+}
+
+#[test]
+fn require_unit_option_helpers() {
+    let all: RequiredOptional = hocon::from_str("d = 30s, b = 1k, p = 1y").unwrap();
+    assert_eq!(
+        all,
+        RequiredOptional {
+            d: Some(Duration::from_secs(30)),
+            b: Some(1024),
+            p: Some(Period::new(1, 0, 0)),
+        }
+    );
+    let none = RequiredOptional {
+        d: None,
+        b: None,
+        p: None,
+    };
+    let nulls: RequiredOptional = hocon::from_str("d = null, b = null, p = null").unwrap();
+    assert_eq!(nulls, none);
+    let missing: RequiredOptional = hocon::from_str("").unwrap();
+    assert_eq!(missing, none);
+
+    for (src, path, message) in [
+        ("d = 30", "d", "duration must name its unit"),
+        ("d = \"30\"", "d", "duration must name its unit"),
+        ("b = 1024", "b", "byte size must name its unit"),
+        ("p = 7", "p", "period must name its unit"),
+        ("b = -1k", "b", "negative byte size: \"-1k\""),
+    ] {
+        let err = config_error(hocon::from_str::<RequiredOptional>(src).unwrap_err());
+        assert_eq!((err.path.as_str(), err.message.as_str()), (path, message));
+    }
+}
+
+#[test]
+fn require_unit_error_carries_the_key_path() {
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct Token {
+        #[serde(with = "hocon::serde::duration::require_unit")]
+        ttl: Duration,
+    }
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct App {
+        tokens: Vec<Token>,
+    }
+    let err =
+        config_error(hocon::from_str::<App>("tokens = [{ ttl = 30s }, { ttl = 30 }]").unwrap_err());
+    assert_eq!(err.path, "tokens[1].ttl");
+    assert_eq!(err.message, "duration must name its unit");
+
+    // A substitution of a string, as an environment variable gives one, is
+    // a string of the number alone; through `get_as` the path is the full one.
+    let cfg = parse("raw = \"30\"\napp.token.ttl = ${raw}").unwrap();
+    let err = cfg.get_as::<Token>("app.token").unwrap_err();
+    assert_eq!(err.path, "app.token.ttl");
+    assert_eq!(err.message, "duration must name its unit");
+    let cfg = parse("raw = \"30 s\"\napp.token.ttl = ${raw}").unwrap();
+    let t = cfg.get_as::<Token>("app.token").unwrap();
+    assert_eq!(t.ttl, Duration::from_secs(30));
+}
+
+#[test]
+fn require_unit_inside_flatten() {
+    // serde buffers the input first: a number arrives as a number and a
+    // string as a string, so the check is the same as without flatten.
+    for lit in ["30", "\"30\"", "1e3", "\"1e3\"", "1.5"] {
+        let err = hocon::from_str::<Flat<RD>>(&format!("v = {}", lit)).unwrap_err();
+        let err = config_error(err);
+        assert_eq!(
+            err.message, "duration must name its unit",
+            "literal {}",
+            lit
+        );
+        let err = config_error(hocon::from_str::<Flat<RB>>(&format!("v = {}", lit)).unwrap_err());
+        assert_eq!(
+            err.message, "byte size must name its unit",
+            "literal {}",
+            lit
+        );
+    }
+    for lit in ["14", "\"14\""] {
+        let err = config_error(hocon::from_str::<Flat<RP>>(&format!("v = {}", lit)).unwrap_err());
+        assert_eq!(err.message, "period must name its unit", "literal {}", lit);
+    }
+    let d = hocon::from_str::<Flat<RD>>("v = 30s").unwrap();
+    assert_eq!(d.inner.v, Duration::from_secs(30));
+    let d = hocon::from_str::<Flat<RD>>("v = \"1e3ms\"").unwrap();
+    assert_eq!(d.inner.v, Duration::from_secs(1));
+    let b = hocon::from_str::<Flat<RB>>("v = 64KiB").unwrap();
+    assert_eq!(b.inner.v, 65_536);
+    let p = hocon::from_str::<Flat<RP>>("v = 2w").unwrap();
+    assert_eq!(p.inner.v, Period::new(0, 0, 14));
+
+    // The reader's own error still comes first there.
+    let err = config_error(hocon::from_str::<Flat<RD>>("v = -5").unwrap_err());
+    assert_eq!(err.message, "negative duration: \"-5\"");
+
+    // Untagged and internally tagged enums buffer the same way.
+    assert!(hocon::from_str::<Untagged<RD>>("v = 30").is_err());
+    assert!(hocon::from_str::<Untagged<RD>>("v = 30s").is_ok());
+    assert!(hocon::from_str::<Tagged<RD>>("t = X, v = \"30\"").is_err());
+    assert!(hocon::from_str::<Tagged<RD>>("t = X, v = 30s").is_ok());
+}
+
+#[test]
+fn require_unit_with_other_deserializers() {
+    let err = serde_json::from_str::<RD>(r#"{"v": 30}"#).unwrap_err();
+    assert!(
+        err.to_string().contains("duration must name its unit"),
+        "{}",
+        err
+    );
+    let err = serde_json::from_str::<RB>(r#"{"v": "1024"}"#).unwrap_err();
+    assert!(
+        err.to_string().contains("byte size must name its unit"),
+        "{}",
+        err
+    );
+    let d: RD = serde_json::from_str(r#"{"v": "30s"}"#).unwrap();
+    assert_eq!(d.v, Duration::from_secs(30));
+}
+
+#[test]
+fn sibling_helpers_still_read_a_bare_number_in_the_default_unit() {
+    // The default is off: the existing modules are unchanged.
+    for lit in ["30", "\"30\""] {
+        let src = format!("v = {}", lit);
+        assert_eq!(
+            hocon::from_str::<D>(&src).unwrap().v,
+            Duration::from_millis(30)
+        );
+        assert_eq!(hocon::from_str::<B>(&src).unwrap().v, 30);
+        assert_eq!(hocon::from_str::<P>(&src).unwrap().v, Period::new(0, 0, 30));
+        assert_eq!(
+            hocon::from_str::<Flat<D>>(&src).unwrap().inner.v,
+            Duration::from_millis(30)
+        );
+    }
+    let o: Optional = hocon::from_str("d = 30, b = 30, p = 30").unwrap();
+    assert_eq!(
+        o,
+        Optional {
+            d: Some(Duration::from_millis(30)),
+            b: Some(30),
+            p: Some(Period::new(0, 0, 30)),
+        }
+    );
+    // The getters too.
+    let c = parse("v = 30").unwrap();
+    assert_eq!(c.get_duration("v").unwrap(), Duration::from_millis(30));
+    assert_eq!(c.get_bytes("v").unwrap(), 30);
+    assert_eq!(c.get_period("v").unwrap(), Period::new(0, 0, 30));
+}
