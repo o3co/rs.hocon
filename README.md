@@ -381,6 +381,20 @@ let ports: Vec<u16> = config.get_as("ports")?;
 let server: ServerConfig = config.deserialize()?;
 ```
 
+A string is read as the number, bool or char the field asks for, as the getters
+read it: `port = ${?PORT}` with `PORT=8080` (an environment variable is always a
+string) reads as `8080` into a `u16`, in structs, `Vec`s, map values, tuples,
+`Option`s and newtypes. A map key whose type is a number, a bool, a char or a
+unit-variant enum is parsed from the key with `str::parse` (a bool key is `true`
+or `false`); a key that does not parse reaches the key type as a string. Where serde buffers a value
+before it knows the field's type — `#[serde(flatten)]`, `#[serde(untagged)]` and
+internally tagged (`#[serde(tag = "...")]`) enums — the value reaches the field
+as it was written, so a string stays a string: a number or bool field there
+refuses `"8080"` or `"yes"`, and an untagged `N(i64), S(String)` reads `"8080"`
+as `S`. Write such a value as an unquoted number, `true` or `false`, use an adjacently
+tagged enum (`#[serde(tag = "t", content = "c")]`) with the tag written before
+the content, or parse it in the field with `#[serde(deserialize_with = ...)]`.
+
 Unit values — durations, byte sizes and periods — read with the same rules as
 `get_duration` / `get_bytes` / `get_period`, through a `with` module per unit.
 Range limits stay with the field's type:

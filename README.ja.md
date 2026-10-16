@@ -374,6 +374,16 @@ let ports: Vec<u16> = config.get_as("ports")?;
 let server: ServerConfig = config.deserialize()?;
 ```
 
+文字列は、フィールドが求める数値・真偽値・char として、getter と同じ規則で読みます。環境変数は常に文字列ですが、
+`PORT=8080` のとき `port = ${?PORT}` は `u16` に `8080` として入ります。struct・`Vec`・map の値・タプル・`Option`・
+newtype の中でも同じです。map のキーの型が数値・真偽値・char・unit variant の enum なら、キーを `str::parse` で読みます
+（真偽値のキーは `true` か `false`）。読めないキーは文字列のままキーの型に渡します。ただし、serde がフィールドの型を知る前に値をバッファする場所
+（`#[serde(flatten)]`、`#[serde(untagged)]`、internally tagged（`#[serde(tag = "...")]`）の enum）では、値は書かれた
+ままの形でフィールドに届くので、文字列は文字列のままです。そこにある数値や真偽値のフィールドは `"8080"` や `"yes"` を
+受け付けず、untagged の `N(i64), S(String)` は `"8080"` を `S` として読みます。そうした値は引用符なしの数値・`true`・
+`false` で書くか、adjacently tagged の enum（`#[serde(tag = "t", content = "c")]`）をタグがコンテンツより先に来る形で
+使うか、`#[serde(deserialize_with = ...)]` でフィールド側で変換してください。
+
 単位付きの値（duration・バイトサイズ・period）は、単位ごとの `with` モジュールを通して
 `get_duration` / `get_bytes` / `get_period` と同じ規則で読めます。範囲の制約はフィールドの型に任せます:
 
