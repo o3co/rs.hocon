@@ -1,5 +1,6 @@
 TESTDATA_REPO  := o3co/xx.hocon
-TESTDATA_REF   := main
+# 1.14.x maintenance: the corpus as of 1.14.2/1.14.3, before #130 / the window fixtures (xx#135, #136)
+TESTDATA_REF   := 38d02ca195477ad0227baa4bd2ec766ed272f048
 TESTDATA_DIR   := tests/testdata/hocon
 EXPECTED_DIR   := tests/testdata/expected
 # Fetched-only (gitignored) subdir used as the "fixtures already present"
@@ -20,7 +21,11 @@ FETCH_SENTINEL := $(TESTDATA_DIR)/concat-errors
 # checkout is always fresh so the sentinel is absent and the fetch always runs).
 testdata:
 	@set -e; \
-	sha="$$(git ls-remote "https://github.com/$(TESTDATA_REPO).git" "$(TESTDATA_REF)" | head -1 | cut -f1)"; \
+	if printf '%s' "$(TESTDATA_REF)" | grep -Eq '^[0-9a-f]{40}$$'; then \
+	  sha="$(TESTDATA_REF)"; \
+	else \
+	  sha="$$(git ls-remote "https://github.com/$(TESTDATA_REPO).git" "$(TESTDATA_REF)" | head -1 | cut -f1)"; \
+	fi; \
 	if [ -z "$$sha" ]; then \
 	  echo "error: could not resolve $(TESTDATA_REPO)@$(TESTDATA_REF) SHA via git ls-remote" >&2; \
 	  exit 1; \
