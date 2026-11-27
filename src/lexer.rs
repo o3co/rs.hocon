@@ -447,6 +447,19 @@ fn read_quoted_body(
                 col: open_col,
             });
         }
+        // S1.2.4: JSON forbids a raw C0 control inside a quoted string, as
+        // Lightbend does. LF is reported as unterminated above. Triple-quoted
+        // and unquoted strings keep controls verbatim.
+        if (chars[*pos] as u32) < 0x20 {
+            let cp = chars[*pos] as u32;
+            return Err(ParseError {
+                message: format!(
+                    "unescaped control character U+{cp:04X} in quoted string; use a backslash escape (\\u{cp:04x})"
+                ),
+                line: open_line,
+                col: *col,
+            });
+        }
         if chars[*pos] == '\\' {
             let esc_col = *col;
             *pos += 1;
