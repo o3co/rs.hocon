@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::error::ConfigError;
 use crate::value::{HoconValue, ScalarType, ScalarValue};
 use indexmap::IndexMap;
+use std::fmt::Write as _;
 
 impl Config {
     /// Render a resolved `Config` as HOCON text.
@@ -229,10 +230,16 @@ fn render_string(s: &str) -> String {
 
 fn quote_string(s: &str) -> String {
     // A string containing newlines is triple-quoted when that is unambiguous
-    // and lossless: no embedded `"""`, no trailing `"`, and no carriage return
-    // (the parser normalizes CRLF inside triple quotes, which would drop the
-    // `\r`, so those fall through to escaped double quotes below).
-    if s.contains('\n') && !s.contains('\r') && !s.contains("\"\"\"") && !s.ends_with('"') {
+    // and lossless: no embedded `"""`, no trailing `"`, and no C0 control
+    // other than LF and TAB (E18 decision 5). Raw controls are valid inside
+    // triple quotes (S9.1; CR is preserved verbatim per S9.2), but an
+    // invisible one is ambiguous to readers, so such strings take the
+    // escaped double-quoted form below.
+    if s.contains('\n')
+        && !has_control_other_than_lf_tab(s)
+        && !s.contains("\"\"\"")
+        && !s.ends_with('"')
+    {
         return format!("\"\"\"{s}\"\"\"");
     }
     let mut out = String::with_capacity(s.len() + 2);
@@ -244,9 +251,24 @@ fn quote_string(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000C}' => out.push_str("\\f"),
+            // S1.2.4: a raw C0 control inside quotes is a parse error, so every
+            // other one is written as \u00xx (lowercase, as Lightbend's
+            // renderer does). DEL and C1 are legal and stay verbatim.
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
             _ => out.push(c),
         }
     }
     out.push('"');
     out
+}
+
+/// Whether `s` holds a C0 control character (U+0000–U+001F) other than LF
+/// and TAB.
+fn has_control_other_than_lf_tab(s: &str) -> bool {
+    s.chars()
+        .any(|c| (c as u32) < 0x20 && c != '\n' && c != '\t')
 }

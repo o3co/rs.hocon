@@ -31,7 +31,7 @@ same item descriptions verbatim.
   tests: tests/testdata/hocon/subst-tokenize/st-err03-invalid-unicode-short.conf (fixture); tests/testdata/hocon/subst-tokenize/st-err04-invalid-unicode-nonhex.conf (fixture)
   status: ✅
 - **S1.2.4** Unescaped control char / raw newline in quoted string is rejected — §Unchanged from JSON (L118)
-  tests: tests/testdata/hocon/subst-tokenize/st-err07-newline-in-string.conf (fixture)
+  tests: tests/testdata/hocon/subst-tokenize/st-err07-newline-in-string.conf (fixture); tests/testdata/hocon/quoted-control/qc01–qc12 (fixtures, xx.hocon#130); tests/issue130_quoted_control.rs (issue130_every_c0_control_in_quoted_value_is_rejected — full C0 sweep; issue130_raw_control_rejected_in_every_quoted_position — key / path / array / substitution / include / concat; issue130_controls_legal_outside_single_quotes); tests/render_hocon_test.rs (render_hocon_escapes_control_chars)
   status: ✅
 - **S1.2.5** Unterminated quoted string is rejected — §Unchanged from JSON (L118)
   tests: src/lexer.rs:1095 (throws_on_unterminated_string); tests/testdata/hocon/subst-tokenize/st-err06-unterminated-string.conf (fixture)

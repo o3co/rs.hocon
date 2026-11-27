@@ -68,6 +68,57 @@ e = ${a}
     );
 }
 
+/// xx.hocon#130 / S1.2.4: a raw C0 control inside double quotes is a parse
+/// error, so `render_hocon` must escape every one it writes there (E18
+/// decision 5). The tree is built from escapes so this runs featureless.
+#[test]
+fn render_hocon_escapes_control_chars() {
+    let mut all_c0 = String::new();
+    for cp in 0u32..0x20 {
+        all_c0.push_str(&format!("\\u{cp:04x}"));
+    }
+    let src = format!(
+        "all-c0 = \"{all_c0}\"\n\
+         bare-but-control = \"abc\\u0001def\"\n\
+         \"k\\u0001ey\" = \"key quotes only because of the control\"\n\
+         \"\\u0000\" = \"nul key\"\n\
+         multi-ctrl = \"line1\\u0001\\nline2\\u0000\"\n\
+         multi-tab = \"col1\\tcol2\\nrow2\"\n\
+         del-c1 = \"x\u{7f}\u{85}y\"\n"
+    );
+    let cfg = parse(&src).unwrap_or_else(|e| panic!("parse: {e}\n{src}"));
+    let text = cfg.render_hocon().expect("render_hocon");
+    let reparsed = parse(&text).unwrap_or_else(|e| panic!("re-parse: {e}\n{text}"));
+    assert_eq!(
+        hocon::_render_json_for_test(&cfg),
+        hocon::_render_json_for_test(&reparsed),
+        "round trip changed the tree\n--- emitted ---\n{text}"
+    );
+    for line in text.lines() {
+        for c in line.chars() {
+            assert!(
+                (c as u32) >= 0x20 || c == '\t',
+                "raw control U+{:04X} in rendered line {line:?}",
+                c as u32
+            );
+        }
+    }
+    // Short forms where JSON has one, lowercase \u00xx otherwise.
+    for want in ["\\b", "\\f", "\\u0000", "\\u001f", "\\u0001"] {
+        assert!(text.contains(want), "rendered output lacks {want}:\n{text}");
+    }
+    // A multi-line string with only LF and TAB keeps the triple-quoted form.
+    assert!(
+        text.contains("\"\"\"col1\tcol2\nrow2\"\"\""),
+        "LF+TAB string is not triple-quoted:\n{text}"
+    );
+    // DEL and C1 are legal in quotes and stay verbatim.
+    assert!(
+        text.contains("x\u{7f}\u{85}y"),
+        "DEL / C1 were escaped:\n{text}"
+    );
+}
+
 #[cfg(feature = "serde")]
 mod from_map_cases {
     use hocon::{from_map, parse, Config};

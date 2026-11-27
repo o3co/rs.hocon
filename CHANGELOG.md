@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **BREAKING (S1.2.4, xx.hocon#130): a raw C0 control character
+  (U+0000–U+001F) inside a double-quoted string is a parse error**, as JSON
+  and Lightbend 1.4.9 reject it. Only a raw newline was
+  rejected before; a tab, CR, U+0001, U+001F or NUL was accepted. This applies
+  wherever a quoted string can appear: values, keys, `${"..."}` paths and
+  `include "..."`. The error names the character and points at it:
+  `ParseError at 1:7: unescaped control character U+0009 in quoted string;
+  use a backslash escape (\u0009)`.
+  **Workaround**: write the character as an escape (`\t`, `\r`, `\b`, `\f`
+  or `\u0001`), or use a triple-quoted string (`"""..."""`), which keeps
+  control characters verbatim. Unquoted strings, DEL (U+007F) and C1
+  (U+0080–U+009F) are unchanged and still accepted.
+- **`Config::render_hocon()` escapes every C0 control** (xx.hocon E18
+  decision 5): `\b` and `\f` as short forms, the others as `\u00xx`
+  (lowercase hex), in values and keys. Before, they were written raw, which
+  the parser now rejects. A multi-line string is triple-quoted only when its
+  only C0 characters are LF and TAB. DEL and C1 are still written verbatim.
+
 ## [1.14.2] - 2026-10-17
 
 **Patch.** Opt-in `require_unit` variants of the serde duration, bytes and
