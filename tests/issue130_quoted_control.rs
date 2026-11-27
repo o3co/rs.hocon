@@ -54,10 +54,15 @@ fn issue130_quoted_control_fixtures() {
         );
         let result = hocon::parse_file(&path);
         if must_error {
-            assert!(
-                result.is_err(),
-                "{stem}: must be rejected (has .error sidecar), got success"
-            );
+            match result {
+                Ok(_) => panic!("{stem}: must be rejected (has .error sidecar), got success"),
+                // Every qc error fixture is a raw control in a quoted string, so
+                // it must fail in the lexer with this message, not later.
+                Err(e) => assert!(
+                    e.to_string().contains("unescaped control character"),
+                    "{stem}: rejected for another reason: {e}"
+                ),
+            }
             continue;
         }
         let cfg = result.unwrap_or_else(|e| panic!("{stem}: must parse, got {e}"));
@@ -162,7 +167,7 @@ fn issue130_error_points_at_the_control_character() {
 
 /// The boundary the rejection must not cross.
 #[test]
-fn issue130_controls_legal_outside_single_quotes() {
+fn issue130_controls_legal_outside_quoted_strings() {
     let cases = [
         (
             "escaped",

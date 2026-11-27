@@ -19,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use a backslash escape (\u0009)`.
   **Workaround**: write the character as an escape (`\t`, `\r`, `\b`, `\f`
   or `\u0001`). For a value, a triple-quoted string (`"""..."""`) also
-  works, since it keeps control characters verbatim; a `${...}` path has no
-  triple-quoted form, so there the escape is the only option. Unquoted
+  works, since it keeps control characters verbatim; a key, a `${...}` path and
+  an `include` argument have no triple-quoted form, so there the escape is the
+  only option. Unquoted
   strings, DEL (U+007F) and C1 (U+0080–U+009F) are unchanged and still
   accepted.
 - **`Config::render_hocon()` escapes every C0 control** (xx.hocon E18
