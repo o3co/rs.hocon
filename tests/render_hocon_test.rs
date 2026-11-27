@@ -119,6 +119,29 @@ fn render_hocon_escapes_control_chars() {
     );
 }
 
+/// E18 decision 3: a key that cannot be bare always takes the escaped
+/// double-quoted form. A key holding LF must not be triple-quoted, even
+/// though a value with the same content would be.
+#[test]
+fn render_hocon_lf_key_uses_escaped_quotes() {
+    let cfg = parse("\"multi\\nline key\" = \"multi\\nline value\"\n").expect("parse");
+    let text = cfg.render_hocon().expect("render_hocon");
+    assert!(
+        text.contains("\"multi\\nline key\""),
+        "LF key is not in escaped double quotes:\n{text}"
+    );
+    assert!(
+        text.contains("\"\"\"multi\nline value\"\"\""),
+        "LF value lost its triple-quoted form:\n{text}"
+    );
+    let reparsed = parse(&text).unwrap_or_else(|e| panic!("re-parse: {e}\n{text}"));
+    assert_eq!(
+        hocon::_render_json_for_test(&cfg),
+        hocon::_render_json_for_test(&reparsed),
+        "round trip changed the tree\n--- emitted ---\n{text}"
+    );
+}
+
 #[cfg(feature = "serde")]
 mod from_map_cases {
     use hocon::{from_map, parse, Config};

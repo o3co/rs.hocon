@@ -192,12 +192,15 @@ fn render_key(k: &str) -> String {
     // parser (and Lightbend: "include keyword is not followed by a quoted
     // string") rejects `include = 1`, so the key must be quoted to round-trip.
     if k == "include" {
-        return quote_string(k);
+        return escape_quoted(k);
     }
     if is_safe_unquoted_key(k) {
         k.to_string()
     } else {
-        quote_string(k)
+        // E18 decision 3: a key that cannot be bare always takes the escaped
+        // double-quoted form, never triple quotes (a triple-quoted key is not
+        // a valid path expression), so an LF key renders as `"a\nb"`.
+        escape_quoted(k)
     }
 }
 
@@ -242,6 +245,12 @@ fn quote_string(s: &str) -> String {
     {
         return format!("\"\"\"{s}\"\"\"");
     }
+    escape_quoted(s)
+}
+
+/// The escaped double-quoted form (E18 decision 5), used for every key that
+/// cannot be bare and for values that cannot be triple-quoted.
+fn escape_quoted(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {

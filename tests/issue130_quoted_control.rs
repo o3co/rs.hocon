@@ -7,7 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 //! xx.hocon#130 — S1.2.4: a raw C0 control character (U+0000–U+001F) inside a
-//! single-quoted string is a parse error, as in JSON and Lightbend. The lexer
+//! double-quoted string is a parse error, as in JSON and Lightbend. The lexer
 //! rejected only LF; tab, CR, U+0001, U+001F and NUL were accepted in value,
 //! key, substitution-path and include position. Triple-quoted (S9.1) and
 //! unquoted (S8.8) strings keep controls verbatim, and DEL / C1 are legal.
@@ -107,23 +107,43 @@ fn issue130_every_c0_control_in_quoted_value_is_rejected() {
 /// The other positions that share the quoted-string reader.
 #[test]
 fn issue130_raw_control_rejected_in_every_quoted_position() {
+    // Mirrors go.hocon's 18 positions. Every case must name the control
+    // character, not merely fail: a lenient parser can otherwise fail for an
+    // unrelated reason (a misleading key or include error, an undefined
+    // substitution), which hides whether the lexer rejected the character.
     let cases = [
         ("key", "\"a\tb\" = 1\n"),
-        ("path-segment", "a.\"b\u{1}\" = 1\n"),
+        ("dotted-key-segment", "a.\"b\u{1}\" = 1\n"),
+        ("quoted-dotted-key", "\"a\".\"b\tc\" = 1\n"),
+        ("space-joined-key", "a \"b\tc\" = 1\n"),
+        ("adjacent-key", "a\"b\tc\" = 1\n"),
+        ("numeric-tail-key", "123abc.\"x\t= 1\n"),
+        ("nested-key", "o { \"a\tb\" = 1 }\n"),
         ("array-element", "a = [\"x\u{0}\"]\n"),
-        ("subst-path", "x = 1\na = ${\"x\t\"}\n"),
+        // The key exists (written with an escape), so only the lexer can fail.
+        ("subst-path", "\"x\\t\" = 1\na = ${\"x\t\"}\n"),
         ("optional-subst", "a = ${?\"x\u{1f}\"}\n"),
+        ("concat", "a = foo \"x\u{1}\" bar\n"),
+        ("append", "a = [1]\na += \"x\ty\"\n"),
         ("include", "include \"x\ty\"\n"),
         ("include-required", "include required(\"x\ty\")\n"),
         ("include-file", "include file(\"x\ty\")\n"),
-        ("concat", "a = foo \"x\u{1}\" bar\n"),
+        (
+            "include-package-id",
+            "include package(\"p\tq\", \"f.conf\")\n",
+        ),
+        (
+            "include-package-file",
+            "include package(\"p\", \"f\td.conf\")\n",
+        ),
+        ("include-nested", "a { include \"x\ty\" }\n"),
     ];
     for (name, src) in cases {
         let err = hocon::parse(src)
             .err()
             .unwrap_or_else(|| panic!("{name}: parse({src:?}): expected a parse error"));
         assert!(
-            err.to_string().contains("control character U+"),
+            err.to_string().contains("unescaped control character U+"),
             "{name}: error {err} does not name the control character"
         );
     }
