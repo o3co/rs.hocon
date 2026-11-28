@@ -29,7 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would `-.5`. The adapter now drops a leading `+` and writes the missing `0`
   (`.5` → `0.5`, `-.5` → `-0.5`, `+1.5` → `1.5`), keeping every digit, so the
   value is unchanged. `get_string` on such a value returns the new text
-  (`"0.5"`, not `".5"`), as go, ts and py already do.
+  (`"0.5"`, not `".5"`), a `0.5`-style number as go, ts and py produce.
+  Lexemes HOCON already reads as numbers (`1.`, `1.50`, `1e5`) are kept as
+  written.
 - **A substitution cycle written twice aborted the process
   ([#199](https://github.com/o3co/rs.hocon/issues/199)).** `a = ${?b}` /
   `b = ${?a}` written twice overflowed the stack (`fatal runtime error: stack

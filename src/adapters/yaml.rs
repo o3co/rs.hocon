@@ -230,7 +230,9 @@ fn key_string(k: &Yaml, at: &str) -> Result<String, AdapterError> {
 /// does not read as numbers: a leading `+` (`+1.5`) and no integer part
 /// (`.5`, `-.5`, `.5e3`). Kept as is, such a raw renders bare through
 /// `render_hocon` and reads back as text or an error, so drop the `+` and
-/// write the `0`. Every digit is kept, so the value does not change.
+/// write the `0`. Every digit is kept, so the value does not change. `raw`
+/// must already be a valid f64 literal (the caller checks it with
+/// `f64::from_str`); on unchecked text this would accept forms like `+-1`.
 fn hocon_number_text(raw: &str) -> String {
     let unsigned = raw.strip_prefix('+').unwrap_or(raw);
     let (sign, digits) = match unsigned.strip_prefix('-') {
