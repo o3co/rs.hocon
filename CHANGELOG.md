@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.3] - 2026-11-28
+
+**Patch.** A substitution cycle written twice (`a = ${?b}` / `b = ${?a}`,
+twice) no longer aborts the process with a stack overflow (#199). Such a
+cycle now resolves as Lightbend does (`{}` for the optional form, a
+`ResolveError` for the required one), and resolution after a cut cycle is
+bounded in work, nesting and value size. Every config that loaded before
+reads the same; only inputs that aborted now load or fail with an error.
+
 ### Fixed
 
 - **A substitution cycle written twice aborted the process
@@ -1363,7 +1372,8 @@ A subset of these fixes change observable runtime behavior. The most likely user
 - Optional Serde deserialization support (`serde` feature flag)
 - Lightbend equivalence tests (equiv01 through equiv05)
 
-[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.2...HEAD
+[Unreleased]: https://github.com/o3co/rs.hocon/compare/v1.14.3...HEAD
+[1.14.3]: https://github.com/o3co/rs.hocon/compare/v1.14.2...v1.14.3
 [1.14.2]: https://github.com/o3co/rs.hocon/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/o3co/rs.hocon/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/o3co/rs.hocon/compare/v1.13.1...v1.14.0
