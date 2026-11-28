@@ -28,9 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also build an exponentially large value before the guard stopped it (an
   8-line input spent tens of seconds). Once the guard has cut a cycle,
   resolution now fails with `resolved value too large` when the values it
-  produces or copies exceed 10,000 nodes per node of the document (string
-  text counts too, so a ring of arrays or strings that doubles on every lap is
-  stopped while it is being built). A cut only happens on
+  produces or copies exceed 10,000 nodes per node of the document, capped at
+  2,000,000 (string and key text count too, so a ring of arrays or strings
+  that doubles on every lap is stopped while it is being built). After a cut,
+  resolution also fails with `substitution cycle too complex to resolve` past
+  a fixed amount of work or 1,000 nested substitutions, which bounds cycles
+  that re-explore without growing any value. A cut only happens on
   an input that aborted before, so no config that loads is affected: large or
   deeply nested acyclic configs are never charged.
 - **BREAKING (S1.2.4, xx.hocon#130): a raw C0 control character

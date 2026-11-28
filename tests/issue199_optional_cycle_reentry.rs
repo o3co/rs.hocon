@@ -147,6 +147,64 @@ fn issue199_doubling_rings_are_an_error() {
     }
 }
 
+/// rs.hocon#203 review (resource exhaustion after a cut): a cut substitution
+/// resolves to nothing, which is never cached, so sibling references
+/// re-explore whole subtrees (11 s of CPU for 4 lines, days for longer ones);
+/// a dense cycle nests ×2 per key; padding inflated the value budget into
+/// gigabytes. The post-cut work budget, nesting cap and value-budget cap turn
+/// each into a prompt error. All of these aborted with a stack overflow
+/// before the guard.
+#[test]
+fn issue199_post_cut_resource_bounds() {
+    let refs = |key: &str, n: usize| format!("${{?{key}}}").repeat(n);
+    let w8 = format!(
+        "a = {a}\nb = {b}\na = {a}\nb = {b}\n",
+        a = refs("b", 8),
+        b = refs("a", 8)
+    );
+    let keys: Vec<String> = (0..10).map(|i| format!("k{i}")).collect();
+    let dense: String = keys
+        .iter()
+        .map(|k| {
+            format!(
+                "{k} = {}\n",
+                keys.iter()
+                    .map(|o| format!("${{?{o}}}"))
+                    .collect::<String>()
+            )
+        })
+        .collect();
+    let pad = format!("pad = [{}]\n", vec!["1"; 10_000].join(","));
+    let ring: String = (0..16)
+        .map(|i| format!("a{i} = ${{?a{n}}}${{?a{n}}}x\n", n = (i + 1) % 16))
+        .collect();
+    let cases = [
+        ("wide refs", w8, "too complex"),
+        ("dense cycle", format!("{dense}{dense}"), "too complex"),
+        (
+            "padded string ring",
+            format!("{pad}{ring}{ring}"),
+            "too large",
+        ),
+    ];
+    // The nesting cap allows 1,000 nested substitutions; a debug build's
+    // frames need more than the 2 MiB a test thread gets by default.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            for (name, src, want) in cases {
+                let err = hocon::parse(&src).expect_err(name);
+                assert!(
+                    err.to_string().contains(want),
+                    "{name}: unexpected error: {err}"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
 /// The value budget only applies after the guard has cut a cycle, so large
 /// acyclic configs that load today are never charged: an exponential chain of
 /// references and a deeply nested object.
