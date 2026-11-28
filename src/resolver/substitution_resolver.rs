@@ -40,6 +40,151 @@ pub(crate) struct SubstitutionResolver<'a> {
     /// shape the fold could not see through — it is reported as unresolvable
     /// instead of recursing forever.
     resolving_prefix_priors: HashSet<String>,
+    /// rs.hocon#199 guard for the in-progress branch of `resolve_subst`, which
+    /// resolves a key's saved prior while the key itself is in progress. See
+    /// [`PriorReentry`]. Keyed by substitution key; one entry per enclosing
+    /// resolution of that key's prior.
+    prior_reentry: HashMap<String, Vec<PriorReentry>>,
+    /// Longest substitution path in the document (segments). Only the first
+    /// this-many elements of `resolving_field_path` can affect a resolution
+    /// (the S13a.12 prefix branch and `is_owner` compare against a
+    /// substitution's segments), so [`PriorReentry`] records only those.
+    max_subst_len: usize,
+    /// rs.hocon#199: value nodes substitutions may still produce before
+    /// resolution fails. See [`VALUE_NODES_PER_SOURCE_NODE`].
+    value_budget: usize,
+    /// rs.hocon#199: times the [`PriorReentry`] guard refused a re-entry.
+    /// The value budget only applies once this is non-zero.
+    cuts: usize,
+    /// Work left after the first cut (see [`POST_CUT_WORK`]).
+    post_cut_work: usize,
+    /// Current `resolve_subst` nesting depth (see [`POST_CUT_DEPTH`]).
+    subst_depth: usize,
+}
+
+/// rs.hocon#203 review: work units allowed after the first cut. One unit per
+/// `resolve_subst` call plus the source nodes of every prior or found subtree
+/// cloned. A cut substitution resolves to nothing, which is never cached or
+/// charged, so sibling references re-explored whole subtrees: a 4-line input
+/// took 11 s of CPU with no value growth, and longer lines took days. The
+/// most any corpus input with a cut used was ~10,800 calls.
+const POST_CUT_WORK: usize = 5_000_000;
+/// `resolve_subst` nesting allowed after the first cut: the guard's nesting
+/// still grows roughly ×2 per key in a dense cycle (10 keys each referencing
+/// all 10, written twice, overflowed the stack).
+const POST_CUT_DEPTH: usize = 1_000;
+/// Upper bound on the value budget: `VALUE_NODES_PER_SOURCE_NODE × n` alone
+/// let a padded or prior-heavy document reach gigabytes after a cut.
+const VALUE_BUDGET_CAP: usize = 2_000_000;
+
+/// Value nodes the resolver may clone into its cache, per node of the
+/// document, once the [`PriorReentry`] guard has cut a cycle. The guard stops
+/// every cycle, but a cycle through nested objects can still nest its value
+/// exponentially before it does, and every resolved field is cloned into the
+/// cache with all its descendants (an 8-line input spent tens of seconds
+/// there). The budget only applies after a cut, and a cut only happens on an
+/// input that overflowed the stack before the guard, so it changes no config
+/// that loaded: an exponential but acyclic config (`a2 = {x = ${a1}, y =
+/// ${a1}}`, …) or a deeply nested one is never charged. Interim, like the
+/// guard (o3co/xx.hocon#67 / #125).
+const VALUE_NODES_PER_SOURCE_NODE: usize = 10_000;
+
+/// Weight of a resolved value for the value budget: its nodes, plus one per
+/// 16 bytes of scalar text.
+fn value_nodes(v: &HoconValue) -> usize {
+    match v {
+        HoconValue::Object(m) => {
+            1 + m
+                .iter()
+                .map(|(k, v)| k.len() / 16 + value_nodes(v))
+                .sum::<usize>()
+        }
+        HoconValue::Array(a) => 1 + a.iter().map(value_nodes).sum::<usize>(),
+        // A string that doubles on every lap grows without adding nodes.
+        HoconValue::Scalar(sv) => 1 + sv.raw.len() / 16,
+        _ => 1,
+    }
+}
+
+/// Nodes in the unresolved document, saved priors included.
+fn source_nodes(v: &ResolverValue) -> usize {
+    match v {
+        ResolverValue::Resolved(h) => value_nodes(h),
+        ResolverValue::Subst(_) => 1,
+        ResolverValue::Concat(c) => 1 + c.nodes.iter().map(source_nodes).sum::<usize>(),
+        ResolverValue::UnresolvedArray(e) => 1 + e.iter().map(source_nodes).sum::<usize>(),
+        ResolverValue::Obj(o) => source_nodes_obj(o),
+    }
+}
+
+fn source_nodes_obj(o: &ResObj) -> usize {
+    1 + o
+        .fields
+        .values()
+        .chain(o.prior_values.values())
+        .map(source_nodes)
+        .sum::<usize>()
+}
+
+/// The resolver state when a key's saved prior started resolving in the
+/// in-progress branch of `resolve_subst`.
+///
+/// A prior can reach another in-progress key and resolve that key's prior,
+/// which can come back to the first key. Re-entering a key's prior is legal
+/// and usually terminates, because the keys entered in between take a
+/// different branch the second time. But `a = ${?b}` / `b = ${?a}` written
+/// twice re-entered in the same state and walked a → b → a … until the stack
+/// overflowed (rs.hocon#199).
+///
+/// A re-entry whose state equals that of an enclosing resolution of the same
+/// prior repeats it: that cycle cannot be broken, so the optional form is
+/// nonexistent and the required form is an error, as in Lightbend. Any other
+/// re-entry proceeds as before. The state is the in-progress set, the
+/// S13a.12 prefix-prior guard set, and the field path up to the longest
+/// substitution path (the prefix branch and `is_owner` never compare deeper
+/// elements). There are finitely many such states, so the nesting is finite.
+///
+/// Two things that also steer a resolution are left out: the `scope` that
+/// picks which prior is used, and the cache, which a cycle through nested
+/// objects grows by a deeper key on every lap (a state including it would
+/// never repeat). So "equal state" is not a proof of an equal computation.
+/// The claim that no config that loaded changes rests on differential runs
+/// (base vs. this guard over ~97,000 generated and corpus inputs, 0 changes),
+/// not on a proof.
+///
+/// Interim guard; the full fix is the resolver redesign in o3co/xx.hocon#67 /
+/// #125.
+#[derive(PartialEq)]
+struct PriorReentry {
+    resolving: Vec<String>,
+    prefix_priors: Vec<String>,
+    field_path: Vec<String>,
+}
+
+fn sorted(set: &HashSet<String>) -> Vec<String> {
+    let mut v: Vec<String> = set.iter().cloned().collect();
+    v.sort_unstable();
+    v
+}
+
+/// Longest substitution path (in segments) anywhere in `v`, priors included.
+fn max_subst_len(v: &ResolverValue) -> usize {
+    match v {
+        ResolverValue::Subst(sp) => sp.segments.len(),
+        ResolverValue::Concat(c) => c.nodes.iter().map(max_subst_len).max().unwrap_or(0),
+        ResolverValue::UnresolvedArray(elems) => elems.iter().map(max_subst_len).max().unwrap_or(0),
+        ResolverValue::Obj(o) => max_subst_len_obj(o),
+        ResolverValue::Resolved(_) => 0,
+    }
+}
+
+fn max_subst_len_obj(o: &ResObj) -> usize {
+    o.fields
+        .values()
+        .chain(o.prior_values.values())
+        .map(max_subst_len)
+        .max()
+        .unwrap_or(0)
 }
 
 impl<'a> SubstitutionResolver<'a> {
@@ -58,6 +203,14 @@ impl<'a> SubstitutionResolver<'a> {
             allow_unresolved,
             resolving_field_path: Vec::new(),
             resolving_prefix_priors: HashSet::new(),
+            prior_reentry: HashMap::new(),
+            max_subst_len: max_subst_len_obj(root),
+            value_budget: source_nodes_obj(root)
+                .saturating_mul(VALUE_NODES_PER_SOURCE_NODE)
+                .min(VALUE_BUDGET_CAP),
+            cuts: 0,
+            post_cut_work: POST_CUT_WORK,
+            subst_depth: 0,
         }
     }
 
@@ -123,9 +276,10 @@ impl<'a> SubstitutionResolver<'a> {
                     // reads back `b`'s preview of `a`). The post-loop write
                     // here is always authoritative for fields the resolver
                     // commits into `result`.
+                    self.charge_value_budget(&full_cache_key, &final_value)?;
                     self.cache
                         .insert(full_cache_key.clone(), final_value.clone());
-                    self.cache_descendants(&full_cache_key, &final_value);
+                    self.cache_descendants(&full_cache_key, &final_value)?;
                     result.insert(key.clone(), final_value);
                 }
                 None => {
@@ -135,9 +289,10 @@ impl<'a> SubstitutionResolver<'a> {
                         let prior_result = self.resolve_val(prior, obj);
                         self.resolving_field_path.pop();
                         if let Some(prior_resolved) = prior_result? {
+                            self.charge_value_budget(&full_cache_key, &prior_resolved)?;
                             self.cache
                                 .insert(full_cache_key.clone(), prior_resolved.clone());
-                            self.cache_descendants(&full_cache_key, &prior_resolved);
+                            self.cache_descendants(&full_cache_key, &prior_resolved)?;
                             result.insert(key.clone(), prior_resolved);
                         }
                     }
@@ -160,7 +315,57 @@ impl<'a> SubstitutionResolver<'a> {
         Some(cur.clone())
     }
 
-    fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) {
+    /// rs.hocon#199: deduct the nodes of a value about to be cloned into the
+    /// cache from the value budget (see VALUE_NODES_PER_SOURCE_NODE).
+    fn charge_value_budget(&mut self, key: &str, value: &HoconValue) -> Result<(), ResolveError> {
+        // Only after the guard has cut a cycle: a cut only happens where the
+        // resolver would otherwise never have terminated, so no config that
+        // loads (a large or deeply nested one included) is ever charged.
+        if self.cuts == 0 {
+            return Ok(());
+        }
+        self.charge_weight(key, value_nodes(value))
+    }
+
+    /// Deduct post-cut work (see [`POST_CUT_WORK`]); no-op before a cut.
+    fn charge_work(&mut self, s: &SubstPlaceholder, units: usize) -> Result<(), ResolveError> {
+        if self.cuts == 0 {
+            return Ok(());
+        }
+        if units > self.post_cut_work {
+            return Err(ResolveError {
+                message: format!(
+                    "substitution cycle too complex to resolve: {}",
+                    segments_to_key(&s.segments)
+                ),
+                path: segments_to_key(&s.segments),
+                line: s.line,
+                col: s.col,
+            });
+        }
+        self.post_cut_work -= units;
+        Ok(())
+    }
+
+    fn charge_weight(&mut self, key: &str, n: usize) -> Result<(), ResolveError> {
+        if self.cuts == 0 {
+            return Ok(());
+        }
+        if n > self.value_budget {
+            return Err(ResolveError {
+                message: format!(
+                    "resolved value too large: {key} keeps growing (a cycle through nested objects?)"
+                ),
+                path: key.to_string(),
+                line: 0,
+                col: 0,
+            });
+        }
+        self.value_budget -= n;
+        Ok(())
+    }
+
+    fn cache_descendants(&mut self, prefix: &str, value: &HoconValue) -> Result<(), ResolveError> {
         if let HoconValue::Object(fields) = value {
             for (key, child) in fields {
                 // Use the same quoting rule as string_segments_to_key so that
@@ -168,10 +373,14 @@ impl<'a> SubstitutionResolver<'a> {
                 // `prefix."a.b"` (quoted), not `prefix.a.b` (ambiguous).
                 let escaped_key = string_segments_to_key(std::iter::once(key.as_str()));
                 let child_key = format!("{prefix}.{escaped_key}");
+                // The cache key text is memory too (it grows with depth).
+                self.charge_weight(&child_key, child_key.len() / 16)?;
+                self.charge_value_budget(&child_key, child)?;
                 self.cache.insert(child_key.clone(), child.clone());
-                self.cache_descendants(&child_key, child);
+                self.cache_descendants(&child_key, child)?;
             }
         }
+        Ok(())
     }
 
     fn resolve_val(
@@ -180,7 +389,17 @@ impl<'a> SubstitutionResolver<'a> {
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
         match v {
-            ResolverValue::Subst(s) => self.resolve_subst(s, scope),
+            ResolverValue::Subst(s) => {
+                let resolved = self.resolve_subst(s, scope)?;
+                // rs.hocon#203 review: after a cut, also charge every
+                // substitution result as it is produced, so an array or string
+                // that doubles on every lap of a cycle is stopped while it is
+                // being built, not after its field is complete.
+                if let (Some(v), true) = (&resolved, self.cuts > 0) {
+                    self.charge_value_budget(&segments_to_key(&s.segments), v)?;
+                }
+                Ok(resolved)
+            }
             ResolverValue::Concat(c) => {
                 self.resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
             }
@@ -203,7 +422,32 @@ impl<'a> SubstitutionResolver<'a> {
         }
     }
 
+    /// Post-cut work and nesting bounds around [`Self::resolve_subst_x`]
+    /// (rs.hocon#203 review; no-ops before the first cut).
     fn resolve_subst(
+        &mut self,
+        s: &SubstPlaceholder,
+        scope: &ResObj,
+    ) -> Result<Option<HoconValue>, ResolveError> {
+        if self.cuts > 0 && self.subst_depth >= POST_CUT_DEPTH {
+            return Err(ResolveError {
+                message: format!(
+                    "substitution cycle too complex to resolve: {}",
+                    segments_to_key(&s.segments)
+                ),
+                path: segments_to_key(&s.segments),
+                line: s.line,
+                col: s.col,
+            });
+        }
+        self.charge_work(s, 1)?;
+        self.subst_depth += 1;
+        let r = self.resolve_subst_x(s, scope);
+        self.subst_depth -= 1;
+        r
+    }
+
+    fn resolve_subst_x(
         &mut self,
         s: &SubstPlaceholder,
         scope: &ResObj,
@@ -251,6 +495,22 @@ impl<'a> SubstitutionResolver<'a> {
                     if !self.resolving_prefix_priors.contains(&rfp_key) {
                         let leaf = rfp.last().expect("rfp non-empty").clone();
                         if let Some(prior) = scope.prior_values.get(leaf.as_str()) {
+                            // Post-cut work (inline: `rfp` borrows self here).
+                            if self.cuts > 0 {
+                                let units = source_nodes(prior);
+                                if units > self.post_cut_work {
+                                    let key = segments_to_key(&s.segments);
+                                    return Err(ResolveError {
+                                        message: format!(
+                                            "substitution cycle too complex to resolve: {key}"
+                                        ),
+                                        path: key,
+                                        line: s.line,
+                                        col: s.col,
+                                    });
+                                }
+                                self.post_cut_work -= units;
+                            }
                             let prior = prior.clone();
                             let remainder: Vec<String> = s.segments[rfp.len()..]
                                 .iter()
@@ -317,6 +577,9 @@ impl<'a> SubstitutionResolver<'a> {
                 .get(root_seg)
                 .or_else(|| self.root.prior_values.get(root_seg));
             if let Some(prior) = prior {
+                if self.cuts > 0 {
+                    self.charge_work(s, 2 * source_nodes(prior))?;
+                }
                 let prior = prior.clone();
                 // xx.hocon#27 cluster 3h sr12: if the prior itself contains a
                 // self-ref to the same key (e.g. `foo.a = ${?foo.a}bar; foo.b
@@ -334,7 +597,43 @@ impl<'a> SubstitutionResolver<'a> {
                 let skip_due_to_self_ref = prior_for_check
                     .as_ref()
                     .is_some_and(|p| super::fold_self_ref::contains_subst_by_path(p, &s.segments));
-                if !skip_due_to_self_ref {
+                let state = (!skip_due_to_self_ref).then(|| PriorReentry {
+                    resolving: sorted(&self.resolving),
+                    prefix_priors: sorted(&self.resolving_prefix_priors),
+                    field_path: self
+                        .resolving_field_path
+                        .iter()
+                        .take(self.max_subst_len)
+                        .cloned()
+                        .collect(),
+                });
+                // After a cut, building and comparing snapshots is work too:
+                // with long keys it dominated (rs.hocon#203 review: 120 keys
+                // of 2,000 chars took 20 s). Charge it to the work budget.
+                if let (Some(st), true) = (state.as_ref(), self.cuts > 0) {
+                    let bytes: usize = st
+                        .resolving
+                        .iter()
+                        .chain(&st.prefix_priors)
+                        .chain(&st.field_path)
+                        .map(|k| k.len() + 1)
+                        .sum();
+                    let depth = self.prior_reentry.get(&key).map_or(0, Vec::len);
+                    self.charge_work(s, (depth + 1).saturating_mul(1 + bytes / 16))?;
+                }
+                let unbreakable = state.as_ref().is_some_and(|st| {
+                    self.prior_reentry
+                        .get(&key)
+                        .is_some_and(|outer| outer.contains(st))
+                });
+                if unbreakable {
+                    self.cuts += 1;
+                }
+                if let (Some(state), false) = (state, unbreakable) {
+                    self.prior_reentry
+                        .entry(key.clone())
+                        .or_default()
+                        .push(state);
                     // Surgical: only remove the current cycling key from the
                     // swapped-in set; other in-flight resolutions stay guarded.
                     let mut fresh_resolving = self.resolving.clone();
@@ -363,9 +662,17 @@ impl<'a> SubstitutionResolver<'a> {
                     let prior_at_path = prior_for_check.as_ref().unwrap_or(&prior);
                     let result = self.resolve_val(prior_at_path, scope);
                     std::mem::swap(&mut self.resolving, &mut fresh_resolving);
+                    if let Some(outer) = self.prior_reentry.get_mut(&key) {
+                        outer.pop();
+                        if outer.is_empty() {
+                            self.prior_reentry.remove(&key);
+                        }
+                    }
                     return result;
                 }
-                // Fall through to optional/required short-circuit below.
+                // Fall through to optional/required short-circuit below: the
+                // prior holds a self-ref to this key, or re-entering it would
+                // repeat an enclosing resolution (rs.hocon#199).
             }
             if s.optional {
                 return Ok(None);
@@ -392,7 +699,11 @@ impl<'a> SubstitutionResolver<'a> {
         scope: &ResObj,
         key: &str,
     ) -> Result<Option<HoconValue>, ResolveError> {
-        let found = lookup_path(self.root, &s.segments).cloned();
+        let found = lookup_path(self.root, &s.segments);
+        if let (Some(f), true) = (found, self.cuts > 0) {
+            self.charge_work(s, source_nodes(f))?;
+        }
+        let found = found.cloned();
 
         if let Some(found) = found {
             // Self-referential substitution: only use prior value when the substitution
