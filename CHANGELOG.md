@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A substitution cycle written twice aborted the process
+  ([#199](https://github.com/o3co/rs.hocon/issues/199)).** `a = ${?b}` /
+  `b = ${?a}` written twice overflowed the stack (`fatal runtime error: stack
+  overflow, aborting`, not a returned error); so did the required form, longer
+  cycles, nested paths, and cycles through nested objects. While a key was in
+  progress, the resolver resolved its saved prior, and that prior could reach
+  another in-progress key and resolve that key's prior in turn, forever. A
+  re-entry in an unchanged state (the same keys in progress, the same
+  prefix-prior guards, the same relevant field path) is now treated as an
+  unbreakable cycle: an optional substitution is nonexistent and a required
+  one is a `ResolveError`, as in Lightbend (`{}` and `UnresolvedSubstitution`
+  for the input above). Every input that loaded before reads the same; only
+  inputs that aborted now load or fail with an error. Some of those still
+  differ from Lightbend (cycles through string concatenation or nested
+  objects); that is left to the resolver redesign in o3co/xx.hocon#67 / #125,
+  which replaces this interim guard. A cycle through nested objects could
+  also build an exponentially large value before the guard stopped it (an
+  8-line input spent tens of seconds). Once the guard has cut a cycle,
+  resolution now fails with `resolved value too large` when the values it
+  produces or copies exceed 10,000 nodes per node of the document, capped at
+  2,000,000 (string and key text count too, so a ring of arrays or strings
+  that doubles on every lap is stopped while it is being built). After a cut,
+  resolution also fails with `substitution cycle too complex to resolve` past
+  a fixed amount of work or 1,000 nested substitutions, which bounds cycles
+  that re-explore without growing any value. A cut only happens on
+  an input that aborted before, so no config that loads is affected: large or
+  deeply nested acyclic configs are never charged.
 - **BREAKING (S1.2.4, xx.hocon#130): a raw C0 control character
   (U+0000–U+001F) inside a double-quoted string is a parse error**, as JSON
   and Lightbend 1.4.9 reject it. Only a raw newline was
