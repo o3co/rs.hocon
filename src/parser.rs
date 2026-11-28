@@ -1227,15 +1227,30 @@ fn validate_package_file_arg(file: &str, line: usize, col: usize) -> Result<(), 
 }
 
 /// Whether `raw` begins a JSON-number-shaped literal, which number-lex
-/// attempts (E8): a digit, `-` then a digit, or `-.` then a digit (`-.5`, as
-/// Lightbend reads it). This excludes Rust-only float literals like
-/// `-inf`/`-nan` that `f64::parse` would accept but Lightbend's `parseDouble`
-/// rejects, and `.5` / `-foo`, which stay unquoted text.
+/// attempts (E8): a digit, `-` then a digit, or `-.` then a digit. This
+/// excludes Rust-only float literals like `-inf`/`-nan` that `f64::parse`
+/// would accept but Lightbend's `parseDouble` rejects, and `.5` / `-foo`,
+/// which stay unquoted text. A `-.` run is number-lexed but never converts
+/// (see `may_convert`).
 fn starts_like_number(raw: &str) -> bool {
     matches!(
         raw.as_bytes(),
         [b'0'..=b'9', ..] | [b'-', b'0'..=b'9', ..] | [b'-', b'.', b'0'..=b'9', ..]
     )
+}
+
+/// Whether a number-lexed run may convert at all (E8 step 3). Since Lightbend
+/// 1.4.10 (lightbend/config#861) a run that starts with `-.` fails to
+/// convert, like a `.` run: `-.5` is text, and by the `+` rule `-.5e+3` is an
+/// error (xx.hocon#140).
+fn may_convert(run: &str) -> bool {
+    !run.starts_with("-.")
+}
+
+/// Whether a number-lexed run converts to a number (E8 step 3): it may
+/// convert, and it parses as a Java long or double.
+fn run_is_number(run: &str) -> bool {
+    may_convert(run) && (run.parse::<i64>().is_ok() || run.parse::<f64>().is_ok())
 }
 
 /// Error for a `+` outside quotes that is not a number's exponent sign.
@@ -1256,7 +1271,7 @@ fn reserved_plus_offset(raw: &str) -> Option<usize> {
         .find(|c: char| !matches!(c, '0'..='9' | '.' | 'e' | 'E' | '+' | '-'))
         .unwrap_or(raw.len());
     let run = &raw[..run_end];
-    if !(run.parse::<i64>().is_ok() || run.parse::<f64>().is_ok()) {
+    if !run_is_number(run) {
         return first_plus(run).or_else(|| first_plus(&raw[run_end..]).map(|i| i + run_end));
     }
     first_plus(&raw[run_end..]).map(|i| i + run[..].chars().count())
@@ -1285,10 +1300,9 @@ fn parse_scalar_value(raw: &str) -> Result<ScalarValue, (String, usize)> {
     }
 
     // Number detection per E8 (xx.hocon#31): greedy Java numeric semantics,
-    // for runs that start like a JSON number (see `starts_like_number`).
-    let starts_like_number = starts_like_number(raw);
-
-    if starts_like_number {
+    // for runs that start like a JSON number (see `starts_like_number`), less
+    // the `-.` runs that do not convert (step 3, see `may_convert`).
+    if starts_like_number(raw) && may_convert(raw) {
         // S10.11 (go.hocon#133): a numeric value stringifies "as written in the
         // source file" when it is the target of a substitution inside a string
         // concatenation. Lightbend keeps the original lexeme ("05" → "26.05")

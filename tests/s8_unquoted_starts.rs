@@ -314,6 +314,9 @@ fn plus_and_number_lex_match_lightbend() {
         "1e+5.2",
         "1e+5e5",
         "1e+5-",
+        // Since Lightbend 1.4.10 a run starting with "-." is not a number
+        // (xx.hocon#140), so this is a run with '+' that is not a number.
+        "-.5e+3",
     ] {
         assert!(
             parse(&format!("a = {v}")).is_err(),
@@ -328,8 +331,13 @@ fn plus_and_number_lex_match_lightbend() {
         ("1.", Number),
         ("1.e5", Number),
         ("-1.", Number),
-        ("-.5", Number),
-        ("-.5e+3", Number),
+        ("-0.5", Number),
+        ("-5.", Number),
+        // Text since Lightbend 1.4.10 (xx.hocon#140), like ".5".
+        ("-.5", Str),
+        ("-.5e3", Str),
+        ("-.5e999", Str),
+        ("-.5ms", Str),
         ("1e+5ms", Str),
         ("1e+5 ms", Str),
         ("1.5e+3s", Str),
@@ -346,9 +354,9 @@ fn plus_and_number_lex_match_lightbend() {
         assert_eq!(sv.value_type, ty, "a = {v}");
         assert_eq!(sv.raw, v, "a = {v}");
     }
-    let cfg = parse("a = 1.e+5, b = -.5e+3, c = -.5").unwrap();
+    let cfg = parse("a = 1.e+5, b = -1.5e+3, c = -0.5").unwrap();
     assert_eq!(cfg.get_f64("a").unwrap(), 100000.0);
-    assert_eq!(cfg.get_f64("b").unwrap(), -500.0);
+    assert_eq!(cfg.get_f64("b").unwrap(), -1500.0);
     assert_eq!(cfg.get_f64("c").unwrap(), -0.5);
 
     // Key position.
@@ -359,6 +367,12 @@ fn plus_and_number_lex_match_lightbend() {
 
     // A number key written against `+=`: the greedy run takes the `+`.
     assert!(parse("1 = [1]\n1+= 2").is_err(), "1+= 2 must be rejected");
+    // A '-' still starts a number run, so `-.5+` is a run with '+' that is
+    // not a number, even though `-.5` alone is text (xx.hocon#140).
+    assert!(
+        parse("x = [1]\n-.5+= 2").is_err(),
+        "-.5+= 2 must be rejected"
+    );
     assert!(
         parse("1.5 = [1]\n1.5+= 2").is_err(),
         "1.5+= 2 must be rejected"
@@ -624,4 +638,45 @@ fn e13_key_path_hyphen_segment_accepted_was_rejected_pre_e13() {
         1,
         "expected value at path a.-foo"
     );
+}
+
+/// A run that starts with `-.` in every position (Lightbend 1.4.10,
+/// xx.hocon#140): it is text, and with a `+` it is an error.
+#[test]
+fn e8_negative_leading_dot_in_every_position() {
+    let env: HashMap<String, String> = HashMap::new();
+    let parse = |doc: &str| hocon::parse_with_env(doc, &env);
+
+    for doc in [
+        "-.5e+3 = 1",
+        "a = x -.5e+3",
+        "a = [-.5e+3]",
+        "b = 1\na = ${b}-.5e+3",
+        "a = -.5e+3ms",
+    ] {
+        assert!(parse(doc).is_err(), "{doc:?} must be rejected");
+    }
+    match parse("a = -.5e+3") {
+        Err(hocon::HoconError::Parse(pe)) => {
+            assert_eq!((pe.line, pe.col), (1, 9), "the error points at the '+'")
+        }
+        other => panic!("a = -.5e+3 gave {other:?}"),
+    }
+
+    assert_eq!(parse("-.5 = 1").unwrap().get_i64("\"-\".5").unwrap(), 1);
+    assert_eq!(
+        parse("a = -.5 b").unwrap().get_string("a").unwrap(),
+        "-.5 b"
+    );
+    let list = parse("a = [-.5]").unwrap().get_list("a").unwrap();
+    match &list[..] {
+        [hocon::HoconValue::Scalar(sv)] => {
+            assert_eq!(sv.value_type, hocon::ScalarType::String);
+            assert_eq!(sv.raw, "-.5");
+        }
+        other => panic!("a = [-.5] gave {other:?}"),
+    }
+    let cfg = parse("b = 1\na = ${b}-.5").unwrap();
+    assert_eq!(cfg.get_string("a").unwrap(), "1-.5");
+    assert_eq!(parse("a = -.5").unwrap().get_f64("a").unwrap(), -0.5);
 }
