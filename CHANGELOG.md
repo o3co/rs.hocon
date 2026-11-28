@@ -12,12 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING (extra-spec E8, xx.hocon#140): an unquoted run that starts with
   `-.` is text again, not a number**, as in Lightbend 1.4.10
   (lightbend/config#861) — the same as a run that starts with `.`. Lightbend
-  1.4.9 and earlier, and rs 1.14.0 through this release, read `-.5` as
-  `-0.5`. `a = -.5` is now the string `"-.5"` (was the number -0.5); so are
-  `-.5e3` (was -500) and `-.5e999` (was an overflow error). `a = -.5e+3` is
-  now a parse error (was -500): the run is not a number and contains `+`
-  (E8 step 4). Every other number reads as before (`-0.5`, `-5.`,
-  `-1.5e+3`). Workaround: write the leading zero, `a = -0.5`.
+  1.4.9 and earlier, and every rs 1.14.x release, read `-.5` as `-0.5`. This
+  applies wherever a run starts with `-.`: values, keys, concatenations,
+  arrays and unit values. `a = -.5` is now the string `"-.5"` (was the
+  number -0.5); so are `-.5e3` (was -500) and `-.5e999` (was an overflow
+  error). `a = -.5e+3` is now a parse error (was -500): the run is not a
+  number and contains `+` (E8 step 4). So are `a = x -.5e+3` (was the string
+  `"x -.5e+3"`), `a = -.5e+3ms` and the key `-.5e+3 = 1`. `get_f64` still
+  reads the string `"-.5"` as -0.5. Every other number reads as before
+  (`-0.5`, `-5.`, `-1.5e+3`). Workaround: write the leading zero,
+  `a = -0.5`.
 - **A substitution cycle written twice aborted the process
   ([#199](https://github.com/o3co/rs.hocon/issues/199)).** `a = ${?b}` /
   `b = ${?a}` written twice overflowed the stack (`fatal runtime error: stack

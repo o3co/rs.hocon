@@ -639,3 +639,44 @@ fn e13_key_path_hyphen_segment_accepted_was_rejected_pre_e13() {
         "expected value at path a.-foo"
     );
 }
+
+/// A run that starts with `-.` in every position (Lightbend 1.4.10,
+/// xx.hocon#140): it is text, and with a `+` it is an error.
+#[test]
+fn e8_negative_leading_dot_in_every_position() {
+    let env: HashMap<String, String> = HashMap::new();
+    let parse = |doc: &str| hocon::parse_with_env(doc, &env);
+
+    for doc in [
+        "-.5e+3 = 1",
+        "a = x -.5e+3",
+        "a = [-.5e+3]",
+        "b = 1\na = ${b}-.5e+3",
+        "a = -.5e+3ms",
+    ] {
+        assert!(parse(doc).is_err(), "{doc:?} must be rejected");
+    }
+    match parse("a = -.5e+3") {
+        Err(hocon::HoconError::Parse(pe)) => {
+            assert_eq!((pe.line, pe.col), (1, 9), "the error points at the '+'")
+        }
+        other => panic!("a = -.5e+3 gave {other:?}"),
+    }
+
+    assert_eq!(parse("-.5 = 1").unwrap().get_i64("\"-\".5").unwrap(), 1);
+    assert_eq!(
+        parse("a = -.5 b").unwrap().get_string("a").unwrap(),
+        "-.5 b"
+    );
+    let list = parse("a = [-.5]").unwrap().get_list("a").unwrap();
+    match &list[..] {
+        [hocon::HoconValue::Scalar(sv)] => {
+            assert_eq!(sv.value_type, hocon::ScalarType::String);
+            assert_eq!(sv.raw, "-.5");
+        }
+        other => panic!("a = [-.5] gave {other:?}"),
+    }
+    let cfg = parse("b = 1\na = ${b}-.5").unwrap();
+    assert_eq!(cfg.get_string("a").unwrap(), "1-.5");
+    assert_eq!(parse("a = -.5").unwrap().get_f64("a").unwrap(), -0.5);
+}
