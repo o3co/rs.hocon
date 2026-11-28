@@ -178,7 +178,23 @@ fn issue199_post_cut_resource_bounds() {
     let ring: String = (0..16)
         .map(|i| format!("a{i} = ${{?a{n}}}${{?a{n}}}x\n", n = (i + 1) % 16))
         .collect();
+    // A chain of long keys in progress makes every snapshot expensive to
+    // build and compare (120 keys of 2,000 chars took 20 s before the
+    // snapshot cost was charged to the post-cut work budget).
+    let long: Vec<String> = (0..120)
+        .map(|i| format!("k{i}{}", "x".repeat(2000)))
+        .collect();
+    let mut chain: String = long
+        .windows(2)
+        .map(|w| format!("{} = ${{?{}}}\n", w[0], w[1]))
+        .collect();
+    chain += &format!("{} = ${{?k0}}\n", long[119]);
     let cases = [
+        (
+            "long-key chain into a dense cycle",
+            format!("{chain}{dense}{dense}"),
+            "too complex",
+        ),
         ("wide refs", w8, "too complex"),
         ("dense cycle", format!("{dense}{dense}"), "too complex"),
         (

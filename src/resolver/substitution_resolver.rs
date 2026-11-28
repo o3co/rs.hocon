@@ -607,6 +607,20 @@ impl<'a> SubstitutionResolver<'a> {
                         .cloned()
                         .collect(),
                 });
+                // After a cut, building and comparing snapshots is work too:
+                // with long keys it dominated (rs.hocon#203 review: 120 keys
+                // of 2,000 chars took 20 s). Charge it to the work budget.
+                if let (Some(st), true) = (state.as_ref(), self.cuts > 0) {
+                    let bytes: usize = st
+                        .resolving
+                        .iter()
+                        .chain(&st.prefix_priors)
+                        .chain(&st.field_path)
+                        .map(|k| k.len() + 1)
+                        .sum();
+                    let depth = self.prior_reentry.get(&key).map_or(0, Vec::len);
+                    self.charge_work(s, (depth + 1).saturating_mul(1 + bytes / 16))?;
+                }
                 let unbreakable = state.as_ref().is_some_and(|st| {
                     self.prior_reentry
                         .get(&key)
