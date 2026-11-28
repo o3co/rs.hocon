@@ -73,13 +73,35 @@ const XX139_KNOWN_GAP: &str = "o3co/xx.hocon#139 (resolution-model §8.3): a cyc
      value in the receiver's field only — fixed by the resolution layer (o3co/xx.hocon#67 \
      window); py: o3co/py.hocon#67";
 
-/// Scenarios whose expected result rs.hocon does not produce yet, with reasons.
-/// Each is a strict expected failure: the scenario still runs and its failure
-/// is not counted, but a scenario that passes fails the test so the entry is
-/// removed. Matched on the exact scenario id; an entry whose scenario is not on
-/// disk has no effect.
+/// Scenarios whose expected tree rs.hocon does not produce yet, with reasons.
+/// Each is a strict expected failure limited to the JSON comparison: a
+/// `Failure::JsonMismatch` is not counted, any other failure (a step error,
+/// isResolved, a getter, a malformed scenario) is, and so is a scenario that
+/// passes, so the entry is removed when the gap closes. Matched on the exact
+/// scenario id; an entry whose scenario is not on disk has no effect.
 const SCENARIO_KNOWN_GAPS: &[(&str, &str)] =
     &[("dr31", XX139_KNOWN_GAP), ("dr32", XX139_KNOWN_GAP)];
+
+/// Why a scenario did not pass. Only `JsonMismatch` can be a known gap.
+enum Failure {
+    /// The resolved tree differs from the expected JSON.
+    JsonMismatch(String),
+    Other(String),
+}
+
+impl From<String> for Failure {
+    fn from(msg: String) -> Self {
+        Failure::Other(msg)
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Failure::JsonMismatch(msg) | Failure::Other(msg) => f.write_str(msg),
+        }
+    }
+}
 
 fn scenario_id(filename: &str) -> String {
     // "dr01-basic-fallback.yaml" -> "dr01"
@@ -147,11 +169,7 @@ fn deferred_resolution_fixtures() {
             (Ok(()), None) => {
                 passed += 1;
             }
-            (Err(msg), None) => {
-                eprintln!("FAIL {}: {}", id, msg);
-                failures += 1;
-            }
-            (Err(msg), Some(reason)) => {
+            (Err(Failure::JsonMismatch(msg)), Some(reason)) => {
                 eprintln!("KNOWN GAP {}: {}\n  {}", id, reason, msg);
                 known_gaps += 1;
             }
@@ -160,6 +178,10 @@ fn deferred_resolution_fixtures() {
                     "FAIL {}: listed in SCENARIO_KNOWN_GAPS but passes — remove the entry ({})",
                     id, reason
                 );
+                failures += 1;
+            }
+            (Err(failure), _) => {
+                eprintln!("FAIL {}: {}", id, failure);
                 failures += 1;
             }
         }
@@ -173,7 +195,7 @@ fn deferred_resolution_fixtures() {
     assert_eq!(failures, 0, "{} scenario(s) failed", failures);
 }
 
-fn run_scenario(id: &str, yaml_path: &Path) -> Result<(), String> {
+fn run_scenario(id: &str, yaml_path: &Path) -> Result<(), Failure> {
     let data = std::fs::read_to_string(yaml_path)
         .map_err(|e| format!("read {}: {}", yaml_path.display(), e))?;
     let sc: Scenario = serde_yaml::from_str(&data)
@@ -208,8 +230,8 @@ fn run_scenario(id: &str, yaml_path: &Path) -> Result<(), String> {
 
     match sc.expect.outcome.as_str() {
         "success" => validate_success(id, &sc.expect, &artefacts, &final_name, &step_errors),
-        "error" => validate_error(id, &sc.expect, &step_errors),
-        other => Err(format!("unknown expect.outcome {:?}", other)),
+        "error" => validate_error(id, &sc.expect, &step_errors).map_err(Failure::Other),
+        other => Err(format!("unknown expect.outcome {:?}", other).into()),
     }
 }
 
@@ -407,10 +429,10 @@ fn validate_success(
     artefacts: &HashMap<String, Config>,
     final_name: &str,
     step_errors: &[Option<String>],
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     for (i, e) in step_errors.iter().enumerate() {
         if let Some(msg) = e {
-            return Err(format!("unexpected error at step {}: {}", i, msg));
+            return Err(format!("unexpected error at step {}: {}", i, msg).into());
         }
     }
     let cfg = artefacts
@@ -424,7 +446,8 @@ fn validate_success(
                 "isResolved = {}, want {}",
                 cfg.is_resolved(),
                 expected_resolved
-            ));
+            )
+            .into());
         }
     }
 
@@ -437,19 +460,19 @@ fn validate_success(
             let expected_raw =
                 std::fs::read_to_string(&path).map_err(|e| format!("read expected JSON: {}", e))?;
             if !json_equal(&expected_raw, &actual_json) {
-                return Err(format!(
+                return Err(Failure::JsonMismatch(format!(
                     "JSON mismatch\n want: {}\n got:  {}",
                     expected_raw.trim(),
                     actual_json
-                ));
+                )));
             }
         } else if let Some(ref hint) = expect.json {
             // Fall back to in-YAML hint.
             if !json_equal(hint, &actual_json) {
-                return Err(format!(
+                return Err(Failure::JsonMismatch(format!(
                     "in-YAML JSON mismatch\n want: {}\n got:  {}",
                     hint, actual_json
-                ));
+                )));
             }
         }
     }
