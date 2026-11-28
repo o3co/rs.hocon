@@ -68,6 +68,19 @@ const SCENARIO_SKIP: &[(&str, &str)] = &[
     ),
 ];
 
+const XX139_KNOWN_GAP: &str = "o3co/xx.hocon#139 (resolution-model §8.3): a cycle of \
+     optionals across a nested withFallback nests both fields instead of keeping the nested \
+     value in the receiver's field only — fixed by the resolution layer (o3co/xx.hocon#67 \
+     window); py: o3co/py.hocon#67";
+
+/// Scenarios whose expected result rs.hocon does not produce yet, with reasons.
+/// Each is a strict expected failure: the scenario still runs and its failure
+/// is not counted, but a scenario that passes fails the test so the entry is
+/// removed. Matched on the exact scenario id; an entry whose scenario is not on
+/// disk has no effect.
+const SCENARIO_KNOWN_GAPS: &[(&str, &str)] =
+    &[("dr31", XX139_KNOWN_GAP), ("dr32", XX139_KNOWN_GAP)];
+
 fn scenario_id(filename: &str) -> String {
     // "dr01-basic-fallback.yaml" -> "dr01"
     // "dr11a-resolve-with.yaml"  -> "dr11a"
@@ -77,6 +90,12 @@ fn scenario_id(filename: &str) -> String {
     } else {
         base.to_owned()
     }
+}
+
+fn known_gap(id: &str) -> Option<&'static str> {
+    SCENARIO_KNOWN_GAPS
+        .iter()
+        .find_map(|(gap_id, reason)| (*gap_id == id).then_some(*reason))
 }
 
 fn skip_reason(id: &str) -> Option<&'static str> {
@@ -110,6 +129,7 @@ fn deferred_resolution_fixtures() {
     let mut failures = 0usize;
     let mut skipped = 0usize;
     let mut passed = 0usize;
+    let mut known_gaps = 0usize;
 
     for entry in &entries {
         let path = entry.path();
@@ -123,20 +143,31 @@ fn deferred_resolution_fixtures() {
             continue;
         }
 
-        match run_scenario(&id, &path) {
-            Ok(()) => {
+        match (run_scenario(&id, &path), known_gap(&id)) {
+            (Ok(()), None) => {
                 passed += 1;
             }
-            Err(msg) => {
+            (Err(msg), None) => {
                 eprintln!("FAIL {}: {}", id, msg);
+                failures += 1;
+            }
+            (Err(msg), Some(reason)) => {
+                eprintln!("KNOWN GAP {}: {}\n  {}", id, reason, msg);
+                known_gaps += 1;
+            }
+            (Ok(()), Some(reason)) => {
+                eprintln!(
+                    "FAIL {}: listed in SCENARIO_KNOWN_GAPS but passes — remove the entry ({})",
+                    id, reason
+                );
                 failures += 1;
             }
         }
     }
 
     eprintln!(
-        "\nDeferred-resolution fixtures: {} passed, {} skipped, {} failed",
-        passed, skipped, failures
+        "\nDeferred-resolution fixtures: {} passed, {} skipped, {} known gaps, {} failed",
+        passed, skipped, known_gaps, failures
     );
 
     assert_eq!(failures, 0, "{} scenario(s) failed", failures);
