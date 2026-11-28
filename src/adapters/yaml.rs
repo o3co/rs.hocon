@@ -142,7 +142,9 @@ fn convert(v: &Yaml, at: &str) -> Result<HoconValue, AdapterError> {
                     "yaml: at {at}: {raw} is not representable in HOCON (spec F0.6)"
                 )));
             }
-            Ok(HoconValue::Scalar(ScalarValue::number(raw.clone())))
+            Ok(HoconValue::Scalar(ScalarValue::number(hocon_number_text(
+                raw,
+            ))))
         }
         Yaml::Null => Ok(HoconValue::Scalar(ScalarValue::null())),
         Yaml::Alias(_) | Yaml::BadValue => Err(AdapterError::new(format!(
@@ -221,5 +223,23 @@ fn key_string(k: &Yaml, at: &str) -> Result<String, AdapterError> {
         _ => Err(AdapterError::new(format!(
             "yaml: at {at}: a collection key is not usable as an object key (spec F5.3)"
         ))),
+    }
+}
+
+/// A YAML float's text as a HOCON number lexeme. YAML spells floats HOCON
+/// does not read as numbers: a leading `+` (`+1.5`) and no integer part
+/// (`.5`, `-.5`, `.5e3`). Kept as is, such a raw renders bare through
+/// `render_hocon` and reads back as text or an error, so drop the `+` and
+/// write the `0`. Every digit is kept, so the value does not change.
+fn hocon_number_text(raw: &str) -> String {
+    let unsigned = raw.strip_prefix('+').unwrap_or(raw);
+    let (sign, digits) = match unsigned.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", unsigned),
+    };
+    if digits.starts_with('.') {
+        format!("{sign}0{digits}")
+    } else {
+        format!("{sign}{digits}")
     }
 }

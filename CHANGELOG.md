@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads the string `"-.5"` as -0.5. Every other number reads as before
   (`-0.5`, `-5.`, `-1.5e+3`). Workaround: write the leading zero,
   `a = -0.5`.
+- **A YAML float that HOCON does not spell as a number now round-trips
+  through `render_hocon`.** The YAML adapter kept the YAML text as the number's
+  raw text, so `.5`, `.5e3` and `+1.5` rendered bare and read back as the
+  string `".5"` (or a parse error for `+1.5`); since xx.hocon#140 above, so
+  would `-.5`. The adapter now drops a leading `+` and writes the missing `0`
+  (`.5` → `0.5`, `-.5` → `-0.5`, `+1.5` → `1.5`), keeping every digit, so the
+  value is unchanged. `get_string` on such a value returns the new text
+  (`"0.5"`, not `".5"`), as go, ts and py already do.
 - **A substitution cycle written twice aborted the process
   ([#199](https://github.com/o3co/rs.hocon/issues/199)).** `a = ${?b}` /
   `b = ${?a}` written twice overflowed the stack (`fatal runtime error: stack
