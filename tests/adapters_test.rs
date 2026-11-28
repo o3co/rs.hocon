@@ -763,6 +763,12 @@ fn yaml_float_text_round_trips_through_render_hocon() {
         ("-.5e+3", "-0.5e+3", -500.0),
         ("1.5", "1.5", 1.5),
         ("1e5", "1e5", 100000.0),
+        // Lexemes HOCON already reads as numbers are kept as written.
+        ("1.", "1.", 1.0),
+        ("-1.", "-1.", -1.0),
+        ("1.50", "1.50", 1.5),
+        // A `!!float` tag goes through the same conversion.
+        ("!!float +12", "12", 12.0),
     ] {
         let cfg = yaml::parse(&format!("a: {y}"), None).unwrap();
         match cfg.get("a") {
