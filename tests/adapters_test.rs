@@ -749,3 +749,41 @@ fn dotenv_refuses_a_name_that_cannot_have_been_meant() {
     let cfg = env::parse_dotenv("FOO.BAR=v\n", env::Options::default()).unwrap();
     assert_eq!(cfg.get_string("\"foo.bar\"").unwrap(), "v");
 }
+
+/// A YAML float HOCON does not spell as a number (`.5`, `+1.5`) becomes a
+/// HOCON number lexeme, so `render_hocon` round-trips it as a number.
+#[test]
+fn yaml_float_text_round_trips_through_render_hocon() {
+    for (y, raw, f) in [
+        (".5", "0.5", 0.5),
+        (".5e3", "0.5e3", 500.0),
+        ("+1.5", "1.5", 1.5),
+        ("-.5", "-0.5", -0.5),
+        ("+.5", "0.5", 0.5),
+        ("-.5e+3", "-0.5e+3", -500.0),
+        ("1.5", "1.5", 1.5),
+        ("1e5", "1e5", 100000.0),
+    ] {
+        let cfg = yaml::parse(&format!("a: {y}"), None).unwrap();
+        match cfg.get("a") {
+            Some(hocon::HoconValue::Scalar(sv)) => {
+                assert_eq!(sv.value_type, hocon::ScalarType::Number, "a: {y}");
+                assert_eq!(sv.raw, raw, "a: {y}");
+            }
+            other => panic!("a: {y} gave {other:?}"),
+        }
+        let text = cfg.render_hocon().unwrap();
+        let back = hocon::parse(&text).unwrap_or_else(|e| panic!("a: {y} rendered {text:?}: {e}"));
+        match back.get("a") {
+            Some(hocon::HoconValue::Scalar(sv)) => {
+                assert_eq!(
+                    sv.value_type,
+                    hocon::ScalarType::Number,
+                    "a: {y} → {text:?}"
+                );
+            }
+            other => panic!("a: {y} → {text:?} read back {other:?}"),
+        }
+        assert_eq!(back.get_f64("a").unwrap(), f, "a: {y}");
+    }
+}
