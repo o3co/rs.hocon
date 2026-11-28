@@ -70,11 +70,14 @@ pub(crate) struct SubstitutionResolver<'a> {
 /// guard (o3co/xx.hocon#67 / #125).
 const VALUE_NODES_PER_SOURCE_NODE: usize = 10_000;
 
-/// Nodes in a resolved value (objects, arrays and leaves).
+/// Weight of a resolved value for the value budget: its nodes, plus one per
+/// 16 bytes of scalar text.
 fn value_nodes(v: &HoconValue) -> usize {
     match v {
         HoconValue::Object(m) => 1 + m.values().map(value_nodes).sum::<usize>(),
         HoconValue::Array(a) => 1 + a.iter().map(value_nodes).sum::<usize>(),
+        // A string that doubles on every lap grows without adding nodes.
+        HoconValue::Scalar(sv) => 1 + sv.raw.len() / 16,
         _ => 1,
     }
 }
@@ -330,7 +333,17 @@ impl<'a> SubstitutionResolver<'a> {
         scope: &ResObj,
     ) -> Result<Option<HoconValue>, ResolveError> {
         match v {
-            ResolverValue::Subst(s) => self.resolve_subst(s, scope),
+            ResolverValue::Subst(s) => {
+                let resolved = self.resolve_subst(s, scope)?;
+                // rs.hocon#203 review: after a cut, also charge every
+                // substitution result as it is produced, so an array or string
+                // that doubles on every lap of a cycle is stopped while it is
+                // being built, not after its field is complete.
+                if let (Some(v), true) = (&resolved, self.cuts > 0) {
+                    self.charge_value_budget(&segments_to_key(&s.segments), v)?;
+                }
+                Ok(resolved)
+            }
             ResolverValue::Concat(c) => {
                 self.resolve_concat(&c.nodes, &c.separator_flags, c.line, c.col, scope)
             }

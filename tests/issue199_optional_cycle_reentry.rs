@@ -122,6 +122,31 @@ fn issue199_runaway_nested_cycle_is_an_error() {
     );
 }
 
+/// rs.hocon#203 review: a ring of array or string substitutions written twice
+/// doubles its value on every lap. The budget is charged as each substitution
+/// result is produced, so it stops while the value is being built (a model of
+/// the 16-key array ring reaches 17 billion nodes) instead of after the field.
+#[test]
+fn issue199_doubling_rings_are_an_error() {
+    for (name, element) in [("array", "[${?a%}, ${?a%}]"), ("string", "${?a%}${?a%}x")] {
+        let n = 16;
+        let ring: String = (0..n)
+            .map(|i| {
+                format!(
+                    "a{i} = {}\n",
+                    element.replace('%', &((i + 1) % n).to_string())
+                )
+            })
+            .collect();
+        let src = format!("{ring}{ring}");
+        let err = hocon::parse(&src).expect_err(name);
+        assert!(
+            err.to_string().contains("resolved value too large"),
+            "{name}: unexpected error: {err}"
+        );
+    }
+}
+
 /// The value budget only applies after the guard has cut a cycle, so large
 /// acyclic configs that load today are never charged: an exponential chain of
 /// references and a deeply nested object.
