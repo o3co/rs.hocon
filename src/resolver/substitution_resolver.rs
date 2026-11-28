@@ -56,7 +56,26 @@ pub(crate) struct SubstitutionResolver<'a> {
     /// rs.hocon#199: times the [`PriorReentry`] guard refused a re-entry.
     /// The value budget only applies once this is non-zero.
     cuts: usize,
+    /// Work left after the first cut (see [`POST_CUT_WORK`]).
+    post_cut_work: usize,
+    /// Current `resolve_subst` nesting depth (see [`POST_CUT_DEPTH`]).
+    subst_depth: usize,
 }
+
+/// rs.hocon#203 review: work units allowed after the first cut. One unit per
+/// `resolve_subst` call plus the source nodes of every prior or found subtree
+/// cloned. A cut substitution resolves to nothing, which is never cached or
+/// charged, so sibling references re-explored whole subtrees: a 4-line input
+/// took 11 s of CPU with no value growth, and longer lines took days. The
+/// most any corpus input with a cut used was ~10,800 calls.
+const POST_CUT_WORK: usize = 5_000_000;
+/// `resolve_subst` nesting allowed after the first cut: the guard's nesting
+/// still grows roughly ×2 per key in a dense cycle (10 keys each referencing
+/// all 10, written twice, overflowed the stack).
+const POST_CUT_DEPTH: usize = 1_000;
+/// Upper bound on the value budget: `VALUE_NODES_PER_SOURCE_NODE × n` alone
+/// let a padded or prior-heavy document reach gigabytes after a cut.
+const VALUE_BUDGET_CAP: usize = 2_000_000;
 
 /// Value nodes the resolver may clone into its cache, per node of the
 /// document, once the [`PriorReentry`] guard has cut a cycle. The guard stops
@@ -74,7 +93,12 @@ const VALUE_NODES_PER_SOURCE_NODE: usize = 10_000;
 /// 16 bytes of scalar text.
 fn value_nodes(v: &HoconValue) -> usize {
     match v {
-        HoconValue::Object(m) => 1 + m.values().map(value_nodes).sum::<usize>(),
+        HoconValue::Object(m) => {
+            1 + m
+                .iter()
+                .map(|(k, v)| k.len() / 16 + value_nodes(v))
+                .sum::<usize>()
+        }
         HoconValue::Array(a) => 1 + a.iter().map(value_nodes).sum::<usize>(),
         // A string that doubles on every lap grows without adding nodes.
         HoconValue::Scalar(sv) => 1 + sv.raw.len() / 16,
@@ -181,8 +205,12 @@ impl<'a> SubstitutionResolver<'a> {
             resolving_prefix_priors: HashSet::new(),
             prior_reentry: HashMap::new(),
             max_subst_len: max_subst_len_obj(root),
-            value_budget: source_nodes_obj(root).saturating_mul(VALUE_NODES_PER_SOURCE_NODE),
+            value_budget: source_nodes_obj(root)
+                .saturating_mul(VALUE_NODES_PER_SOURCE_NODE)
+                .min(VALUE_BUDGET_CAP),
             cuts: 0,
+            post_cut_work: POST_CUT_WORK,
+            subst_depth: 0,
         }
     }
 
@@ -296,7 +324,33 @@ impl<'a> SubstitutionResolver<'a> {
         if self.cuts == 0 {
             return Ok(());
         }
-        let n = value_nodes(value);
+        self.charge_weight(key, value_nodes(value))
+    }
+
+    /// Deduct post-cut work (see [`POST_CUT_WORK`]); no-op before a cut.
+    fn charge_work(&mut self, s: &SubstPlaceholder, units: usize) -> Result<(), ResolveError> {
+        if self.cuts == 0 {
+            return Ok(());
+        }
+        if units > self.post_cut_work {
+            return Err(ResolveError {
+                message: format!(
+                    "substitution cycle too complex to resolve: {}",
+                    segments_to_key(&s.segments)
+                ),
+                path: segments_to_key(&s.segments),
+                line: s.line,
+                col: s.col,
+            });
+        }
+        self.post_cut_work -= units;
+        Ok(())
+    }
+
+    fn charge_weight(&mut self, key: &str, n: usize) -> Result<(), ResolveError> {
+        if self.cuts == 0 {
+            return Ok(());
+        }
         if n > self.value_budget {
             return Err(ResolveError {
                 message: format!(
@@ -319,6 +373,8 @@ impl<'a> SubstitutionResolver<'a> {
                 // `prefix."a.b"` (quoted), not `prefix.a.b` (ambiguous).
                 let escaped_key = string_segments_to_key(std::iter::once(key.as_str()));
                 let child_key = format!("{prefix}.{escaped_key}");
+                // The cache key text is memory too (it grows with depth).
+                self.charge_weight(&child_key, child_key.len() / 16)?;
                 self.charge_value_budget(&child_key, child)?;
                 self.cache.insert(child_key.clone(), child.clone());
                 self.cache_descendants(&child_key, child)?;
@@ -366,7 +422,32 @@ impl<'a> SubstitutionResolver<'a> {
         }
     }
 
+    /// Post-cut work and nesting bounds around [`Self::resolve_subst_x`]
+    /// (rs.hocon#203 review; no-ops before the first cut).
     fn resolve_subst(
+        &mut self,
+        s: &SubstPlaceholder,
+        scope: &ResObj,
+    ) -> Result<Option<HoconValue>, ResolveError> {
+        if self.cuts > 0 && self.subst_depth >= POST_CUT_DEPTH {
+            return Err(ResolveError {
+                message: format!(
+                    "substitution cycle too complex to resolve: {}",
+                    segments_to_key(&s.segments)
+                ),
+                path: segments_to_key(&s.segments),
+                line: s.line,
+                col: s.col,
+            });
+        }
+        self.charge_work(s, 1)?;
+        self.subst_depth += 1;
+        let r = self.resolve_subst_x(s, scope);
+        self.subst_depth -= 1;
+        r
+    }
+
+    fn resolve_subst_x(
         &mut self,
         s: &SubstPlaceholder,
         scope: &ResObj,
@@ -414,6 +495,22 @@ impl<'a> SubstitutionResolver<'a> {
                     if !self.resolving_prefix_priors.contains(&rfp_key) {
                         let leaf = rfp.last().expect("rfp non-empty").clone();
                         if let Some(prior) = scope.prior_values.get(leaf.as_str()) {
+                            // Post-cut work (inline: `rfp` borrows self here).
+                            if self.cuts > 0 {
+                                let units = source_nodes(prior);
+                                if units > self.post_cut_work {
+                                    let key = segments_to_key(&s.segments);
+                                    return Err(ResolveError {
+                                        message: format!(
+                                            "substitution cycle too complex to resolve: {key}"
+                                        ),
+                                        path: key,
+                                        line: s.line,
+                                        col: s.col,
+                                    });
+                                }
+                                self.post_cut_work -= units;
+                            }
                             let prior = prior.clone();
                             let remainder: Vec<String> = s.segments[rfp.len()..]
                                 .iter()
@@ -480,6 +577,9 @@ impl<'a> SubstitutionResolver<'a> {
                 .get(root_seg)
                 .or_else(|| self.root.prior_values.get(root_seg));
             if let Some(prior) = prior {
+                if self.cuts > 0 {
+                    self.charge_work(s, 2 * source_nodes(prior))?;
+                }
                 let prior = prior.clone();
                 // xx.hocon#27 cluster 3h sr12: if the prior itself contains a
                 // self-ref to the same key (e.g. `foo.a = ${?foo.a}bar; foo.b
@@ -585,7 +685,11 @@ impl<'a> SubstitutionResolver<'a> {
         scope: &ResObj,
         key: &str,
     ) -> Result<Option<HoconValue>, ResolveError> {
-        let found = lookup_path(self.root, &s.segments).cloned();
+        let found = lookup_path(self.root, &s.segments);
+        if let (Some(f), true) = (found, self.cuts > 0) {
+            self.charge_work(s, source_nodes(f))?;
+        }
+        let found = found.cloned();
 
         if let Some(found) = found {
             // Self-referential substitution: only use prior value when the substitution
