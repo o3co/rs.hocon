@@ -451,7 +451,9 @@ fn validate_success(
         }
     }
 
-    // JSON comparison vs Lightbend ground truth.
+    // JSON comparison vs Lightbend ground truth. A mismatch is returned after
+    // the getter assertions, so a known gap's getters are still checked.
+    let mut mismatch = None;
     if cfg.is_resolved() {
         let actual_json = hocon::_render_json_for_test(cfg);
         // Try expected file first, then fall back to in-YAML hint.
@@ -459,8 +461,8 @@ fn validate_success(
         if let Some(path) = expected_path {
             let expected_raw =
                 std::fs::read_to_string(&path).map_err(|e| format!("read expected JSON: {}", e))?;
-            if !json_equal(&expected_raw, &actual_json) {
-                return Err(Failure::JsonMismatch(format!(
+            if !json_equal(&expected_raw, &actual_json)? {
+                mismatch = Some(Failure::JsonMismatch(format!(
                     "JSON mismatch\n want: {}\n got:  {}",
                     expected_raw.trim(),
                     actual_json
@@ -468,8 +470,8 @@ fn validate_success(
             }
         } else if let Some(ref hint) = expect.json {
             // Fall back to in-YAML hint.
-            if !json_equal(hint, &actual_json) {
-                return Err(Failure::JsonMismatch(format!(
+            if !json_equal(hint, &actual_json)? {
+                mismatch = Some(Failure::JsonMismatch(format!(
                     "in-YAML JSON mismatch\n want: {}\n got:  {}",
                     hint, actual_json
                 )));
@@ -482,7 +484,7 @@ fn validate_success(
         run_getter_assert(id, cfg, g)?;
     }
 
-    Ok(())
+    mismatch.map_or(Ok(()), Err)
 }
 
 fn validate_error(
@@ -654,15 +656,12 @@ fn find_expected_json(id: &str) -> Result<Option<PathBuf>, String> {
     Ok(None)
 }
 
-fn json_equal(a: &str, b: &str) -> bool {
-    // Normalise by round-tripping through serde_json for structural equality.
-    let va: serde_json::Value = match serde_json::from_str(a) {
-        Ok(v) => v,
-        Err(_) => return false,
+/// Structural equality of two JSON texts. Text that does not parse is an
+/// error, not a mismatch, so it can never pass as a known gap's JSON mismatch.
+fn json_equal(want: &str, got: &str) -> Result<bool, String> {
+    let parse = |label: &str, text: &str| {
+        serde_json::from_str::<serde_json::Value>(text)
+            .map_err(|e| format!("{} JSON does not parse: {}\n {}", label, e, text))
     };
-    let vb: serde_json::Value = match serde_json::from_str(b) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    va == vb
+    Ok(parse("expected", want)? == parse("rendered", got)?)
 }
